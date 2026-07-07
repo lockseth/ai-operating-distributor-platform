@@ -30,7 +30,7 @@ export default async function NewSalesReportPage() {
       .order("name"),
     supabase
       .from("users")
-      .select("id, full_name, user_roles(role:roles(name))")
+      .select("id, full_name, user_roles!user_id(role:roles(name))")
       .eq("company_id", user.company_id)
       .eq("is_active", true)
       .order("full_name"),

@@ -62,7 +62,7 @@ export default async function UsersPage() {
     .from("users")
     .select(`
       id, full_name, email, is_active, created_at,
-      user_roles(role:roles(name))
+      user_roles!user_id(role:roles(name))
     `)
     .eq("company_id", user.company_id)
     .order("full_name");

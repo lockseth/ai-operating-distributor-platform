@@ -11,7 +11,8 @@
     "clean": "turbo clean",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "db:migrate": "supabase db push",
-    "db:reset": "supabase db reset"
+    "db:reset": "supabase db reset",
+    "seed:dev": "tsx scripts/seed-dev.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.49.8",
