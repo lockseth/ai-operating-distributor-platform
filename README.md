@@ -70,6 +70,11 @@ pnpm dev          # development server
 > `NEXT_PUBLIC_SUPABASE_ANON_KEY`, dan `SUPABASE_SERVICE_ROLE_KEY` sebelum menjalankan
 > `pnpm db:migrate` atau melakukan write apa pun. Jangan push migration ke project beta.
 
+## Governing Document
+
+Referensi tertinggi seluruh pengembangan:
+[docs/AODP_PRODUCT_CONSTITUTION.md](docs/AODP_PRODUCT_CONSTITUTION.md) (v1.0 — Design Partner Edition).
+
 ## Development Workflow
 
 - ChatGPT berperan sebagai CTO + Product Manager.

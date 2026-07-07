@@ -1,3 +1,7 @@
+> **Catatan (2026-07-07):** Dokumen ini telah dikonsolidasikan ke dalam
+> [AODP_PRODUCT_CONSTITUTION.md](AODP_PRODUCT_CONSTITUTION.md) v1.0,
+> yang kini menjadi referensi utama. Dokumen ini dipertahankan sebagai arsip discovery.
+
 # Product Constitution — AI Operating Distributor Platform
 
 ## Official Product Name
