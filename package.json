@@ -1,0 +1,28 @@
+{
+  "name": "aodp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI Operating Distributor Platform (AODP) — AI Operating System untuk owner distributor",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "type-check": "turbo type-check",
+    "clean": "turbo clean",
+    "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
+    "db:migrate": "supabase db push",
+    "db:reset": "supabase db reset"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "^2.49.8",
+    "turbo": "^2.5.4",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@11.9.0"
+}

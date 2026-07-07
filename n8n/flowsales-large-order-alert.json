@@ -1,0 +1,311 @@
+{
+  "name": "FlowSales — Large Order Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowsales-large-order",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "33333333-cccc-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "flowsales-large-order"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-event",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-customer",
+              "leftValue": "={{ $json.trigger_data.customer_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-amount",
+              "leftValue": "={{ $json.trigger_data.order_amount }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "33333333-cccc-4000-8000-000000000002",
+      "name": "Validasi Field Wajib",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-message",
+              "name": "whatsapp_message",
+              "value": "={{ \"🎉 *ORDER BESAR MASUK!*\\n\\nSelamat! Ada order besar yang baru masuk:\\n\\n🏷️ Order ID: #\" + ($json.trigger_data.order_number ?? $json.trigger_data.order_id ?? \"-\") + \"\\n👤 Pelanggan: *\" + $json.trigger_data.customer_name + \"*\\n💰 Nilai Order: *Rp \" + Number($json.trigger_data.order_amount).toLocaleString('id-ID') + \"*\\n📦 Jumlah Item: \" + ($json.trigger_data.item_count ?? \"-\") + \" item\\n🧑‍💼 Sales: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n📅 Tanggal: \" + new Date($json.trigger_data.order_date ?? Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + \"\\n\\nPastikan stok tersedia dan pengiriman diproses tepat waktu.\\n\\n_Dikirim otomatis oleh FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-amount",
+              "name": "order_amount",
+              "value": "={{ $json.trigger_data.order_amount }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "33333333-cccc-4000-8000-000000000003",
+      "name": "Format Pesan WhatsApp",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp-provider.example.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.whatsapp_message }}\"\n  }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "33333333-cccc-4000-8000-000000000004",
+      "name": "Kirim WhatsApp ke Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 200],
+      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda. Tambahkan credential.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp-api-cred",
+          "name": "WhatsApp API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Format Pesan WhatsApp').item.json.rule_id,\n  rule_name: $('Format Pesan WhatsApp').item.json.rule_name,\n  status: 'success',\n  order_amount: $('Format Pesan WhatsApp').item.json.order_amount,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+      },
+      "id": "33333333-cccc-4000-8000-000000000005",
+      "name": "Hitung HMAC Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWSALES_APP_URL }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-flowsales-signature",
+              "value": "={{ $json.callbackSignature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "33333333-cccc-4000-8000-000000000006",
+      "name": "Callback ke FlowSales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"message\": \"Alert order besar berhasil dikirim ke owner\", \"event\": \"large_order\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "33333333-cccc-4000-8000-000000000007",
+      "name": "Response OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1680, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data.customer_name, trigger_data.order_amount (> 0)\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "33333333-cccc-4000-8000-000000000008",
+      "name": "Response Error Validasi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 460]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validasi Field Wajib",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Field Wajib": {
+      "main": [
+        [
+          {
+            "node": "Format Pesan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error Validasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pesan WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Kirim WhatsApp ke Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WhatsApp ke Owner": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hitung HMAC Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback ke FlowSales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback ke FlowSales": {
+      "main": [
+        [
+          {
+            "node": "Response OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "flowsales" },
+    { "name": "large-order" },
+    { "name": "whatsapp" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-27T00:00:00.000Z",
+  "versionId": "flowsales-large-order-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "flowsales-template"
+  },
+  "id": "flowsales-large-order-003",
+  "active": false
+}

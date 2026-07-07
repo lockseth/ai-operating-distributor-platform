@@ -1,0 +1,368 @@
+{
+  "name": "FlowSales — Churn Risk Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowsales-churn-risk",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "22222222-bbbb-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "flowsales-churn-risk"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-event",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-customer",
+              "leftValue": "={{ $json.trigger_data.customer_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-days",
+              "leftValue": "={{ $json.trigger_data.days_inactive }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000002",
+      "name": "Validasi Field Wajib",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-msg-sales",
+              "name": "message_sales",
+              "value": "={{ \"⚠️ *PERINGATAN CHURN RISK*\\n\\nHalo \" + ($json.trigger_data.sales_name ?? \"Sales\") + \",\\n\\nPelanggan *\" + $json.trigger_data.customer_name + \"* telah *tidak melakukan order selama \" + $json.trigger_data.days_inactive + \" hari*.\\n\\nSegera hubungi pelanggan ini sebelum mereka beralih ke kompetitor.\\n\\n📞 Kontak: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n🏢 Area: \" + ($json.trigger_data.customer_area ?? \"-\") + \"\\n💰 Nilai order terakhir: Rp \" + ($json.trigger_data.last_order_amount ?? \"-\") + \"\\n\\n_Dikirim otomatis oleh FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-msg-owner",
+              "name": "message_owner",
+              "value": "={{ \"🚨 *ESKALASI CHURN RISK — ACTION REQUIRED*\\n\\nPelanggan *\" + $json.trigger_data.customer_name + \"* belum order selama *\" + $json.trigger_data.days_inactive + \" hari*.\\n\\nSales PIC: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n📞 Kontak pelanggan: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nMohon koordinasi dengan tim sales untuk follow-up segera.\\n\\n_Dikirim otomatis oleh FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-to-sales",
+              "name": "whatsapp_to_sales",
+              "value": "={{ $json.trigger_data.sales_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-to-owner",
+              "name": "whatsapp_to_owner",
+              "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "22222222-bbbb-4000-8000-000000000003",
+      "name": "Format Pesan WhatsApp",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp-provider.example.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to_sales }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.message_sales }}\"\n  }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000004",
+      "name": "Kirim WA ke Sales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 160],
+      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp-api-cred",
+          "name": "WhatsApp API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp-provider.example.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $('Format Pesan WhatsApp').item.json.whatsapp_to_owner }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $('Format Pesan WhatsApp').item.json.message_owner }}\"\n  }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000005",
+      "name": "Kirim WA ke Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 320],
+      "notes": "Eskalasi ke Owner/Manager. GANTI url dengan endpoint WhatsApp API provider Anda.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp-api-cred",
+          "name": "WhatsApp API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Format Pesan WhatsApp').item.json.rule_id,\n  rule_name: $('Format Pesan WhatsApp').item.json.rule_name,\n  status: 'success',\n  notifications_sent: ['sales', 'owner'],\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+      },
+      "id": "22222222-bbbb-4000-8000-000000000006",
+      "name": "Hitung HMAC Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 240]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWSALES_APP_URL }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-flowsales-signature",
+              "value": "={{ $json.callbackSignature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000007",
+      "name": "Callback ke FlowSales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1440, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"message\": \"Alert churn risk berhasil dikirim ke sales dan owner\", \"event\": \"churn_risk\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000008",
+      "name": "Response OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1680, 240]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data.customer_name, trigger_data.days_inactive (> 0)\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "22222222-bbbb-4000-8000-000000000009",
+      "name": "Response Error Validasi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 460]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validasi Field Wajib",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Field Wajib": {
+      "main": [
+        [
+          {
+            "node": "Format Pesan WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error Validasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pesan WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Kirim WA ke Sales",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kirim WA ke Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WA ke Owner": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WA ke Sales": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hitung HMAC Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback ke FlowSales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback ke FlowSales": {
+      "main": [
+        [
+          {
+            "node": "Response OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "flowsales" },
+    { "name": "churn-risk" },
+    { "name": "whatsapp" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-27T00:00:00.000Z",
+  "versionId": "flowsales-churn-risk-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "flowsales-template"
+  },
+  "id": "flowsales-churn-risk-002",
+  "active": false
+}

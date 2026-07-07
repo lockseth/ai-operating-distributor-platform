@@ -1,0 +1,58 @@
+import { signOutAction } from "@/lib/actions/auth";
+import type { AuthUser } from "@/lib/auth/get-user";
+
+interface HeaderProps {
+  title?: string;
+  user: AuthUser;
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  super_admin: "Super Admin",
+  owner: "Owner",
+  manager: "Manager",
+  sales: "Sales",
+  admin: "Admin",
+  warehouse: "Warehouse",
+  finance: "Finance",
+  driver: "Driver",
+};
+
+export function Header({ title, user }: HeaderProps) {
+  const primaryRole = user.roles[0] ?? "user";
+  const roleLabel = ROLE_LABEL[primaryRole] ?? primaryRole;
+
+  return (
+    <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
+      {title && (
+        <h1 className="text-sm font-semibold text-gray-900">{title}</h1>
+      )}
+      {!title && <div />}
+
+      <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
+            {user.email.charAt(0).toUpperCase()}
+          </div>
+          <div className="hidden sm:block">
+            <p className="text-xs font-medium text-gray-900 leading-tight">
+              {user.email}
+            </p>
+            <p className="text-xs text-gray-500">{roleLabel}</p>
+          </div>
+        </div>
+
+        <form action={signOutAction}>
+          <button
+            type="submit"
+            className="rounded-md px-3 py-1.5 text-xs font-medium text-gray-600
+              border border-gray-200 hover:bg-gray-50 hover:text-gray-900
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1
+              transition-colors"
+          >
+            Keluar
+          </button>
+        </form>
+      </div>
+    </header>
+  );
+}

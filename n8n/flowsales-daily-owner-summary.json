@@ -1,0 +1,296 @@
+{
+  "name": "FlowSales — Daily Owner Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowsales-daily-summary",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "44444444-dddd-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "flowsales-daily-summary"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-event",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-owner-phone",
+              "leftValue": "={{ $json.trigger_data.owner_phone }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "44444444-dddd-4000-8000-000000000002",
+      "name": "Validasi Field Wajib",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "assign-message",
+              "name": "whatsapp_message",
+              "value": "={{ \"📊 *LAPORAN HARIAN FLOWSALES AI*\\n\" + new Date().toLocaleDateString('id-ID', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' }) + \"\\n━━━━━━━━━━━━━━━━━━━━\\n\\n💰 *PENJUALAN HARI INI*\\nTotal Order: \" + ($json.trigger_data.total_orders_today ?? 0) + \" order\\nNilai Total: Rp \" + Number($json.trigger_data.total_revenue_today ?? 0).toLocaleString('id-ID') + \"\\n\\n👥 *STATUS PELANGGAN*\\nPelanggan Aktif: \" + ($json.trigger_data.active_customers ?? \"-\") + \"\\nPelanggan Dormant: \" + ($json.trigger_data.dormant_customers ?? \"-\") + \"\\nChurn Risk: \" + ($json.trigger_data.churn_risk_count ?? \"-\") + \" pelanggan\\n\\n🤖 *AI INSIGHT*\\n\" + ($json.trigger_data.ai_summary ?? \"Tidak ada AI summary tersedia. Pastikan AI Insights aktif di FlowSales.\") + \"\\n\\n━━━━━━━━━━━━━━━━━━━━\\n_Laporan otomatis FlowSales AI • \" + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + \" WIB_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.owner_phone }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "assign-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "44444444-dddd-4000-8000-000000000003",
+      "name": "Format Pesan Ringkasan",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [720, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp-provider.example.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.whatsapp_message }}\"\n  }\n}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "44444444-dddd-4000-8000-000000000004",
+      "name": "Kirim Ringkasan ke Owner",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 200],
+      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp-api-cred",
+          "name": "WhatsApp API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Format Pesan Ringkasan').item.json.rule_id,\n  rule_name: $('Format Pesan Ringkasan').item.json.rule_name,\n  status: 'success',\n  report_type: 'daily_summary',\n  sent_to: $('Format Pesan Ringkasan').item.json.whatsapp_to,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+      },
+      "id": "44444444-dddd-4000-8000-000000000005",
+      "name": "Hitung HMAC Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWSALES_APP_URL }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-flowsales-signature",
+              "value": "={{ $json.callbackSignature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "44444444-dddd-4000-8000-000000000006",
+      "name": "Callback ke FlowSales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1440, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"message\": \"Ringkasan harian berhasil dikirim ke owner\", \"event\": \"daily_summary\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "44444444-dddd-4000-8000-000000000007",
+      "name": "Response OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1680, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data.owner_phone\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "44444444-dddd-4000-8000-000000000008",
+      "name": "Response Error Validasi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 460]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validasi Field Wajib",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Field Wajib": {
+      "main": [
+        [
+          {
+            "node": "Format Pesan Ringkasan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error Validasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Pesan Ringkasan": {
+      "main": [
+        [
+          {
+            "node": "Kirim Ringkasan ke Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Ringkasan ke Owner": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hitung HMAC Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback ke FlowSales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback ke FlowSales": {
+      "main": [
+        [
+          {
+            "node": "Response OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "flowsales" },
+    { "name": "daily-summary" },
+    { "name": "whatsapp" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-27T00:00:00.000Z",
+  "versionId": "flowsales-daily-summary-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "flowsales-template"
+  },
+  "id": "flowsales-daily-summary-004",
+  "active": false
+}

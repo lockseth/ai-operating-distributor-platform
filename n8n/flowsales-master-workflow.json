@@ -1,0 +1,603 @@
+{
+  "name": "FlowSales — Master Workflow (All Events)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowsales-master",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "55555555-eeee-4000-8000-000000000001",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 400],
+      "webhookId": "flowsales-master"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-event",
+              "leftValue": "={{ $json.event }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            },
+            {
+              "id": "cond-trigger-data",
+              "leftValue": "={{ $json.trigger_data }}",
+              "rightValue": "",
+              "operator": {
+                "type": "object",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000002",
+      "name": "Validasi Payload Dasar",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [480, 400]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "case-repeat",
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "repeat_order_due",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "repeat_order_due"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "case-churn",
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "churn_risk",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "churn_risk"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "case-large",
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "large_order",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "large_order"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "id": "case-daily",
+                    "leftValue": "={{ $json.event }}",
+                    "rightValue": "daily_summary",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "daily_summary"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000003",
+      "name": "Router Event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "rr-msg",
+              "name": "whatsapp_message",
+              "value": "={{ \"Halo \" + ($json.trigger_data.sales_name ?? \"Sales\") + \",\\n\\nPelanggan *\" + ($json.trigger_data.customer_name ?? \"-\") + \"* diprediksi akan order dalam *\" + ($json.trigger_data.days_ahead ?? \"?\") + \" hari*.\\n\\n📞 Kontak: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nSegera lakukan follow-up!\\n\\n_FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "rr-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.sales_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "rr-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "rr-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-eeee-4000-8000-000000000004",
+      "name": "Format: Repeat Order",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [960, 120]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cr-msg",
+              "name": "whatsapp_message",
+              "value": "={{ \"⚠️ *CHURN RISK*\\n\\nPelanggan *\" + ($json.trigger_data.customer_name ?? \"-\") + \"* tidak order selama *\" + ($json.trigger_data.days_inactive ?? \"?\") + \" hari*.\\n\\nSales: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n📞 \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nSegera eskalasi!\\n\\n_FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "cr-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? $json.trigger_data.sales_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "cr-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "cr-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-eeee-4000-8000-000000000005",
+      "name": "Format: Churn Risk",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [960, 280]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "lo-msg",
+              "name": "whatsapp_message",
+              "value": "={{ \"🎉 *ORDER BESAR MASUK!*\\n\\nPelanggan: *\" + ($json.trigger_data.customer_name ?? \"-\") + \"*\\nNilai: *Rp \" + Number($json.trigger_data.order_amount ?? 0).toLocaleString('id-ID') + \"*\\nSales: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n\\nPastikan stok & pengiriman siap!\\n\\n_FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "lo-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "lo-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "lo-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-eeee-4000-8000-000000000006",
+      "name": "Format: Large Order",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [960, 440]
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ds-msg",
+              "name": "whatsapp_message",
+              "value": "={{ \"📊 *LAPORAN HARIAN*\\n\" + new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + \"\\n\\n💰 Order hari ini: \" + ($json.trigger_data.total_orders_today ?? 0) + \"\\nNilai: Rp \" + Number($json.trigger_data.total_revenue_today ?? 0).toLocaleString('id-ID') + \"\\n👥 Dormant: \" + ($json.trigger_data.dormant_customers ?? \"-\") + \" pelanggan\\n⚠️ Churn risk: \" + ($json.trigger_data.churn_risk_count ?? \"-\") + \" pelanggan\\n\\n\" + ($json.trigger_data.ai_summary ?? \"\") + \"\\n\\n_FlowSales AI_\" }}",
+              "type": "string"
+            },
+            {
+              "id": "ds-to",
+              "name": "whatsapp_to",
+              "value": "={{ $json.trigger_data.owner_phone ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "ds-rule",
+              "name": "rule_name",
+              "value": "={{ $json.rule_name }}",
+              "type": "string"
+            },
+            {
+              "id": "ds-rule-id",
+              "name": "rule_id",
+              "value": "={{ $json.rule_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "55555555-eeee-4000-8000-000000000007",
+      "name": "Format: Daily Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [960, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge semua branch ke satu item untuk dikirim ke WhatsApp\nconst item = $input.first();\nreturn [{ json: item.json }];\n"
+      },
+      "id": "55555555-eeee-4000-8000-000000000008",
+      "name": "Gabung Branch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.whatsapp-provider.example.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.whatsapp_message }}\"\n  }\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000009",
+      "name": "Kirim WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1440, 360],
+      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda. Tambahkan credential.",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "whatsapp-api-cred",
+          "name": "WhatsApp API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Gabung Branch').item.json.rule_id,\n  rule_name: $('Gabung Branch').item.json.rule_name,\n  status: 'success',\n  sent_to: $('Gabung Branch').item.json.whatsapp_to,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+      },
+      "id": "55555555-eeee-4000-8000-000000000010",
+      "name": "Hitung HMAC Callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1680, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWSALES_APP_URL }}/api/webhooks/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-flowsales-signature",
+              "value": "={{ $json.callbackSignature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.callbackBody }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000011",
+      "name": "Callback ke FlowSales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1920, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"message\": \"Event diproses oleh master workflow\", \"event\": \"{{ $('Webhook Trigger').item.json.event }}\" }",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000012",
+      "name": "Response OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2160, 360]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data\" }",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000013",
+      "name": "Response Error Validasi",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [720, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": false, \"error\": \"Event tidak dikenal. Event yang didukung: repeat_order_due, churn_risk, large_order, daily_summary\", \"received_event\": \"{{ $json.event }}\" }",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000014",
+      "name": "Response Event Tidak Dikenal",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 760]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validasi Payload Dasar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validasi Payload Dasar": {
+      "main": [
+        [
+          {
+            "node": "Router Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Error Validasi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router Event": {
+      "main": [
+        [
+          {
+            "node": "Format: Repeat Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format: Churn Risk",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format: Large Order",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format: Daily Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response Event Tidak Dikenal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format: Repeat Order": {
+      "main": [
+        [
+          {
+            "node": "Gabung Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format: Churn Risk": {
+      "main": [
+        [
+          {
+            "node": "Gabung Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format: Large Order": {
+      "main": [
+        [
+          {
+            "node": "Gabung Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format: Daily Summary": {
+      "main": [
+        [
+          {
+            "node": "Gabung Branch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gabung Branch": {
+      "main": [
+        [
+          {
+            "node": "Kirim WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hitung HMAC Callback": {
+      "main": [
+        [
+          {
+            "node": "Callback ke FlowSales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Callback ke FlowSales": {
+      "main": [
+        [
+          {
+            "node": "Response OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "flowsales" },
+    { "name": "master" },
+    { "name": "whatsapp" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-06-27T00:00:00.000Z",
+  "versionId": "flowsales-master-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "flowsales-template"
+  },
+  "id": "flowsales-master-005",
+  "active": false
+}
