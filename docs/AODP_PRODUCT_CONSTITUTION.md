@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | Dokumen | AODP Product Constitution |
-| Versi | 1.0 |
+| Versi | 1.1 |
 | Status | **Design Partner Edition** — bukan AODP Core |
-| Tanggal | 2026-07-07 |
+| Tanggal | 2026-07-07 (v1.1: resolusi Open Discussion OD1, OD2, OD3, OD5 oleh Founder) |
 | Pemilik | Founder (Hendro) |
 | Peran penyusun | ChatGPT (CTO + Product Manager) · Claude Code (Senior Programmer) |
 | Sifat | Konstitusi produk — bukan PRD, bukan Technical Specification |
@@ -25,7 +25,8 @@ kecerdasan yang menjaga bisnis distributor tetap **aman**: sales terkontrol, piu
 terpantau, diskon tidak bocor, order WhatsApp tidak hilang, dan keputusan harian bisa
 diambil dalam 30 detik.
 
-Produk ini lahir dari kasus nyata design partner: kerugian **Rp550 juta** akibat
+Produk ini lahir dari kasus nyata design partner resmi AODP — **Waluyo Distributor**:
+kerugian **Rp550 juta** akibat
 mismatch antara PO, pengiriman, dan barang yang benar-benar diterima customer —
 kerugian yang tidak terdeteksi karena tidak ada early warning system.
 
@@ -247,15 +248,22 @@ Keputusan arsitektur yang terkunci:
 
 ## 12. Module Definition
 
+### Modul Operasional
+
 | Modul | Peran | Status |
 |---|---|---|
 | **WhatsApp AI** | Front office — menangkap order, intent, komplain, missed call, repeat order reminder dari WhatsApp | MVP |
 | **FlowSales AI** | Kontrol performa sales — target vs pencapaian OA & omzet, gap, ranking, ringkasan AI | MVP · ✅ terbangun |
-| **Customer Health Intelligence** | Kesehatan customer lintas sinyal — pola order, perilaku pembayaran, perubahan PIC | ⚠️ Open Discussion (§Appendix B) |
 | **Collection Intelligence** | Pengendalian piutang — aging AR, due date, payment behavior, promise to pay, prioritas penagihan | MVP · berikutnya |
 | **Business Guard AI** | **Hero module** — early warning fraud: anomali diskon, perubahan perilaku, quantity mismatch, skor risiko transaksi & sales | MVP |
 | **Warehouse Intelligence** | Kontrol fisik barang — picking, loading, delivery confirmation, deteksi kehilangan (menjawab kasus Rp550 juta) | Roadmap / Enterprise |
-| **Executive Intelligence** | Muara semua modul — health score, executive report, ringkasan lintas modul ke owner | Lintas modul (§13) |
+
+### Lapisan Intelligence (bukan modul operasional) 🔒
+
+| Lapisan | Peran |
+|---|---|
+| **Customer Health Intelligence** | Domain/layer insight kesehatan customer lintas sinyal — pola order, perilaku pembayaran, perubahan PIC. **Bukan modul operasional terpisah**; output-nya dikonsumsi oleh Collection, Business Guard, FlowSales, dan Executive Intelligence. |
+| **Executive Intelligence** | **Lapisan muara / command center** — semua modul mengirim insight ke sana: health score, executive report, ringkasan lintas modul ke owner (§13). |
 
 Setiap modul wajib mendefinisikan: use case bisnis, AI jobs dengan output terstruktur,
 kontribusi ke Executive Layer, dan batas RBAC-nya. Spesifikasi rinci per modul hidup
@@ -265,8 +273,9 @@ di `docs/modules/`.
 
 ## 13. Executive Intelligence Philosophy
 
-Executive Intelligence bukan sekadar "modul ketujuh" — ia adalah **muara** yang
-memaksa semua modul berbicara dalam satu bahasa: bahasa keputusan owner.
+Executive Intelligence adalah **lapisan muara / command center** (🔒 terkunci — bukan
+modul biasa) yang memaksa semua modul berbicara dalam satu bahasa: bahasa keputusan
+owner.
 
 - **Satu skor, satu cerita.** Business Health Score merangkum kondisi lintas modul;
   narasi eksekutif menjelaskan *mengapa* dan *apa yang harus dilakukan*.
@@ -355,6 +364,8 @@ customer kredit aktif, volume transaksi, volume operasi gudang.
 ## 17. Design Partner Philosophy
 
 - AODP dibangun **bersama distributor nyata**, bukan dari asumsi ruang rapat.
+- **Design partner resmi AODP: Waluyo Distributor** 🔒. PT Viona Multi Global adalah
+  project/lesson sebelumnya (FlowSalesAI beta) — bukan design partner AODP.
 - Design partner memberi: kasus nyata (kerugian Rp550 juta), proses bisnis nyata,
   data nyata, dan validasi harian. AODP memberi: proteksi bisnis dan pengaruh
   langsung terhadap arah produk.
@@ -435,6 +446,10 @@ dan Experience → Validation → Standardization → AODP Core.
 | L8 | Warehouse Intelligence placeholder di MVP | Claude Code Instructions |
 | L9 | Alert Business Guard tidak bisa dihapus role sales | Tech Architecture |
 | L10 | Role split: ChatGPT = CTO/PM, Claude Code = Senior Programmer; tidak mengubah arah produk tanpa approval Founder | Claude Code Instructions |
+| L11 | Design partner resmi AODP: **Waluyo Distributor**; PT Viona = project/lesson sebelumnya, bukan design partner AODP | Founder, v1.1 (eks-OD1) |
+| L12 | **Customer Health Intelligence** = domain/layer insight, bukan modul operasional terpisah; output dikonsumsi Collection, Business Guard, FlowSales, Executive Intelligence | Founder, v1.1 (eks-OD2) |
+| L13 | **Executive Intelligence** = lapisan muara / command center, bukan modul biasa; semua modul mengirim insight ke sana | Founder, v1.1 (eks-OD3) |
+| L14 | **Pattern Learning Engine**: filosofi terkunci (§9); spesifikasi teknis disusun setelah data nyata Waluyo Distributor berjalan | Founder, v1.1 (eks-OD5) |
 
 ## Appendix B — Open Discussions
 
@@ -443,11 +458,10 @@ tercantum di dokumen ini:
 
 | # | Topik | Konteks |
 |---|---|---|
-| OD1 | **Identitas resmi design partner dalam dokumen.** Brief konstitusi menyebut "Waluyo Distributor"; dokumen discovery sebelumnya hanya menyebut "distributor dengan kasus Rp550 juta" tanpa nama; design partner FlowSalesAI beta adalah PT Viona Multi Global (entitas berbeda). Perlu penegasan Founder: siapa design partner resmi AODP dan bagaimana penamaannya di dokumen. |
-| OD2 | **Customer Health Intelligence sebagai modul terpisah.** Modul ini tidak ada dalam lima modul awal (PRD v1.0). Sinyal-sinyalnya saat ini tersebar di Collection Intelligence (payment behavior), Business Guard (behavior change), dan FlowSales/WhatsApp (repeat order risk). Perlu keputusan: modul berdiri sendiri, atau tetap terdistribusi. Bila berdiri sendiri, perlu batas scope agar tidak tumpang tindih. |
-| OD3 | **Executive Intelligence: modul atau lapisan.** PRD awal menempatkannya sebagai fitur lintas modul (dashboard + report); struktur konstitusi ini mencantumkannya sebagai modul. Dokumen ini sementara memperlakukannya sebagai **lapisan muara** (§13) sampai ada keputusan Founder. |
-| OD4 | **Supabase cloud production.** Limit free plan (2 project aktif) menahan pembuatan project cloud AODP; pengembangan berjalan di Supabase lokal. Opsi: upgrade plan, pause project lama, atau org baru. |
-| OD5 | **Spesifikasi teknis Pattern Learning Engine.** Filosofinya terkunci (§9); kapan dan bagaimana transisi dari rule-based ke pattern-based per modul belum di-spec dan menunggu data penggunaan nyata. |
+| OD4 | **Supabase cloud production.** Limit free plan (2 project aktif) menahan pembuatan project cloud AODP. Keputusan Founder (v1.1): pending — pengembangan lanjut di Supabase lokal sampai project cloud AODP disiapkan Founder. |
+
+*Riwayat: OD1, OD2, OD3, dan OD5 diputuskan Founder pada v1.1 dan dipindahkan ke
+Locked Decisions Register sebagai L11–L14.*
 
 ---
 

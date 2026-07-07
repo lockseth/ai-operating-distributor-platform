@@ -73,7 +73,7 @@ pnpm dev          # development server
 ## Governing Document
 
 Referensi tertinggi seluruh pengembangan:
-[docs/AODP_PRODUCT_CONSTITUTION.md](docs/AODP_PRODUCT_CONSTITUTION.md) (v1.0 — Design Partner Edition).
+[docs/AODP_PRODUCT_CONSTITUTION.md](docs/AODP_PRODUCT_CONSTITUTION.md) (v1.1 — Design Partner Edition).
 
 ## Development Workflow
 
