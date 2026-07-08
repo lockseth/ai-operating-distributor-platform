@@ -1,5 +1,7 @@
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 
 export interface AuthUser {
   id: string;
@@ -14,9 +16,47 @@ export interface AuthUser {
   };
   roles: string[];
   permissions: string[];
+  /** true hanya untuk sesi demo bypass (development-only, lihat lib/demo/config.ts) */
+  isDemo: boolean;
 }
 
+// Permission super-set (mengikuti seed role "owner" + varian "*.edit" yang
+// dipakai sebagian halaman) supaya sesi demo bisa melihat seluruh UI owner
+// tanpa bergantung pada data role_permissions di database.
+const DEMO_AUTH_USER: AuthUser = {
+  id: "00000000-0000-0000-0000-000000000000",
+  email: "demo-owner@aodp.local",
+  company_id: "00000000-0000-0000-0000-000000000000",
+  company: {
+    id: "00000000-0000-0000-0000-000000000000",
+    name: "AODP Demo Distributor",
+    slug: "aodp-demo",
+    logo_url: null,
+    subscription_plan: "owner_protection",
+  },
+  roles: ["owner"],
+  permissions: [
+    "companies.view", "companies.manage",
+    "users.view", "users.create", "users.update", "users.delete", "users.manage",
+    "products.view", "products.create", "products.update", "products.edit", "products.delete", "products.manage",
+    "customers.view", "customers.create", "customers.update", "customers.edit", "customers.delete", "customers.manage",
+    "orders.view", "orders.create", "orders.update", "orders.edit", "orders.delete", "orders.manage",
+    "reports.view", "reports.create", "reports.update", "reports.export", "reports.manage",
+    "settings.view", "settings.manage",
+    "ai.view", "ai.manage",
+    "automation.view", "automation.manage",
+  ],
+  isDemo: true,
+};
+
 export async function getAuthUser(): Promise<AuthUser> {
+  if (isDemoModeAllowed()) {
+    const cookieStore = await cookies();
+    if (cookieStore.get(DEMO_MODE_COOKIE)?.value === "1") {
+      return DEMO_AUTH_USER;
+    }
+  }
+
   const supabase = await createClient();
 
   const {
@@ -114,5 +154,6 @@ export async function getAuthUser(): Promise<AuthUser> {
     company,
     roles: roleNames,
     permissions: permissionNames,
+    isDemo: false,
   };
 }

@@ -1,7 +1,27 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
+import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 
 export async function updateSession(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  const isAuthRoute =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password") ||
+    pathname.startsWith("/callback");
+
+  // Demo mode: dev-only bypass — jangan sentuh Supabase sama sekali di jalur
+  // ini, supaya demo tetap jalan walau Supabase/Docker sedang tidak aktif.
+  if (isDemoModeAllowed() && request.cookies.get(DEMO_MODE_COOKIE)?.value === "1") {
+    if (isAuthRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
+      return NextResponse.redirect(url);
+    }
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -31,13 +51,6 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
-
-  const isAuthRoute =
-    pathname.startsWith("/login") ||
-    pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password") ||
-    pathname.startsWith("/callback");
   const isPublicRoute = isAuthRoute || pathname === "/";
 
   if (!user && !isPublicRoute) {

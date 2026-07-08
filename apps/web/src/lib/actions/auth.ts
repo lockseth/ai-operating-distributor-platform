@@ -1,10 +1,21 @@
 "use server";
 
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { logAuditEvent } from "@/lib/actions/audit";
+import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 
 export async function signOutAction(): Promise<void> {
+  // Sesi demo tidak pernah menyentuh Supabase — keluar cukup hapus cookie-nya.
+  if (isDemoModeAllowed()) {
+    const cookieStore = await cookies();
+    if (cookieStore.get(DEMO_MODE_COOKIE)?.value === "1") {
+      cookieStore.delete(DEMO_MODE_COOKIE);
+      redirect("/login");
+    }
+  }
+
   const supabase = await createClient();
 
   // Capture user before signing out for audit log

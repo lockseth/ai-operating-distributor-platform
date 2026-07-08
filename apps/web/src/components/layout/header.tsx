@@ -29,6 +29,15 @@ export function Header({ title, user }: HeaderProps) {
       {!title && <div />}
 
       <div className="flex items-center gap-4">
+        {user.isDemo && (
+          <span
+            title="Sesi ini adalah bypass login untuk demo lokal — tidak melalui Supabase Auth"
+            className="inline-flex items-center gap-1 rounded-full border border-amber-200
+              bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700"
+          >
+            🧪 Demo Mode
+          </span>
+        )}
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-full bg-blue-100 text-xs font-semibold text-blue-700">
             {user.email.charAt(0).toUpperCase()}

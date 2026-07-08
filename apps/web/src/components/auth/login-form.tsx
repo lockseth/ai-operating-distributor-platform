@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { enterDemoModeAction } from "@/lib/actions/demo";
 
 export function LoginForm() {
   const router = useRouter();
@@ -166,6 +167,20 @@ export function LoginForm() {
         </svg>
         Masuk dengan Google
       </button>
+
+      {process.env.NODE_ENV === "development" && (
+        <form action={enterDemoModeAction} className="mt-3">
+          <button
+            type="submit"
+            className="w-full rounded-lg border border-dashed border-amber-300 bg-amber-50
+              px-4 py-2.5 text-sm font-medium text-amber-700 hover:bg-amber-100
+              focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2
+              flex items-center justify-center gap-2"
+          >
+            🧪 Masuk Demo (Development Only)
+          </button>
+        </form>
+      )}
     </div>
   );
 }
