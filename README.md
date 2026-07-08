@@ -43,7 +43,12 @@ AODP Monorepo (Turborepo + pnpm workspaces)
 │   └── ui/             # Komponen UI bersama
 ├── supabase/           # SQL migrations (multi-tenant + RLS)
 ├── n8n/                # Workflow automation (WhatsApp report, alert, reminder)
-└── docs/               # Product Constitution, PRD, Architecture, Module Specs, Sprints
+└── docs/
+    ├── product/         # Constitution, PRD, Pricing Lock, Module Specs, Discovery
+    ├── architecture/    # Tech Architecture, Database Schema
+    ├── development/     # Claude Code Instructions, Sprint Plans
+    ├── sales-kit/       # Executive Sales Kit (komersial, non-teknis)
+    └── assets/          # Aset visual pendukung
 ```
 
 **Stack:** Next.js 16, TypeScript, Tailwind CSS, Supabase (PostgreSQL + RLS + Auth), Anthropic Claude via AI provider layer, n8n (HMAC-signed webhooks).
@@ -73,7 +78,9 @@ pnpm dev          # development server
 ## Governing Document
 
 Referensi tertinggi seluruh pengembangan:
-[docs/AODP_PRODUCT_CONSTITUTION.md](docs/AODP_PRODUCT_CONSTITUTION.md) (v1.1 — Design Partner Edition).
+[docs/product/AODP_PRODUCT_CONSTITUTION.md](docs/product/AODP_PRODUCT_CONSTITUTION.md) (v1.1 — Design Partner Edition).
+
+Materi komersial (bukan governance produk): [docs/sales-kit/00_INDEX.md](docs/sales-kit/00_INDEX.md).
 
 ## Development Workflow
 

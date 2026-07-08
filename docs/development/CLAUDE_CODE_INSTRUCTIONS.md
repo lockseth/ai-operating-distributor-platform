@@ -11,7 +11,7 @@ Do not change product direction without explicit approval.
 
 ## Development Rules
 
-1. Read `/docs/00_PRODUCT_CONSTITUTION.md` first.
+1. Read `/docs/product/AODP_PRODUCT_CONSTITUTION.md` first (v1.1 — konstitusi resmi).
 2. Keep implementation simple and maintainable.
 3. Build modularly but avoid over-engineering.
 4. Use TypeScript strict typing where possible.

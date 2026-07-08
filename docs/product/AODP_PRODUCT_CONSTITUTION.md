@@ -267,7 +267,7 @@ Keputusan arsitektur yang terkunci:
 
 Setiap modul wajib mendefinisikan: use case bisnis, AI jobs dengan output terstruktur,
 kontribusi ke Executive Layer, dan batas RBAC-nya. Spesifikasi rinci per modul hidup
-di `docs/modules/`.
+di `docs/product/modules/`.
 
 ---
 
@@ -465,8 +465,8 @@ Locked Decisions Register sebagai L11–L14.*
 
 ---
 
-*Dokumen ini mengkonsolidasikan: `00_PRODUCT_CONSTITUTION.md`, `01_PRD.md`,
-`02_TECH_ARCHITECTURE.md`, `04_PRICING_STRATEGY_LOCK.md`, `docs/modules/*`,
-`docs/sprints/*`, `docs/claude/CLAUDE_CODE_INSTRUCTIONS.md`, serta keputusan
+*Dokumen ini mengkonsolidasikan: `docs/product/00_PRODUCT_CONSTITUTION.md`, `docs/product/01_PRD.md`,
+`docs/architecture/02_TECH_ARCHITECTURE.md`, `docs/product/04_PRICING_STRATEGY_LOCK.md`, `docs/product/modules/*`,
+`docs/development/sprints/*`, `docs/development/CLAUDE_CODE_INSTRUCTIONS.md`, serta keputusan
 Phase 0–2.5 (2026-07-07). Untuk scope rinci per rilis, lihat PRD; untuk arsitektur
 teknis, lihat Tech Architecture.*

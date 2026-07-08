@@ -17,11 +17,15 @@ Aturan kerja Claude Code sebagai Senior Programmer AODP.
 
 Baca `/docs` sebelum implementasi, urutan prioritas:
 
-1. `docs/00_PRODUCT_CONSTITUTION.md` — filosofi & batasan produk
-2. `docs/01_PRD.md` — scope MVP
-3. `docs/02_TECH_ARCHITECTURE.md` — arsitektur (catatan: schema real menggunakan `companies`, bukan `organizations`)
-4. `docs/modules/*.md` — spec per modul
-5. `docs/sprints/*.md` — rencana sprint
+1. `docs/product/AODP_PRODUCT_CONSTITUTION.md` — **konstitusi resmi v1.1**, rujukan tertinggi (filosofi, arsitektur bisnis, locked decisions)
+2. `docs/product/01_PRD.md` — scope MVP
+3. `docs/architecture/02_TECH_ARCHITECTURE.md` — arsitektur (catatan: schema real menggunakan `companies`, bukan `organizations`)
+4. `docs/product/modules/*.md` — spec per modul
+5. `docs/product/discovery/*.md` — business discovery & kalibrasi (Phase 3A+)
+6. `docs/development/sprints/*.md` — rencana sprint
+
+`docs/sales-kit/*` berisi materi komersial (bukan governance produk) — jangan
+dijadikan sumber keputusan arsitektur/produk.
 
 ## Codebase Origin & Locked Decisions
 
