@@ -28,10 +28,11 @@ menuju Commercial Proposal.
 ## Page-by-Page Content
 
 ### 1. Ringkasan Rekomendasi
-> "Berdasarkan diagnosa, kami merekomendasikan memulai dari **FlowSales AI** dan
-> **WhatsApp AI** — bukan karena termurah, tapi karena ini titik kebocoran
-> terbesar yang teridentifikasi. Business Guard AI menyusul begitu pola data
-> transaksi terbentuk."
+> "Berdasarkan diagnosa, kami merekomendasikan memulai dari **FlowSales AI** (🟢
+> Live) dan **WhatsApp AI** (🟡 Segera Hadir — aktif pada fase implementasi
+> berikutnya) — bukan karena termurah, tapi karena ini titik kebocoran terbesar
+> yang teridentifikasi. Business Guard AI menyusul begitu pola data transaksi
+> terbentuk."
 
 ### 2. Modul Sekarang
 Tabel: Modul | Status Platform (🟢 Live / 🟡 Segera Hadir) | Temuan yang dijawab |
