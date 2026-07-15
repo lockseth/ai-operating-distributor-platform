@@ -3,9 +3,9 @@
 | Field | Value |
 |---|---|
 | Dokumen | AODP Product Constitution |
-| Versi | 1.1 |
+| Versi | 1.2 |
 | Status | **Design Partner Edition** — bukan AODP Core |
-| Tanggal | 2026-07-07 (v1.1: resolusi Open Discussion OD1, OD2, OD3, OD5 oleh Founder) |
+| Tanggal | 2026-07-07 (v1.1: resolusi Open Discussion OD1, OD2, OD3, OD5 oleh Founder) · 2026-07-16 (v1.2: Discovery Waluyo ditetapkan COMPLETE, AODP Waluyo Living Knowledge Pack v1.0 dipublikasikan, vertical slice Sales Order → Delivery Verification → Invoice → Collection → Owner Alert dikunci — lihat L15, L16, Appendix C) |
 | Pemilik | Founder (Hendro) |
 | Peran penyusun | ChatGPT (CTO + Product Manager) · Claude Code (Senior Programmer) |
 | Sifat | Konstitusi produk — bukan PRD, bukan Technical Specification |
@@ -366,9 +366,16 @@ customer kredit aktif, volume transaksi, volume operasi gudang.
 - AODP dibangun **bersama distributor nyata**, bukan dari asumsi ruang rapat.
 - **Design partner resmi AODP: Waluyo Distributor** 🔒. PT Viona Multi Global adalah
   project/lesson sebelumnya (FlowSalesAI beta) — bukan design partner AODP.
+  "Surabraja" bukan design partner AODP dan tidak termasuk scope discovery (L15).
 - Design partner memberi: kasus nyata (kerugian Rp550 juta), proses bisnis nyata,
   data nyata, dan validasi harian. AODP memberi: proteksi bisnis dan pengaruh
   langsung terhadap arah produk.
+- Discovery Waluyo (Customer Health, Collection, Delivery Verification, Business
+  Guard) ditetapkan **COMPLETE** oleh Founder (2026-07-16). Temuan tervalidasi
+  hasil discovery dipublikasikan sebagai **AODP Waluyo Living Knowledge Pack
+  v1.0** (`docs/knowledge/packs/waluyo/AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md`,
+  Pack ID `AODP-WALUYO-CORE-001`) — lihat Appendix C untuk registry Living
+  Knowledge Pack yang berlaku, dan L15/L16 untuk keputusan terkunci turunannya.
 - Rantai kedewasaan produk: **Experience → Validation → Standardization → AODP Core.**
   Fitur yang belum melewati rantai ini berstatus Design Partner Edition.
 - Implementasi di partner dijalankan sebagai *AI Distributor Transformation Program* —
@@ -450,6 +457,8 @@ dan Experience → Validation → Standardization → AODP Core.
 | L12 | **Customer Health Intelligence** = domain/layer insight, bukan modul operasional terpisah; output dikonsumsi Collection, Business Guard, FlowSales, Executive Intelligence | Founder, v1.1 (eks-OD2) |
 | L13 | **Executive Intelligence** = lapisan muara / command center, bukan modul biasa; semua modul mengirim insight ke sana | Founder, v1.1 (eks-OD3) |
 | L14 | **Pattern Learning Engine**: filosofi terkunci (§9); spesifikasi teknis disusun setelah data nyata Waluyo Distributor berjalan | Founder, v1.1 (eks-OD5) |
+| L15 | Discovery Waluyo (Customer Health/Collection/Delivery Verification/Business Guard) **COMPLETE**; hasil tervalidasi dipublikasikan sebagai **AODP Waluyo Living Knowledge Pack v1.0** (Pack ID `AODP-WALUYO-CORE-001`, lihat Appendix C). "Surabraja" **bukan** design partner AODP dan **tidak termasuk** scope discovery — tidak boleh dipakai sebagai sumber discovery kecuali Founder menetapkannya lewat proses discovery terpisah di masa depan. PT Viona Multi Global tetap bukan design partner AODP (menegaskan ulang L11) | Founder, v1.2, 2026-07-16 |
+| L16 | **Vertical slice resmi AODP**: `Sales Order → Delivery Verification → Invoice → Collection → Owner Alert`. Ini urutan implementasi yang tidak boleh dipecah — workflow/modul lain (Business Guard, WhatsApp AI penuh, dst.) tidak dibuka sebagai jalur implementasi terpisah sebelum vertical slice ini selesai end-to-end. Telegram Sales Order Entry (tahap 1) sudah terbangun; Delivery Verification (tahap 2) adalah target implementasi berikutnya — lihat `docs/product/delivery-verification/AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md` | Founder, v1.2, 2026-07-16, sumber: AODP Waluyo Living Knowledge Pack v1.0 §4 |
 
 ## Appendix B — Open Discussions
 
@@ -463,10 +472,28 @@ tercantum di dokumen ini:
 *Riwayat: OD1, OD2, OD3, dan OD5 diputuskan Founder pada v1.1 dan dipindahkan ke
 Locked Decisions Register sebagai L11–L14.*
 
+## Appendix C — Living Knowledge Packs Register
+
+Registry Living Knowledge Pack yang **berlaku** (published, locked) untuk AODP.
+Pack baru (design partner lain, atau versi baru dari pack yang sudah ada)
+ditambahkan sebagai baris baru di sini — bukan menggantikan baris lama secara
+diam-diam, mengikuti siklus governance di §7 pack masing-masing
+(`Observed → Candidate → Reviewed → Published → Superseded/Retired`).
+
+| Pack ID | Versi | Design Partner | Status | Path | Effective Date |
+|---|---|---|---|---|---|
+| `AODP-WALUYO-CORE-001` | 1.0.0 | Waluyo Distributor (L11) | `PUBLISHED — LOCKED` | `docs/knowledge/packs/waluyo/AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` | 2026-07-15 |
+
+Dokumen audit terkait: `docs/audits/AODP_LIVING_KNOWLEDGE_AUDIT_CORRECTED_2026-07-15.md`.
+Mapping temuan pack ini terhadap Business Interview Guide asli (K-01–K-31) ada
+di `docs/product/discovery/PHASE_3A_PRODUCT_REVIEW_CALIBRATION.md` §2.
+
 ---
 
 *Dokumen ini mengkonsolidasikan: `docs/product/00_PRODUCT_CONSTITUTION.md`, `docs/product/01_PRD.md`,
 `docs/architecture/02_TECH_ARCHITECTURE.md`, `docs/product/04_PRICING_STRATEGY_LOCK.md`, `docs/product/modules/*`,
 `docs/development/sprints/*`, `docs/development/CLAUDE_CODE_INSTRUCTIONS.md`, serta keputusan
 Phase 0–2.5 (2026-07-07). Untuk scope rinci per rilis, lihat PRD; untuk arsitektur
-teknis, lihat Tech Architecture.*
+teknis, lihat Tech Architecture. Untuk pengetahuan bisnis design-partner yang
+terkunci, lihat Appendix C (Living Knowledge Packs Register) dan
+`docs/knowledge/packs/`.*

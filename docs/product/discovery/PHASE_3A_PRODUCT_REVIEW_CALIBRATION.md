@@ -5,14 +5,54 @@
 | Dokumen | Business Interview Guide + Calibration Matrix |
 | Fase | Phase 3A Product Review — bersama Design Partner |
 | Narasumber | Pak Waluyo (Waluyo Distributor — L11) |
-| Acuan | Product Constitution v1.1 · Discovery Phase 3A |
+| Acuan | Product Constitution v1.2 · Discovery Phase 3A · AODP Waluyo Living Knowledge Pack v1.0 |
 | Output | Business rules terkalibrasi untuk Phase 3B |
 | Sifat | Business calibration — tanpa coding/schema/UI |
+| **Status Discovery** | **COMPLETE** — ditetapkan Founder, 15 Juli 2026 (lihat §0) |
 
-> Cara pakai: bagian 1 dibawa ke pertemuan (pertanyaan bergaya obrolan sesama
-> pemilik usaha, bukan interogasi analis). Jawaban dicatat langsung ke kolom
-> **Jawaban Pak Waluyo** di Calibration Matrix (bagian 2). Setelah pertemuan,
-> Business Rules Draft (bagian 3) difinalkan dan menjadi kontrak Phase 3B.
+> Cara pakai (riwayat asli): bagian 1 dibawa ke pertemuan (pertanyaan bergaya
+> obrolan sesama pemilik usaha, bukan interogasi analis). Jawaban seharusnya
+> dicatat langsung ke kolom **Jawaban Pak Waluyo** di Calibration Matrix
+> (bagian 2). Setelah pertemuan, Business Rules Draft (bagian 3) difinalkan
+> dan menjadi kontrak Phase 3B.
+>
+> **Update 16 Juli 2026 (lihat §0):** discovery/wawancara dengan Pak Waluyo
+> telah selesai dan ditetapkan Founder sebagai COMPLETE. Transkrip jawaban
+> mentah per pertanyaan **tidak tersimpan di repository ini** — sumber
+> kanonik hasil discovery adalah `AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md`
+> (`docs/knowledge/packs/waluyo/`), yang berisi temuan yang sudah disintesis
+> dan dikunci (WK-01–WK-12 + decision rules DV/BG/CH/DC). §2 di bawah
+> memetakan setiap kode K-xx dari Interview Guide ini ke temuan pack
+> tersebut. Kolom "Jawaban Pak Waluyo" yang lama diganti kolom **Status
+> Kalibrasi & Mapping** — sesuai instruksi eksplisit untuk tidak mengarang
+> jawaban/threshold yang tidak benar-benar tercatat di pack.
+
+---
+
+## 0. Status Kalibrasi — Update 16 Juli 2026
+
+**Sumber:** `AODP_LIVING_KNOWLEDGE_AUDIT_CORRECTED_2026-07-15.md` (`docs/audits/`)
+dan `AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` (`docs/knowledge/packs/waluyo/`).
+
+- **Discovery Waluyo: COMPLETE** — ditetapkan Founder. Audit sebelumnya yang
+  menyimpulkan "wawancara belum terjadi" dari kolom Calibration Matrix yang
+  kosong adalah **documentation synchronization gap**, bukan **missing
+  discovery** — matrix di repo ini memang belum pernah disinkronkan dengan
+  hasil discovery yang sesungguhnya sampai pembaruan ini.
+- **Taksonomi berbeda, bukan pengganti satu sama lain:** K-01–K-31 (Interview
+  Guide ini, fokus Customer Health & Collection) dan WK-01–WK-12 + DV/BG/CH/DC
+  (Knowledge Pack v1.0, mencakup juga Delivery Verification & Business Guard
+  yang tidak ada dalam interview guide asli) memakai cakupan yang tidak
+  identik. §2 memetakan overlap-nya secara eksplisit — bukan mengklaim 1:1.
+- **Provenance tag** (mengikuti Quality Rule audit terkoreksi §9) dipakai di
+  §2: `LOCKED` (temuan eksplisit ada di Knowledge Pack v1.0),
+  `NEEDS_PILOT_CALIBRATION` (dimensi/sinyalnya diakui pack, tapi angka/ambang
+  pasti secara eksplisit didelegasikan ke data pilot — lihat Pack §10),
+  `NOT_OBSERVED` (parameter ini tidak disinggung sama sekali oleh Pack v1.0).
+- **Tidak ada angka yang dikarang.** Bila status `NEEDS_PILOT_CALIBRATION`
+  atau `NOT_OBSERVED`, nilai `Default v1` pada kolom lama **tetap berupa
+  asumsi/proposal Discovery 3A — bukan hasil kalibrasi** — dan tidak boleh
+  diperlakukan sebagai locked.
 
 ---
 
@@ -126,48 +166,69 @@ tujuan kalibrasi — kode `[K-xx]` menunjuk baris di Calibration Matrix.
 
 ---
 
-## 2. Calibration Matrix
+## 2. Calibration Matrix — dipetakan ke Knowledge Pack v1.0
 
-Nilai default = usulan v1 dari Discovery 3A. Semua **[DEFAULT]** berlaku sampai
-dikoreksi jawaban Pak Waluyo.
+Kolom **Default v1** = proposal asli Discovery 3A (sebelum discovery selesai) —
+**dipertahankan sebagai referensi historis, bukan hasil kalibrasi**. Kolom
+**Status & Mapping** adalah pemetaan jujur terhadap
+`AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md`: `LOCKED` berarti Pack v1.0 secara
+eksplisit menjawab parameter ini (dikutip ID temuan/rule-nya); `NEEDS_PILOT_CALIBRATION`
+berarti dimensi/sinyalnya diakui pack tapi angka pastinya didelegasikan ke data
+pilot (lihat Pack §10); `NOT_OBSERVED` berarti Pack v1.0 tidak menyinggung
+parameter ini sama sekali.
 
-| Kode | Parameter | Default v1 | Sumber pertanyaan | Jawaban Pak Waluyo |
+| Kode | Parameter | Default v1 (historis) | Status & Mapping | Catatan |
 |---|---|---|---|---|
-| K-01 | Sinyal perubahan paling awal (urutan kepercayaan) | order melambat → bayar melambat → PIC ganti | D1 #1–2 | _____ |
-| K-02 | Ambang "order melambat" | >1,5× median interval order customer itu | D1 #6 | _____ |
-| K-03 | Perlakuan customer musiman | belum ada — dicatat manual | D1 #7 | _____ |
-| K-04 | Definisi Aman | order sesuai ritme & bayar ≤ tempo | D2 #8 | _____ |
-| K-05 | Definisi Perhatian ("batuk") | ≥1 sinyal deviasi bermakna | D2 #9 | _____ |
-| K-06 | Definisi Risiko Tinggi | sinyal ganda / janji dilanggar / over-limit | D2 #10 | _____ |
-| K-07 | Bobot sinyal PIC berganti | sinyal Perhatian (bukan otomatis Risiko) | D1 #3, D4 #23 | _____ |
-| K-08 | Bobot sinyal nomor WA baru | sinyal Perhatian | D1 #4 | _____ |
-| K-09 | Bobot perubahan komposisi produk | belum dihitung v1 (kandidat) | D1 #5 | _____ |
-| K-10 | Indikator paling dipercaya (bobot tertinggi skor) | perilaku bayar | D2 #11 | _____ |
-| K-11 | Distribusi label yang masuk akal | — (sanity check) | D2 #12 | _____ |
-| K-12 | Tempo standar & variasinya | 30 hari, seragam | D3 #13 | _____ |
-| K-13 | Mulai menagih setelah jatuh tempo | H+3 | D3 #14 | _____ |
-| K-14 | Definisi "macet" | >90 hari atau 3× janji bolos | D3 #15 | _____ |
-| K-15 | Urutan prioritas penagihan | nilai × umur × health × janji bolos | D3 #16 | _____ |
-| K-16 | Toleransi janji bolos sebelum eskalasi | 1× | D3 #17 | _____ |
-| K-17 | Aturan tahan pengiriman | rekomendasi saat Risiko Tinggi, owner memutuskan | D3 #18 | _____ |
-| K-18 | Alokasi pembayaran parsial | nota tertua dulu | D3 #19 | _____ |
-| K-19 | Praktik tukar faktur/TT | tidak dimodelkan v1 | D3 #20 | _____ |
-| K-20 | Batas otomasi reminder WA (OD-3A-4) | H-3 & H0 otomatis, sisanya manusia | D3 #21 | _____ |
-| K-21 | Pemesan vs pembayar | diasumsikan bisa beda orang | D4 #22 | _____ |
-| K-22 | Perlakuan customer "kenal lama" | tidak ada pengecualian di skor; pengecualian di aksi | D4 #24 | _____ |
-| K-23 | Pola fraud relasi yang pernah terjadi | — (input Business Guard) | D4 #25 | _____ |
-| K-24 | Kewajiban sales melapor perubahan customer | wajib via laporan harian | D5 #26 | _____ |
-| K-25 | Pelaksana penagihan (OD-3A-1) | — (belum ada default) | D5 #27 | _____ |
-| K-26 | Sinyal awal kecurigaan terhadap sales | — (input Business Guard) | D5 #28 | _____ |
-| K-27 | Insentif kejujuran sales atas customer bermasalah | — (kandidat kebijakan) | D5 #29 | _____ |
-| K-28 | Isi 3 baris teratas briefing pagi | omzet vs target · piutang berbahaya · janji bayar hari ini | D6 #30, #33 | _____ |
-| K-29 | Batas eskalasi ke owner | Risiko Tinggi & janji bolos ≥ toleransi | D6 #31 | _____ |
-| K-30 | Kanal & jam laporan eksekutif | WA jam 08:00 + dashboard | D6 #32 | _____ |
-| K-31 | Anti-noise: yang tidak boleh dikirim | maksimal 3 item/hari, tanpa duplikat | D6 #34 | _____ |
+| K-01 | Sinyal perubahan paling awal (urutan kepercayaan) | order melambat → bayar melambat → PIC ganti | `NEEDS_PILOT_CALIBRATION` — terkait WK-02, WK-04, WK-05 | Ketiga sinyal individual dikonfirmasi ada di Pack; urutan/prioritas kepercayaan antar-sinyal tidak dinyatakan |
+| K-02 | Ambang "order melambat" | >1,5× median interval order customer itu | `NEEDS_PILOT_CALIBRATION` — terkait WK-02, CH-01 | CH-01: "Ambang persentase dan periode observasi harus dikalibrasi per tenant" — eksplisit belum dikunci |
+| K-03 | Perlakuan customer musiman | belum ada — dicatat manual | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-04 | Definisi Aman | order sesuai ritme & bayar ≤ tempo | `NEEDS_PILOT_CALIBRATION` — terkait §6 (4 dimensi Customer Health) | Pack §6: "Belum ada bobot atau threshold universal yang dikunci" untuk kombinasi label |
+| K-05 | Definisi Perhatian ("batuk") | ≥1 sinyal deviasi bermakna | `NEEDS_PILOT_CALIBRATION` — terkait §6 | Sama seperti K-04 |
+| K-06 | Definisi Risiko Tinggi | sinyal ganda / janji dilanggar / over-limit | `NEEDS_PILOT_CALIBRATION` — terkait §6 | Sama seperti K-04 |
+| K-07 | Bobot sinyal PIC berganti | sinyal Perhatian (bukan otomatis Risiko) | `LOCKED` (kualitatif) — WK-04, DV-05, CH-02; bobot numerik `NEEDS_PILOT_CALIBRATION` | DV-05: "tidak otomatis memblokir transaksi; dapat menaikkan kebutuhan verifikasi atau memicu alert bila digabung dengan sinyal lain" — arah default lama terkonfirmasi kualitatif, bobot skor pasti belum ada |
+| K-08 | Bobot sinyal nomor WA baru | sinyal Perhatian | `LOCKED` (kualitatif) — WK-04; bobot numerik `NEEDS_PILOT_CALIBRATION` | WK-04 eksplisit menyebut "perubahan nomor WhatsApp" sebagai sinyal |
+| K-09 | Bobot perubahan komposisi produk | belum dihitung v1 (kandidat CI-1) | `LOCKED` (kualitatif, upgrade dari kandidat) — §6 Order Health; bobot numerik `NEEDS_PILOT_CALIBRATION` | Pack §6 kini eksplisit memasukkan "perubahan mix produk" ke dimensi Order Health — CI-1 (§8 lama) naik status dari kandidat menjadi sinyal locked |
+| K-10 | Indikator paling dipercaya (bobot tertinggi skor) | perilaku bayar | `NEEDS_PILOT_CALIBRATION` — terkait §6 | 4 dimensi (Order/Payment/Relationship/Exposure) disebut setara tanpa ranking bobot |
+| K-11 | Distribusi label yang masuk akal | — (sanity check) | `NOT_OBSERVED` | Tidak ada data distribusi di Pack v1.0 |
+| K-12 | Tempo standar & variasinya | 30 hari, seragam | `LOCKED` — WK-03 | **Koreksi nilai default:** WK-03 = "tempo pembayaran ... sekitar dua minggu" (~14 hari), eksplisit sebagai baseline tenant Waluyo — "bukan konstanta universal platform". Menggantikan default lama "30 hari, seragam" |
+| K-13 | Mulai menagih setelah jatuh tempo | H+3 | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-14 | Definisi "macet" | >90 hari atau 3× janji bolos | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-15 | Urutan prioritas penagihan | nilai × umur × health × janji bolos | `NEEDS_PILOT_CALIBRATION` — terkait §4.4 | §4.4 menyebut faktor Collection (invoice, jatuh tempo, pembayaran terverifikasi, janji bayar, keterlambatan) secara umum, tanpa formula/urutan pasti |
+| K-16 | Toleransi janji bolos sebelum eskalasi | 1× | `NEEDS_PILOT_CALIBRATION` — Pack §10 | §10 eksplisit mendaftar "toleransi keterlambatan dan payment mismatch" sebagai item v1.1 |
+| K-17 | Aturan tahan pengiriman | rekomendasi saat Risiko Tinggi, owner memutuskan | `NOT_OBSERVED` | Pack membahas rekonsiliasi delivery (DV-*), bukan kebijakan menahan pengiriman baru karena piutang lama — topik berbeda, tidak disinggung |
+| K-18 | Alokasi pembayaran parsial | nota tertua dulu | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-19 | Praktik tukar faktur/TT | tidak dimodelkan v1 | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-20 | Batas otomasi reminder WA (OD-3A-4) | H-3 & H0 otomatis, sisanya manusia | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 — OD-3A-4 tetap terbuka (lihat §8) |
+| K-21 | Pemesan vs pembayar | diasumsikan bisa beda orang | `NOT_OBSERVED` | Tidak dinyatakan eksplisit di Pack v1.0 |
+| K-22 | Perlakuan customer "kenal lama" | tidak ada pengecualian di skor; pengecualian di aksi | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+| K-23 | Pola fraud relasi yang pernah terjadi | — (input Business Guard) | `LOCKED` — WK-05, BG-01 | WK-05 (titip uang sebagian) + BG-01 (money handoff anomaly, status `unverified` sampai direkonsiliasi, "tidak boleh menyimpulkan fraud hanya dari satu sinyal") |
+| K-24 | Kewajiban sales melapor perubahan customer | wajib via laporan harian | `NOT_OBSERVED` | Tidak dinyatakan sebagai kewajiban eksplisit di Pack v1.0 |
+| K-25 | Pelaksana penagihan (OD-3A-1) | — (belum ada default) | `NOT_OBSERVED` | Tidak dijawab — OD-3A-1 tetap terbuka (lihat §8) |
+| K-26 | Sinyal awal kecurigaan terhadap sales | — (input Business Guard) | `NEEDS_PILOT_CALIBRATION` — terkait WK-10, BG-03, DC-01 | Sebagian sinyal asli (route deviation, diskon melebar) kini tercakup Pack; sinyal lain yang disebut asli (setoran telat, nota aneh) tidak disinggung |
+| K-27 | Insentif kejujuran sales atas customer bermasalah | — (kandidat kebijakan) | `NOT_OBSERVED` | Kebijakan insentif, bukan sinyal data — tidak disinggung Pack v1.0 |
+| K-28 | Isi 3 baris teratas briefing pagi | omzet vs target · piutang berbahaya · janji bayar hari ini | `NEEDS_PILOT_CALIBRATION` — terkait WK-11 | WK-11: prinsip briefing (risiko + alasan + bukti + rekomendasi) locked; urutan/isi 3-baris spesifik belum |
+| K-29 | Batas eskalasi ke owner | Risiko Tinggi & janji bolos ≥ toleransi | `LOCKED` (kontrak) — §4.5 Owner Alert, WK-11; threshold pemicu `NEEDS_PILOT_CALIBRATION` | Kontrak isi alert (toko, jenis penyimpangan, nilai selisih, bukti, tingkat risiko, tindakan) locked di §4.5; ambang numerik label "Risiko Tinggi" sendiri masih tergantung K-04/05/06 |
+| K-30 | Kanal & jam laporan eksekutif | WA jam 08:00 + dashboard | `LOCKED` (kanal) — WK-12, §4.5; jam spesifik `NEEDS_PILOT_CALIBRATION` | WK-12: owner/executive pakai WhatsApp — kanal terkonfirmasi; jam 08:00 tidak disebutkan di Pack v1.0 |
+| K-31 | Anti-noise: yang tidak boleh dikirim | maksimal 3 item/hari, tanpa duplikat | `NOT_OBSERVED` | Tidak disinggung di Pack v1.0 |
+
+**Ringkasan:** dari 31 parameter — **7 LOCKED** (sebagian/penuh: K-07, K-08,
+K-09, K-12, K-23, K-29, K-30), **10 NEEDS_PILOT_CALIBRATION** (K-01, K-02,
+K-04, K-05, K-06, K-10, K-15, K-16, K-26, K-28), **14 NOT_OBSERVED** (K-03,
+K-11, K-13, K-14, K-17, K-18, K-19, K-20, K-21, K-22, K-24, K-25, K-27, K-31).
 
 ---
 
 ## 3. Business Rules Draft (v0 — menunggu kalibrasi)
+
+> **Status per 16 Juli 2026:** draft ini tetap `v0`, angka dalam `[ ]` di
+> bawah **belum diganti** — sesuai §2, seluruh threshold berlabel
+> `NEEDS_PILOT_CALIBRATION`/`NOT_OBSERVED` tidak boleh diisi angka karangan.
+> Aturan kualitatif yang sudah `LOCKED` di Knowledge Pack v1.0 (mis. PIC
+> berganti sebagai sinyal non-blokir, tempo ~2 minggu sebagai baseline
+> tenant) dijelaskan naratif di Pack §5 (Decision Rules DV-01–DC-01) dan
+> §6 — dokumen ini tidak menduplikasinya. Rujuk Pack sebagai sumber kanonik
+> untuk aturan yang sudah locked; draft di bawah hanya untuk parameter yang
+> masih menunggu kalibrasi pilot.
 
 Ditulis dalam bahasa bisnis; angka dalam `[ ]` diganti hasil matrix.
 
@@ -241,30 +302,34 @@ tindakan) — reaksi beliau adalah data kalibrasi.*
 
 ## 8. Open Discussion & Candidate Insights
 
-**Open Discussion terbawa (menunggu jawaban interview):**
+**Status per 16 Juli 2026** (lihat §2 untuk detail mapping):
 
-| # | Topik | Terjawab oleh |
-|---|---|---|
-| OD-3A-1 | Pelaksana penagihan → RBAC daftar prioritas | K-25 |
-| OD-3A-4 | Batas otomasi reminder WA | K-20 |
+| # | Topik | Terkait | Status |
+|---|---|---|---|
+| OD-3A-1 | Pelaksana penagihan → RBAC daftar prioritas | K-25 | **Tetap terbuka** — `NOT_OBSERVED` di Pack v1.0, belum ada keputusan |
+| OD-3A-4 | Batas otomasi reminder WA | K-20 | **Tetap terbuka** — `NOT_OBSERVED` di Pack v1.0, belum ada keputusan |
 
 *(OD-3A-2 penundaan CollectionCase dan OD-3A-3 invoice otomatis dari sales_order
-tetap menunggu keputusan Founder — tidak bergantung interview.)*
+tetap menunggu keputusan Founder — tidak bergantung interview, statusnya tidak
+berubah oleh pembaruan ini.)*
 
-**Candidate Insights — BUKAN fitur; didiskusikan dulu dengan Design Partner:**
+**Candidate Insights — status setelah Knowledge Pack v1.0:**
 
-| # | Kandidat | Asal |
-|---|---|---|
-| CI-1 | Deteksi perubahan **komposisi produk** sebagai sinyal health tambahan | D1 #5 (K-09) |
-| CI-2 | Penanda **customer musiman** agar tidak salah alarm | D1 #7 (K-03) |
-| CI-3 | Perlakuan khusus **customer relasi lama** di lapisan aksi (bukan skor) | D4 #24 (K-22) |
-| CI-4 | Pemodelan **tukar faktur/TT** bila ternyata praktik inti | D3 #20 (K-19) |
-| CI-5 | Mekanisme **insentif kejujuran sales** melaporkan customer bermasalah | D5 #29 (K-27) |
-| CI-6 | Sinyal kecurigaan sales → umpan awal spec **Business Guard** (Phase 4) | D5 #28 (K-26) |
+| # | Kandidat | Asal | Status |
+|---|---|---|---|
+| CI-1 | Deteksi perubahan **komposisi produk** sebagai sinyal health tambahan | D1 #5 (K-09) | **RESOLVED → LOCKED** — masuk Pack §6 Order Health ("perubahan mix produk") |
+| CI-2 | Penanda **customer musiman** agar tidak salah alarm | D1 #7 (K-03) | Tetap terbuka — `NOT_OBSERVED` |
+| CI-3 | Perlakuan khusus **customer relasi lama** di lapisan aksi (bukan skor) | D4 #24 (K-22) | Tetap terbuka — `NOT_OBSERVED` |
+| CI-4 | Pemodelan **tukar faktur/TT** bila ternyata praktik inti | D3 #20 (K-19) | Tetap terbuka — `NOT_OBSERVED` |
+| CI-5 | Mekanisme **insentif kejujuran sales** melaporkan customer bermasalah | D5 #29 (K-27) | Tetap terbuka — `NOT_OBSERVED` |
+| CI-6 | Sinyal kecurigaan sales → umpan awal spec **Business Guard** (Phase 4) | D5 #28 (K-26) | **Sebagian resolved** — route deviation (WK-10/BG-03) & diskon (DC-01) kini locked; sinyal lain yang disebut asli (setoran telat, nota aneh) tetap `NOT_OBSERVED` |
 
-Kandidat baru yang muncul saat interview dicatat di sini — bukan langsung masuk backlog.
+Kandidat yang masih terbuka di atas dicatat di sini — bukan langsung masuk
+backlog, dan tetap membutuhkan konfirmasi Design Partner sebelum jadi rule.
 
 ---
 
-*Semua keputusan tunduk pada Product Constitution v1.1. Dokumen ini tidak mengubah
-konstitusi; hasil kalibrasi menjadi business rules Phase 3B.*
+*Semua keputusan tunduk pada Product Constitution v1.2. Dokumen ini tidak
+mengubah konstitusi; hasil kalibrasi menjadi business rules Phase 3B.
+Sumber kanonik temuan locked: `AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md`
+(`docs/knowledge/packs/waluyo/`, Pack ID `AODP-WALUYO-CORE-001` v1.0.0).*
