@@ -49,7 +49,17 @@ export interface SalesOrderTelegramRepository {
     telegramIdentityId: string | null;
     messageType: "text" | "voice" | "other";
     processingStatus: EventProcessingStatus;
-    rawPayload: unknown;
+    /**
+     * Payload update penuh. WAJIB null untuk processingStatus =
+     * "rejected_unregistered" — jangan menyimpan isi pesan dari pengirim
+     * yang belum terdaftar, cukup metadata handshake di bawah.
+     */
+    rawPayload: unknown | null;
+    /** Metadata handshake minimum — hanya relevan untuk rejected_unregistered. */
+    telegramChatId?: number;
+    telegramUserId?: number | null;
+    telegramUsername?: string | null;
+    rejectionReason?: string;
   }): Promise<{ id: string }>;
 
   updateEventStatus(
@@ -119,7 +129,11 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     telegramIdentityId: string | null;
     messageType: "text" | "voice" | "other";
     processingStatus: EventProcessingStatus;
-    rawPayload: unknown;
+    rawPayload: unknown | null;
+    telegramChatId?: number;
+    telegramUserId?: number | null;
+    telegramUsername?: string | null;
+    rejectionReason?: string;
   }): Promise<{ id: string }> {
     const { data, error } = await this.supabase
       .from("telegram_update_events")
@@ -130,6 +144,10 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         message_type: input.messageType,
         processing_status: input.processingStatus,
         raw_payload: input.rawPayload,
+        telegram_chat_id: input.telegramChatId ?? null,
+        telegram_user_id: input.telegramUserId ?? null,
+        telegram_username: input.telegramUsername ?? null,
+        rejection_reason: input.rejectionReason ?? null,
       })
       .select("id")
       .single();
@@ -444,8 +462,18 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
 // tanpa memerlukan Supabase hidup).
 // ---------------------------------------------------------------------------
 
+export interface InMemoryEventRecord {
+  id: string;
+  status: EventProcessingStatus;
+  rawPayload: unknown | null;
+  telegramChatId?: number;
+  telegramUserId?: number | null;
+  telegramUsername?: string | null;
+  rejectionReason?: string;
+}
+
 export class InMemorySalesOrderRepository implements SalesOrderTelegramRepository {
-  private events = new Map<number, { id: string; status: EventProcessingStatus }>();
+  private events = new Map<number, InMemoryEventRecord>();
   private identities = new Map<number, ResolvedIdentity>();
   private conversationStates = new Map<string, ConversationState>();
   private orders = new Map<string, PersistedOrder>();
@@ -471,17 +499,34 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     telegramIdentityId: string | null;
     messageType: "text" | "voice" | "other";
     processingStatus: EventProcessingStatus;
-    rawPayload: unknown;
+    rawPayload: unknown | null;
+    telegramChatId?: number;
+    telegramUserId?: number | null;
+    telegramUsername?: string | null;
+    rejectionReason?: string;
   }): Promise<{ id: string }> {
     const id = this.nextId("evt");
-    this.events.set(input.telegramUpdateId, { id, status: input.processingStatus });
+    this.events.set(input.telegramUpdateId, {
+      id,
+      status: input.processingStatus,
+      rawPayload: input.rawPayload,
+      telegramChatId: input.telegramChatId,
+      telegramUserId: input.telegramUserId,
+      telegramUsername: input.telegramUsername,
+      rejectionReason: input.rejectionReason,
+    });
     return { id };
   }
 
   async updateEventStatus(eventId: string, processingStatus: EventProcessingStatus): Promise<void> {
     for (const [updateId, e] of this.events) {
-      if (e.id === eventId) this.events.set(updateId, { id: eventId, status: processingStatus });
+      if (e.id === eventId) this.events.set(updateId, { ...e, status: processingStatus });
     }
+  }
+
+  /** Test-only helper: inspeksi baris event mentah (mis. verifikasi rawPayload tidak tersimpan). */
+  getEventRecord(telegramUpdateId: number): InMemoryEventRecord | undefined {
+    return this.events.get(telegramUpdateId);
   }
 
   async resolveIdentity(telegramChatId: number): Promise<ResolvedIdentity | null> {

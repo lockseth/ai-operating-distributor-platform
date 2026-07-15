@@ -153,12 +153,24 @@ describe("Telegram Sales Order workflow", () => {
     const deps = makeDeps(); // sengaja tidak registerSales()
 
     const result = await processTelegramUpdate(
-      textUpdate(7, "Order Toko A:\nBarang 1 dus harga 10000"),
+      textUpdate(7, "Order Toko A:\nBarang 1 dus harga 10000, ini rahasia dagang pelanggan"),
       deps
     );
     expect(result.outcome).toBe("unregistered");
     const reply = deps.sender.sent[0]!.text;
     expect(reply).not.toMatch(/company|user_id|uuid|internal/i);
+
+    // Hardening: chat yang belum terdaftar TIDAK boleh menyimpan isi pesan
+    // (raw_payload) sama sekali — hanya metadata handshake minimum, supaya
+    // pesan sensitif dari pengirim tak dikenal tidak ikut tersimpan.
+    const record = deps.repository.getEventRecord(7);
+    expect(record).toBeDefined();
+    expect(record?.rawPayload).toBeNull();
+    expect(record?.telegramChatId).toBe(CHAT_ID);
+    expect(record?.telegramUserId).toBe(5555);
+    expect(record?.telegramUsername).toBe("andri");
+    expect(record?.rejectionReason).toBe("unregistered_chat");
+    expect(JSON.stringify(record)).not.toContain("rahasia dagang");
   });
 
   it("8. duplicate update_id -> tidak diproses ulang, tidak ada pesan baru", async () => {

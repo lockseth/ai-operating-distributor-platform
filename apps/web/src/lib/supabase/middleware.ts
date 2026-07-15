@@ -5,12 +5,18 @@ import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Webhook routes (n8n, Telegram, dst.) diautentikasi via secret/signature
-  // milik masing-masing, BUKAN Supabase session — pemanggilnya adalah
-  // service eksternal tanpa cookie sama sekali. Middleware auth wajib
-  // dilewati sepenuhnya di sini, jika tidak setiap webhook selalu
-  // di-redirect ke /login sebelum route handler-nya sempat jalan.
-  if (pathname.startsWith("/api/webhooks/")) {
+  // Webhook routes diautentikasi via secret/credential milik masing-masing,
+  // BUKAN Supabase session — pemanggilnya adalah service eksternal tanpa
+  // cookie sama sekali. Middleware auth wajib dilewati di sini, jika tidak
+  // setiap webhook selalu di-redirect ke /login sebelum route handler-nya
+  // sempat jalan.
+  //
+  // SENGAJA daftar eksplisit (bukan prefix "/api/webhooks/") — supaya
+  // route baru di bawah /api/webhooks/ tidak otomatis mewarisi bypass ini
+  // hanya karena lokasinya, sebelum autentikasi mandirinya diaudit dan
+  // ditambahkan ke daftar ini secara sadar.
+  const AUDITED_WEBHOOK_ROUTES = ["/api/webhooks/telegram", "/api/webhooks/n8n"];
+  if (AUDITED_WEBHOOK_ROUTES.includes(pathname)) {
     return NextResponse.next({ request });
   }
 

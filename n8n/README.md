@@ -88,7 +88,21 @@ Provider yang umum digunakan: **Fonnte**, **Wablas**, **WA Gateway**, **Twilio**
 
 ---
 
-## Cara Isi N8N_WEBHOOK_SECRET
+## ⚠️ Autentikasi Callback Sudah Berubah (Webhook Security Hardening)
+
+**Skema HMAC global di bawah ini SUDAH TIDAK DITERIMA** oleh
+`POST /api/webhooks/n8n` sejak security hardening (2026-07-15). Endpoint
+sekarang mensyaratkan kredensial per-tenant lewat header
+`Authorization: Bearer <token>`, bukan header `x-flowsales-signature`.
+Workflow di file `.json` folder ini **belum diperbarui** ke skema baru — node
+"Hitung HMAC-SHA256" dan callback-nya perlu diganti sebelum workflow mana pun
+di folder ini bisa dipakai lagi. Detail mekanisme baru & cara provisioning
+kredensial ada di
+`docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md` bagian
+"Webhook Security Hardening — Kredensial Inbound n8n". Bagian di bawah ini
+dibiarkan apa adanya sebagai catatan sejarah skema lama.
+
+## Cara Isi N8N_WEBHOOK_SECRET (skema lama, tidak dipakai lagi)
 
 Secret ini digunakan untuk menghitung HMAC-SHA256 saat callback ke FlowSales AI (`POST /api/webhooks/n8n`). Harus sama persis dengan nilai `N8N_WEBHOOK_SECRET` di environment variable aplikasi FlowSales AI.
 

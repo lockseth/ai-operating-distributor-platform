@@ -72,13 +72,22 @@ export async function processTelegramUpdate(
   const identity = await deps.repository.resolveIdentity(chatId);
 
   if (!identity) {
+    // Handshake dari chat yang belum terdaftar: JANGAN simpan raw_payload
+    // (isi pesan) — cukup metadata minimum untuk keperluan registrasi
+    // identitas nanti (lihat prosedur "update pertama" di
+    // docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md). username hanya
+    // label tampilan, bukan identitas tepercaya.
     await deps.repository.insertEvent({
       telegramUpdateId: update.update_id,
       companyId: null,
       telegramIdentityId: null,
       messageType: message.voice ? "voice" : "text",
       processingStatus: "rejected_unregistered",
-      rawPayload: update,
+      rawPayload: null,
+      telegramChatId: chatId,
+      telegramUserId: message.from?.id ?? null,
+      telegramUsername: message.from?.username ?? null,
+      rejectionReason: "unregistered_chat",
     });
     // Tidak membocorkan data internal — pesan generik saja.
     await deps.sender.sendMessage(chatId, buildUnregisteredUserReply());
