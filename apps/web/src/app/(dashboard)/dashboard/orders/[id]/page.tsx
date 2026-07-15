@@ -34,6 +34,7 @@ interface OrderItem {
   discount_amount: number;
   total_amount: number;
   notes: string | null;
+  product_name_raw: string | null;
   product: { name: string; sku: string; unit: string } | null;
 }
 
@@ -50,6 +51,9 @@ interface Order {
   delivered_at: string | null;
   created_at: string;
   updated_at: string;
+  source_channel: string | null;
+  customer_name_raw: string | null;
+  requires_discount_review: boolean | null;
   customer: { id: string; name: string; code: string; phone: string | null; area: string | null } | null;
   sales:    { full_name: string } | null;
   creator:  { full_name: string } | null;
@@ -75,7 +79,7 @@ export default async function OrderDetailPage({
       customer:customers!customer_id(id, name, code, phone, area),
       sales:users!sales_id(full_name),
       creator:users!created_by(full_name),
-      items:sales_order_items(id, quantity, unit_price, discount_amount, total_amount, notes, product:products!product_id(name, sku, unit))
+      items:sales_order_items(id, quantity, unit_price, discount_amount, total_amount, notes, product_name_raw, product:products!product_id(name, sku, unit))
     `)
     .eq("id", id)
     .eq("company_id", user.company_id)
@@ -133,12 +137,33 @@ export default async function OrderDetailPage({
                 <OrderStatusBadge status={order.status} />
               </div>
               <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
-                {order.customer && (
+                {order.customer ? (
                   <Link href={`/dashboard/customers/${order.customer.id}`}
                     className="flex items-center gap-1 hover:text-blue-600">
                     <User className="h-3.5 w-3.5" />
                     {order.customer.name}
                   </Link>
+                ) : order.customer_name_raw ? (
+                  <span className="flex items-center gap-1 text-amber-600" title="Belum ter-match ke master pelanggan">
+                    <User className="h-3.5 w-3.5" />
+                    {order.customer_name_raw} (belum ter-match)
+                  </span>
+                ) : null}
+                {order.source_channel === "telegram" && (
+                  <>
+                    <span>·</span>
+                    <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
+                      via Telegram
+                    </span>
+                  </>
+                )}
+                {order.requires_discount_review && (
+                  <>
+                    <span>·</span>
+                    <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                      ⚠️ Butuh review diskon
+                    </span>
+                  </>
                 )}
                 {order.sales && (
                   <>
@@ -202,8 +227,13 @@ export default async function OrderDetailPage({
             {order.items.map((item) => (
               <tr key={item.id}>
                 <td className="px-5 py-3">
-                  <p className="font-medium text-gray-900">{item.product?.name ?? "—"}</p>
-                  <p className="text-xs text-gray-400 font-mono">{item.product?.sku}</p>
+                  <p className="font-medium text-gray-900">
+                    {item.product?.name ?? item.product_name_raw ?? "—"}
+                  </p>
+                  {item.product?.sku && <p className="text-xs text-gray-400 font-mono">{item.product.sku}</p>}
+                  {!item.product && item.product_name_raw && (
+                    <p className="text-xs text-amber-600">belum ter-match ke master produk</p>
+                  )}
                   {item.notes && <p className="text-xs text-gray-500 mt-0.5 italic">{item.notes}</p>}
                 </td>
                 <td className="px-4 py-3 text-right text-gray-700">

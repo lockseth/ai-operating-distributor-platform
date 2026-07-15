@@ -5,6 +5,15 @@ import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Webhook routes (n8n, Telegram, dst.) diautentikasi via secret/signature
+  // milik masing-masing, BUKAN Supabase session — pemanggilnya adalah
+  // service eksternal tanpa cookie sama sekali. Middleware auth wajib
+  // dilewati sepenuhnya di sini, jika tidak setiap webhook selalu
+  // di-redirect ke /login sebelum route handler-nya sempat jalan.
+  if (pathname.startsWith("/api/webhooks/")) {
+    return NextResponse.next({ request });
+  }
+
   const isAuthRoute =
     pathname.startsWith("/login") ||
     pathname.startsWith("/forgot-password") ||
