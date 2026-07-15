@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { updateCompanyAction } from "@/lib/platform/tenant-actions";
 import { CompanyForm } from "@/components/platform/company-form";
@@ -18,10 +18,7 @@ export default async function EditTenantPage({
   const user   = await getAuthUser();
   if (!user.roles.includes("super_admin")) redirect("/dashboard");
 
-  const supabase = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = getAdminClient();
 
   const { data } = await supabase
     .from("companies")

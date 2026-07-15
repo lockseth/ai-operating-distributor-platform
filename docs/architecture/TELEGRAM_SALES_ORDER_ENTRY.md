@@ -5,27 +5,37 @@ order tersimpan (belum: PO tercetak, delivery verification, invoice,
 notifikasi WhatsApp owner, dashboard baru, warehouse deduction, pengiriman
 barang — lihat scope di task asli).
 
-## Status Production Readiness (per audit terakhir)
+## Status Production Readiness (per audit terakhir — Production Bootstrap Preflight)
 
 | Gate | Status |
 |---|---|
 | Kode lulus test/type-check/lint/build | ✅ |
-| Webhook Telegram aman (secret, fail-closed, tidak percaya payload, tidak bocor internal, bypass session) | ✅ diverifikasi hidup (lihat §Audit Keamanan) |
-| Webhook n8n aman (kredensial per-tenant, tidak percaya company_id dari payload, fail closed) | ✅ **diperbaiki & diverifikasi hidup** — lihat §Webhook Security Hardening. Sebelumnya memakai satu secret global + company_id dari payload (celah tenant spoofing) — sudah diganti. |
+| Webhook Telegram aman (secret, fail-closed, tidak percaya payload, tidak bocor internal, bypass session) | ✅ diverifikasi hidup |
+| Webhook n8n aman (kredensial per-tenant, tidak percaya company_id dari payload, fail closed) | ✅ diperbaiki & diverifikasi hidup — lihat §Webhook Security Hardening |
 | Telegram unregistered handshake tidak menyimpan isi pesan | ✅ diperbaiki & diverifikasi hidup — lihat §Retensi Data Handshake |
-| Supabase **production** untuk AODP | ❌ **belum ada** — `supabase link` belum pernah dijalankan, tidak ada project ref tersimpan di mana pun di repo ini. Satu-satunya target yang pernah dipakai adalah Supabase lokal (Docker, project_id "AODP"). |
+| Demo login bypass tidak mungkin aktif di production | ✅ diverifikasi: gate `NODE_ENV==="development"` (strict equality, fail closed untuk SEMUA nilai lain), 19 test baru menutup skenario misconfiguration, dikonfirmasi kode tetap ada & jalan di production server bundle (bukan tereliminasi) — lihat `lib/demo/config.ts` dan `lib/demo/config.test.ts` |
+| Environment contract (server-only secret tidak bocor ke client, missing secret gagal jelas) | ✅ diaudit & diperkuat — 3 admin client call site (`dashboard/platform/tenants/**`) yang sebelumnya membuat client Supabase admin manual dengan `!` (non-null assertion, gagal tak jelas) diganti pakai `getAdminClient()` bersama; guard eksplisit ditambahkan ke `lib/supabase/client.ts`, `server.ts`, `middleware.ts` |
+| Supabase **production** untuk AODP | ❌ **belum ada** — dicek langsung lewat `supabase projects list` (CLI sudah login): ada 6 project di akun ini (`asos`, `lockseth Project`, `DBR.ai`, `asos-b45-runtime-validation`, `flowsales-ai`, `BookFlow WA`), **tidak satu pun bernama/teridentifikasi sebagai AODP**. `flowsales-ai` adalah project asal fork — **ditolak eksplisit** sesuai instruksi, tidak akan pernah dipakai. Tidak ada `supabase link` yang dijalankan ke project mana pun sebagai bagian dari preflight ini. |
+| Vercel project | ❌ **belum ada** — Vercel CLI tidak terpasang di lingkungan ini, tidak ada folder `.vercel/` di repo (tidak pernah di-link). |
 | `TELEGRAM_BOT_TOKEN` asli dari @BotFather | ❌ belum ada — hanya nilai dev palsu (`dev-fake-token-not-real`) di `.env.local` lokal |
 | `TELEGRAM_WEBHOOK_SECRET` produksi (acak, kuat) | ❌ nilai saat ini di `.env.local` (`dev-secret-for-local-testing`) hanya untuk dev, **jangan dipakai di production** |
 | Kredensial `n8n_inbound_credentials` production | ❌ belum ada — tabel sudah ada (migration diterapkan lokal), tapi belum ada baris production karena belum ada project Supabase production |
-| Deployment target (Vercel project) | ❔ belum diverifikasi ada/tidaknya dari sisi repo ini |
-| `telegram_identities` Pak Waluyo | ❌ belum bisa didaftarkan — `chat_id` Telegram asli, `user_id` AODP, dan `company_id` Pak Waluyo semuanya belum tersedia (lihat §Registrasi Identitas) |
+| `telegram_identities` untuk sales/admin/supervisor internal | ❌ belum bisa didaftarkan — identitas internal (bukan Pak Waluyo, lihat §Onboarding Pilot di bawah) belum dikonfirmasi Founder, chat_id asli belum tersedia |
 
-**Kesimpulan: deployment ke production belum bisa dilakukan.** Bagian
-"Production Verification" di bawah menjelaskan langkah yang akan dijalankan
-begitu item di atas tersedia — bukan hasil yang sudah terjadi. Section ini
-murni tentang security hardening yang sudah lulus **lokal**; tidak ada
-project production, deployment, atau registrasi webhook nyata yang dilakukan
-sebagai bagian dari hardening ini.
+**Kesimpulan: deployment ke production belum bisa dilakukan.** Section C–E
+di dokumen governance task (deployment, onboarding, acceptance test) **tidak
+dijalankan** — preflight berhenti di readiness gate karena Supabase project,
+Vercel project, dan Telegram bot token production semuanya belum tersedia.
+Tidak ada dugaan/asumsi project mana pun yang dipakai sebagai pengganti.
+
+> ⚠️ **Deployment Warning — Template n8n Lama:** Backend webhook n8n yang
+> sudah di-hardening (fail closed, kredensial per-tenant) AMAN untuk
+> dideploy. **TAPI** seluruh workflow n8n yang sudah di-import dari
+> `n8n/*.json` (jika ada yang aktif di instance n8n mana pun) HARUS tetap
+> **Inactive/disabled** sampai node HMAC-nya diganti ke skema Bearer token
+> baru — kalau tidak, callback-nya akan selalu gagal `401` begitu backend
+> production ini live (skema HMAC lama sudah tidak diterima). Lihat
+> §Webhook Security Hardening → "Catatan Kompatibilitas — Template n8n Lama".
 
 ## Arsitektur Singkat
 
@@ -263,18 +273,29 @@ yang keluar).
 > terverifikasi (mis. salah kirim data pelanggan/harga) ikut tersimpan hanya
 > untuk keperluan menemukan chat_id. Lihat §Retensi Data Handshake di bawah.
 
+> **Koreksi domain (penting):** Telegram identity di sini adalah untuk
+> **sales/admin/supervisor internal** yang mengirim order — **BUKAN Pak
+> Waluyo**. Pak Waluyo adalah **owner** distributor; perannya di AODP adalah
+> penerima ringkasan/notifikasi WhatsApp executive (fitur terpisah, di luar
+> scope dokumen ini), bukan pengguna operasional Telegram Sales Order Entry.
+> Jangan mendaftarkan Pak Waluyo ke `telegram_identities` kecuali Founder
+> **secara eksplisit** menyatakan beliau juga akan menjadi pengguna
+> operasional Telegram. Contoh di bawah memakai placeholder umum
+> "pengguna internal" — ganti dengan sales/admin/supervisor yang sesungguhnya
+> ditunjuk Founder.
+
 Langkah:
 
-1. **Pastikan `company_id` dan `user_id` (AODP) untuk Pak Waluyo sudah ada**
-   di database production — ini keputusan Founder/onboarding, bukan sesuatu
-   yang bisa diturunkan dari Telegram. Jika belum ada baris `companies`/`users`
-   untuk distributor Pak Waluyo, itu harus dibuat lebih dulu lewat alur
-   onboarding normal (di luar scope dokumen ini).
+1. **Buat company & user lewat alur onboarding normal yang tersedia** (bukan
+   insert manual mengarang data) — pastikan `company_id` dan `user_id` (AODP)
+   untuk pengguna internal yang akan memakai Telegram (sales/admin/supervisor,
+   ditentukan Founder) sudah ada di database production sebelum lanjut ke
+   langkah berikut.
 2. Deploy webhook ke production & daftarkan ke Telegram (`setWebhook`, lihat
    §Setup Bot Telegram) memakai `TELEGRAM_BOT_TOKEN`/`TELEGRAM_WEBHOOK_SECRET`
    production yang sudah dikonfigurasi di Vercel.
-3. Minta Pak Waluyo mengirim **satu pesan apa saja** (mis. "halo") ke bot
-   Telegram tersebut dari HP-nya sendiri.
+3. Minta pengguna internal tersebut mengirim **satu pesan apa saja** (mis.
+   "halo") ke bot Telegram dari HP-nya sendiri.
 4. Admin (yang punya akses `SUPABASE_SERVICE_ROLE_KEY` atau SQL editor
    Supabase dashboard — **wajib**, karena RLS membatasi baris `company_id
    IS NULL` dari akses biasa) menjalankan query berikut untuk mengambil
@@ -286,25 +307,28 @@ Langkah:
    order by created_at desc
    limit 5;
    ```
-5. Cocokkan baris yang muncul dengan waktu Pak Waluyo mengirim pesan (langkah
-   3) — **`telegram_username` hanya label bantu, bukan identitas tepercaya**
-   (Telegram username bisa diganti siapa pun) — lalu pakai `telegram_chat_id`
+5. Cocokkan baris yang muncul dengan waktu pengguna tersebut mengirim pesan
+   (langkah 3) — **`telegram_username` hanya label bantu, bukan identitas
+   tepercaya** (Telegram username bisa diganti siapa pun). **Founder/admin
+   wajib mengonfirmasi** baris mana yang benar-benar cocok dengan orang &
+   akun internal yang dimaksud sebelum lanjut — baru pakai `telegram_chat_id`
    hasil query itu — **bukan angka buatan** — untuk registrasi:
    ```sql
    insert into public.telegram_identities (company_id, user_id, telegram_chat_id, telegram_username)
    values (
-     '<company_id Pak Waluyo — dari langkah 1, BUKAN placeholder>',
-     '<user_id AODP Pak Waluyo, role sales/admin/owner/manager — dari langkah 1>',
-     <telegram_chat_id hasil query langkah 4>,
+     '<company_id — dari langkah 1, BUKAN placeholder>',
+     '<user_id AODP pengguna internal (sales/admin/supervisor) — dari langkah 1, BUKAN Pak Waluyo kecuali dikonfirmasi eksplisit>',
+     <telegram_chat_id hasil query langkah 4, dikonfirmasi Founder di langkah 5>,
      '<telegram_username hasil query langkah 4, opsional, hanya label>'
    );
    ```
-6. Minta Pak Waluyo mengirim pesan order lagi — sekarang harus mendapat
-   balasan draft, bukan diam.
+6. Minta pengguna tersebut mengirim pesan order lagi — sekarang harus
+   mendapat balasan draft, bukan diam.
 
 Prosedur ini **tidak pernah butuh admin menanyakan Telegram user ID secara
 manual ke sales** (rawan salah ketik) — sumbernya selalu payload asli yang
-sudah tercatat sistem.
+sudah tercatat sistem, dan **tidak pernah mengarang** nama/email/role/chat_id/
+company_id/user_id.
 
 ### Retensi Data Handshake Telegram Tidak Terdaftar
 

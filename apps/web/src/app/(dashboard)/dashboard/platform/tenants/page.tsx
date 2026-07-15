@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { PageHeader } from "@/components/ui/page-header";
 import { Plus, Building2, CheckCircle2, XCircle } from "lucide-react";
@@ -36,10 +36,7 @@ export default async function TenantListPage() {
   const user = await getAuthUser();
   if (!user.roles.includes("super_admin")) redirect("/dashboard");
 
-  const supabase = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = getAdminClient();
 
   const { data } = await supabase
     .from("companies")

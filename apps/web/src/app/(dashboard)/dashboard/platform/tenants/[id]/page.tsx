@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { OnboardingChecklist } from "@/components/platform/onboarding-checklist";
 import { FirstUserForm } from "@/components/platform/first-user-form";
@@ -41,10 +41,7 @@ export default async function TenantDetailPage({
   const user   = await getAuthUser();
   if (!user.roles.includes("super_admin")) redirect("/dashboard");
 
-  const supabase = createAdminClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = getAdminClient();
 
   const [companyResult, statsResult] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).single(),
