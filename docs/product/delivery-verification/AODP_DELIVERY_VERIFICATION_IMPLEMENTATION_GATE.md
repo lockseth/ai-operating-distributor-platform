@@ -28,6 +28,22 @@ clamp — bila melebihi outstanding), migration
 `20260718000001_delivery_quantity_invariant.sql`. Lihat
 `docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md` §Invariant Kuantitas Agregat.
 
+**Pre-deployment gate audit (2026-07-16):** ditemukan CRITICAL gap — RPC
+mutating `sync_sales_order_delivery_status` (SECURITY DEFINER, tanpa
+pengecekan tenant internal) dan `finalize_delivery_item_quantities` masih
+dapat dipanggil langsung oleh `anon`/`authenticated` karena grant
+schema-wide (`20260707000003_grant_schema_privileges.sql`, pola standar
+Supabase — RLS sebagai boundary tabel, tapi tidak berlaku untuk RPC yang
+seharusnya trusted-server-only). Terbukti live: caller `anon` tanpa login
+sama sekali dapat memicu transisi status order tenant mana pun. Ditutup
+dengan `REVOKE EXECUTE ... FROM PUBLIC, anon, authenticated` + `GRANT ...
+TO service_role` pada kedua fungsi, migration
+`20260719000001_delivery_rpc_grant_hardening.sql`. Live-proven: anon → 401,
+authenticated tanpa izin → 403, service_role (jalur aplikasi yang sebenarnya
+dipakai) tetap 200. True concurrency test (dua RPC finalize 60+60 pada order
+100 ditembak paralel via service_role) juga membuktikan tepat satu berhasil,
+tidak ada partial write, tidak deadlock.
+
 Ringkasan lulus/tidak terhadap Definition of Done (§9 dokumen ini):
 
 | Item DoD | Status |
