@@ -19,13 +19,22 @@ dan ditutup:
    attempt, lewat fungsi Postgres `sync_sales_order_delivery_status`
    (`supabase/migrations/20260717000001_delivery_order_lifecycle_sync.sql`).
 
+**Audit invariant kuantitas agregat (2026-07-16):** dibuktikan live bahwa
+sebelum fix, SUM `received_quantity` lintas delivery attempt bisa melebihi
+`ordered_quantity` tanpa ditolak (60+50=110 diterima dari order 100, order
+bahkan jadi `delivered`). Ditutup dengan fungsi atomic
+`finalize_delivery_item_quantities` (row-locked, menolak — bukan silent
+clamp — bila melebihi outstanding), migration
+`20260718000001_delivery_quantity_invariant.sql`. Lihat
+`docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md` §Invariant Kuantitas Agregat.
+
 Ringkasan lulus/tidak terhadap Definition of Done (§9 dokumen ini):
 
 | Item DoD | Status |
 |---|---|
 | Migration & RLS tersedia | ✅ `20260716000001_delivery_verification.sql` + `20260717000001_delivery_order_lifecycle_sync.sql` |
 | Service/domain logic terpisah dari Telegram transport | ✅ `apps/web/src/lib/delivery/service.ts` |
-| Full/partial/rejected/store-closed/**failed** lulus test | ✅ 26 skenario (`lib/delivery/workflow.test.ts`) + live smoke test terhadap Supabase lokal |
+| Full/partial/rejected/store-closed/**failed** lulus test | ✅ 32 skenario (`lib/delivery/workflow.test.ts`) + live smoke test terhadap Supabase lokal |
 | Idempotency & cross-tenant isolation lulus test | ✅ (termasuk alert & lifecycle order) |
 | Evidence authorization lulus test | ✅ (evidence tidak lengkap ditolak; tidak ada API hapus evidence/exception/audit) |
 | Invoice eligibility selalu dari verified received quantity | ✅ diverifikasi test + live query |

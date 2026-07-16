@@ -72,6 +72,64 @@ async function seedDelivery(
   return delivery;
 }
 
+/** Order dengan SATU item, quantity dikustomisasi -- dipakai skenario invariant kuantitas agregat (order=100, dsb.). */
+async function seedSingleItemDelivery(
+  repo: InMemoryDeliveryRepository,
+  opts: { companyId?: string; salesOrderId?: string; identity?: ResolvedIdentity; quantity: number }
+) {
+  const companyId = opts.companyId ?? COMPANY_A;
+  const salesOrderId = opts.salesOrderId ?? "order-qty";
+  const identity = opts.identity ?? DRIVER_A;
+
+  repo.seedConfirmedOrder({
+    id: salesOrderId,
+    companyId,
+    orderNumber: "SO-QTY-0001",
+    customerName: "Toko Invariant",
+    status: "confirmed",
+    items: [{ id: `${salesOrderId}-item-1`, productName: "Cat Mawar Putih", unit: "dus", unitPrice: 450_000, quantity: opts.quantity }],
+  });
+  const order = await repo.getConfirmedOrder(salesOrderId, companyId);
+  const delivery = await repo.createDelivery({
+    companyId,
+    salesOrderId,
+    idempotencyKey: `order:${salesOrderId}:1`,
+    createdBy: "owner-1",
+    items: order!.items.map((i) => ({ salesOrderItemId: i.id, productName: i.productName, unit: i.unit, unitPrice: i.unitPrice, orderedQuantity: i.quantity })),
+  });
+  await repo.assignDriver(delivery.id, identity.userId);
+  await repo.setConversationState(identity.identityId, companyId, {
+    pendingDeliveryId: delivery.id,
+    awaiting: "start_confirmation",
+    currentItemIndex: 0,
+    draftState: {},
+  });
+  return delivery;
+}
+
+/** Attempt baru (ke-2 dst) untuk order yang sudah ada -- items memakai OUTSTANDING terkini (bukan ordered asli), sesuai fix. */
+async function seedNextAttempt(
+  repo: InMemoryDeliveryRepository,
+  opts: { companyId: string; salesOrderId: string; identity: ResolvedIdentity; attemptTag: string }
+) {
+  const order = await repo.getConfirmedOrder(opts.salesOrderId, opts.companyId);
+  const delivery = await repo.createDelivery({
+    companyId: opts.companyId,
+    salesOrderId: opts.salesOrderId,
+    idempotencyKey: `order:${opts.salesOrderId}:${opts.attemptTag}`,
+    createdBy: "owner-1",
+    items: order!.items.map((i) => ({ salesOrderItemId: i.id, productName: i.productName, unit: i.unit, unitPrice: i.unitPrice, orderedQuantity: i.quantity })),
+  });
+  await repo.assignDriver(delivery.id, opts.identity.userId);
+  await repo.setConversationState(opts.identity.identityId, opts.companyId, {
+    pendingDeliveryId: delivery.id,
+    awaiting: "start_confirmation",
+    currentItemIndex: 0,
+    draftState: {},
+  });
+  return delivery;
+}
+
 function textMsg(text: string, messageId = 1): NonNullable<TelegramUpdate["message"]> {
   return { message_id: messageId, text, chat: { id: CHAT_ID }, from: { id: 9999, username: "budi" } };
 }
@@ -682,5 +740,226 @@ describe("Delivery Verification workflow", () => {
     const orderB = await deps.repository.getConfirmedOrder("order-25b", COMPANY_B);
     expect(orderA!.status).toBe("confirmed"); // belum ada MULAI KIRIM company A sama sekali
     expect(orderB!.status).toBe("delivered");
+  });
+
+  // ---------------------------------------------------------------------
+  // Audit invariant kuantitas agregat (audit atas commit 400b114): SUM
+  // received_quantity lintas delivery attempt untuk satu sales_order_item
+  // TIDAK PERNAH boleh melebihi ordered_quantity.
+  // ---------------------------------------------------------------------
+
+  it("26. attempt kedua mencoba menerima lebih dari outstanding (order=100, A=60, B coba 50) -> ditolak, bukan silent clamp", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { salesOrderId: "order-26", quantity: 100 });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("60"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const orderAfterA = await deps.repository.getConfirmedOrder("order-26", COMPANY_A);
+    expect(orderAfterA!.status).toBe("delivering");
+
+    const deliveryB = await seedNextAttempt(deps.repository, {
+      companyId: COMPANY_A,
+      salesOrderId: "order-26",
+      identity: DRIVER_A,
+      attemptTag: "B",
+    });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    const rejectResult = await step(deps, textMsg("50")); // outstanding sekarang hanya 40
+
+    expect(rejectResult.outcome).toBe("invalid_input"); // ditolak, TIDAK diloloskan/di-clamp diam-diam
+    const deliveryBState = await deps.repository.getDelivery(deliveryB.id);
+    expect(deliveryBState!.items[0]!.receivedQuantity).toBe(0);
+  });
+
+  it("27. dua delivery attempt confirm hampir bersamaan (dibuat sebelum salah satu commit) -> yang kedua ditolak atomic, total tidak pernah melebihi ordered", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { salesOrderId: "order-27", quantity: 100 });
+    const order = await deps.repository.getConfirmedOrder("order-27", COMPANY_A);
+    const item = order!.items[0]!;
+
+    // Dua delivery attempt dibuat SEBELUM salah satu commit -- keduanya
+    // masih melihat ordered_quantity 100 penuh sebagai dispatched masing-masing
+    // (mensimulasikan dua attempt yang benar-benar berjalan bersamaan).
+    const deliveryA = await deps.repository.createDelivery({
+      companyId: COMPANY_A,
+      salesOrderId: "order-27",
+      idempotencyKey: "order:order-27:A",
+      createdBy: "owner-1",
+      items: [{ salesOrderItemId: item.id, productName: item.productName, unit: item.unit, unitPrice: item.unitPrice, orderedQuantity: 100 }],
+    });
+    await deps.repository.assignDriver(deliveryA.id, DRIVER_A.userId);
+
+    const driverB: ResolvedIdentity = { identityId: "identity-driver-b27", companyId: COMPANY_A, userId: "driver-b27", userFullName: "Wati" };
+    const deliveryB = await deps.repository.createDelivery({
+      companyId: COMPANY_A,
+      salesOrderId: "order-27",
+      idempotencyKey: "order:order-27:B",
+      createdBy: "owner-1",
+      items: [{ salesOrderItemId: item.id, productName: item.productName, unit: item.unit, unitPrice: item.unitPrice, orderedQuantity: 100 }],
+    });
+    await deps.repository.assignDriver(deliveryB.id, driverB.userId);
+
+    await deps.repository.setConversationState(DRIVER_A.identityId, COMPANY_A, {
+      pendingDeliveryId: deliveryA.id,
+      awaiting: "start_confirmation",
+      currentItemIndex: 0,
+      draftState: {},
+    });
+    await deps.repository.setConversationState(driverB.identityId, COMPANY_A, {
+      pendingDeliveryId: deliveryB.id,
+      awaiting: "start_confirmation",
+      currentItemIndex: 0,
+      draftState: {},
+    });
+
+    // A: sampai ke preview (terima 60) -- belum confirm.
+    await step(deps, textMsg("MULAI KIRIM"), DRIVER_A);
+    await step(deps, textMsg("DITERIMA SEBAGIAN"), DRIVER_A);
+    await step(deps, textMsg("60"), DRIVER_A);
+    await step(deps, textMsg("2"), DRIVER_A);
+    await step(deps, photoMsg("pa"), DRIVER_A);
+    await step(deps, photoMsg("sa"), DRIVER_A);
+    await step(deps, textMsg("Pak Budi"), DRIVER_A);
+
+    // B: sampai ke preview (terima 50) -- independen, belum tahu A akan commit duluan.
+    await step(deps, textMsg("MULAI KIRIM"), driverB);
+    await step(deps, textMsg("DITERIMA SEBAGIAN"), driverB);
+    await step(deps, textMsg("50"), driverB);
+    await step(deps, textMsg("2"), driverB);
+    await step(deps, photoMsg("pb"), driverB);
+    await step(deps, photoMsg("sb"), driverB);
+    await step(deps, textMsg("Bu Wati"), driverB);
+
+    const resultA = await step(deps, textMsg("KONFIRMASI KIRIM"), DRIVER_A);
+    expect(resultA.outcome).toBe("finalized");
+
+    const resultB = await step(deps, textMsg("KONFIRMASI KIRIM"), driverB);
+    expect(resultB.outcome).toBe("quantity_conflict"); // atomic check menolak, bukan silent clamp
+
+    const deliveryBFinal = await deps.repository.getDelivery(deliveryB.id);
+    expect(deliveryBFinal!.status).not.toBe("partially_received");
+    expect(deliveryBFinal!.items[0]!.receivedQuantity).toBe(0);
+
+    const deliveryAFinal = await deps.repository.getDelivery(deliveryA.id);
+    expect(deliveryAFinal!.items[0]!.receivedQuantity).toBe(60); // total tetap 60, tidak pernah 110
+  });
+
+  it("28. 60 + 40 = tepat outstanding -> diterima (boundary, bukan ditolak), order menjadi delivered", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { salesOrderId: "order-28", quantity: 100 });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("60"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    await seedNextAttempt(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-28", identity: DRIVER_A, attemptTag: "B" });
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA PENUH")); // outstanding=40, full -> otomatis terima seluruh dispatched (40)
+    await step(deps, photoMsg("p2"));
+    await step(deps, photoMsg("s2"));
+    await step(deps, textMsg("Pak Budi"));
+    const result = await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    expect(result.outcome).toBe("finalized");
+    const order = await deps.repository.getConfirmedOrder("order-28", COMPANY_A);
+    expect(order!.status).toBe("delivered");
+
+    const aggregate = await deps.repository.getAggregateInvoiceEligibilityData("order-28");
+    expect(aggregate[0]!.aggregateReceivedQuantity).toBe(100);
+    expect(aggregate[0]!.orderedQuantity).toBe(100);
+    expect(aggregate[0]!.aggregateReceivedQuantity).toBeLessThanOrEqual(aggregate[0]!.orderedQuantity);
+  });
+
+  it("29. retry KONFIRMASI KIRIM pada delivery yang sama tidak menulis quantity dua kali (idempotent)", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { salesOrderId: "order-29", quantity: 100 });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("60"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+    await step(deps, textMsg("KONFIRMASI KIRIM")); // retry
+
+    const aggregate = await deps.repository.getAggregateInvoiceEligibilityData("order-29");
+    expect(aggregate[0]!.aggregateReceivedQuantity).toBe(60); // bukan 120
+  });
+
+  it("30. failed/rejected/store_closed tidak dihitung sebagai received kecuali porsi yang benar-benar diterima", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { salesOrderId: "order-30", quantity: 100 });
+
+    // Attempt A: gagal total -- tidak ada barang berpindah tangan.
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("GAGAL"));
+    await step(deps, textMsg("9"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    let outstanding = await deps.repository.getOutstandingQuantity("order-30-item-1", null);
+    expect(outstanding).toBe(100); // failed tidak mengurangi outstanding sama sekali
+
+    // Attempt B (redelivery): toko tutup -- juga tidak ada yang diterima.
+    await seedNextAttempt(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-30", identity: DRIVER_A, attemptTag: "B" });
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("TOKO TUTUP"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, locationMsg(-6.2, 106.8));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    outstanding = await deps.repository.getOutstandingQuantity("order-30-item-1", null);
+    expect(outstanding).toBe(100); // masih 100 -- belum ada satu pun yang benar-benar diterima
+
+    // Attempt C: ditolak SEBAGIAN -- 30 diterima, 70 ditolak. Hanya porsi
+    // yang BENAR-BENAR diterima (30) yang mengurangi outstanding.
+    await seedNextAttempt(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-30", identity: DRIVER_A, attemptTag: "C" });
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITOLAK"));
+    await step(deps, textMsg("30"));
+    await step(deps, textMsg("3"));
+    await step(deps, photoMsg("pc"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    outstanding = await deps.repository.getOutstandingQuantity("order-30-item-1", null);
+    expect(outstanding).toBe(70); // 100 - 30, bukan 100 - 100
+  });
+
+  it("31. outstanding/aggregate quantity tenant lain tidak terbaca atau terpengaruh lintas company", async () => {
+    const deps = makeDeps();
+    await seedSingleItemDelivery(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-31a", quantity: 100 });
+    const driverB: ResolvedIdentity = { identityId: "identity-driver-b31", companyId: COMPANY_B, userId: "driver-b31", userFullName: "Wati" };
+    await seedSingleItemDelivery(deps.repository, { companyId: COMPANY_B, salesOrderId: "order-31b", identity: driverB, quantity: 100 });
+
+    await step(deps, textMsg("MULAI KIRIM"), driverB);
+    await step(deps, textMsg("DITERIMA PENUH"), driverB);
+    await step(deps, photoMsg("pb"), driverB);
+    await step(deps, photoMsg("sb"), driverB);
+    await step(deps, textMsg("Bu Wati"), driverB);
+    await step(deps, textMsg("KONFIRMASI KIRIM"), driverB);
+
+    const outstandingA = await deps.repository.getOutstandingQuantity("order-31a-item-1", null);
+    expect(outstandingA).toBe(100); // tidak terpengaruh delivery company B sama sekali
+
+    const orderA = await deps.repository.getConfirmedOrder("order-31a", COMPANY_A);
+    expect(orderA!.status).toBe("confirmed");
+
+    const crossRead = await deps.repository.getConfirmedOrder("order-31a", COMPANY_B);
+    expect(crossRead).toBeNull(); // cross-tenant read ditolak
   });
 });

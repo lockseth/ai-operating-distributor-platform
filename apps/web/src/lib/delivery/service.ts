@@ -17,6 +17,8 @@ import type {
   ItemDiscrepancy,
   InvoiceEligibility,
   InvoiceEligibilityItem,
+  AggregateInvoiceEligibility,
+  AggregateInvoiceEligibilityItem,
   OwnerAlertPayload,
   ItemOutcomeInput,
 } from "./types";
@@ -161,6 +163,46 @@ export function computeInvoiceEligibility(delivery: DeliveryRecord): InvoiceElig
     totalEligibleValue,
     totalOrderedValue,
     varianceValue: totalOrderedValue - totalEligibleValue,
+  };
+}
+
+/**
+ * Invoice eligibility AGREGAT lintas seluruh delivery attempt milik satu
+ * sales_order (bukan satu delivery). Item 5 audit invariant kuantitas: fungsi
+ * ini adalah lapisan pertahanan KEDUA (defense in depth) -- lapisan pertama
+ * dan otoritatif adalah `finalize_delivery_item_quantities` (atomic, DB-level)
+ * yang MENCEGAH SUM received_quantity melebihi ordered_quantity sejak ditulis.
+ * Fungsi ini tidak pernah diam-diam menyembunyikan anomali: bila suatu saat
+ * data historis (mis. dari sebelum fix ini) menunjukkan SUM > ordered,
+ * `eligibleQuantity` tetap di-cap ke ordered (tidak pernah dipakai untuk
+ * invoice melebihi yang dipesan), TAPI `dataIntegrityWarning` diset TRUE --
+ * bukan silent clamp, konsumen wajib menampilkan/menindaklanjuti peringatan itu.
+ */
+export function computeAggregateInvoiceEligibility(
+  salesOrderId: string,
+  rawItems: { salesOrderItemId: string; productName: string; unitPrice: number; orderedQuantity: number; aggregateReceivedQuantity: number }[]
+): AggregateInvoiceEligibility {
+  const items: AggregateInvoiceEligibilityItem[] = rawItems.map((raw) => {
+    const dataIntegrityWarning = raw.aggregateReceivedQuantity > raw.orderedQuantity;
+    const eligibleQuantity = Math.min(raw.aggregateReceivedQuantity, raw.orderedQuantity);
+    return {
+      salesOrderItemId: raw.salesOrderItemId,
+      productName: raw.productName,
+      orderedQuantity: raw.orderedQuantity,
+      aggregateReceivedQuantity: raw.aggregateReceivedQuantity,
+      eligibleQuantity,
+      unitPrice: raw.unitPrice,
+      eligibleValue: eligibleQuantity * raw.unitPrice,
+      dataIntegrityWarning,
+    };
+  });
+
+  return {
+    salesOrderId,
+    items,
+    totalEligibleValue: items.reduce((sum, i) => sum + i.eligibleValue, 0),
+    totalOrderedValue: items.reduce((sum, i) => sum + i.orderedQuantity * i.unitPrice, 0),
+    hasDataIntegrityWarning: items.some((i) => i.dataIntegrityWarning),
   };
 }
 

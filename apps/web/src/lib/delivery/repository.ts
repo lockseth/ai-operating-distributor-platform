@@ -111,6 +111,12 @@ export interface DeliveryRepositoryInterface {
 
   recordArrival(deliveryId: string): Promise<void>;
 
+  /**
+   * @deprecated Sejak fix invariant kuantitas agregat, TIDAK PERNAH dipanggil
+   * langsung untuk menulis quantity final — gunakan `finalizeItemQuantities`
+   * (atomic, menegakkan outstanding lintas delivery attempt). Dipertahankan
+   * hanya untuk kompatibilitas tipe internal; tidak dipanggil dari workflow.ts.
+   */
   updateItemOutcome(
     deliveryItemId: string,
     patch: Partial<{
@@ -120,6 +126,27 @@ export interface DeliveryRepositoryInterface {
       unresolvedQuantity: number;
     }>
   ): Promise<void>;
+
+  /**
+   * Outstanding = ordered_quantity dikurangi total received_quantity dari
+   * delivery attempt LAIN (bukan `excludeDeliveryItemId` sendiri). Read-only,
+   * dipakai untuk validasi dini di percakapan (UX cepat) dan default
+   * ordered_quantity delivery attempt baru. BUKAN sumber kebenaran otoritatif
+   * — itu tetap `finalizeItemQuantities` (atomic, row-locked).
+   */
+  getOutstandingQuantity(salesOrderItemId: string, excludeDeliveryItemId?: string | null): Promise<number>;
+
+  /**
+   * Satu-satunya jalur menulis received/rejected/returned/unresolved_quantity
+   * final untuk sebuah delivery. Atomic lintas SELURUH delivery attempt milik
+   * sales_order yang sama (row lock sales_order_items) — menolak (TIDAK
+   * silent clamp) bila SUM received_quantity lintas attempt akan melebihi
+   * ordered_quantity. Lihat migration `finalize_delivery_item_quantities`.
+   */
+  finalizeItemQuantities(
+    deliveryId: string,
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[]
+  ): Promise<{ ok: true } | { ok: false; error: { salesOrderItemId: string; outstanding: number; requested: number } }>;
 
   /** Idempotent: memanggil ulang pada delivery yang sudah terminal tidak mengubah apa pun. */
   finalizeDelivery(deliveryId: string, finalStatus: DeliveryStatus): Promise<{ delivery: DeliveryRecord; alreadyFinalized: boolean }>;
@@ -140,6 +167,16 @@ export interface DeliveryRepositoryInterface {
   setConversationState(identityId: string, companyId: string, state: DeliveryConversationState): Promise<void>;
 
   insertOwnerAlert(input: OwnerAlertInsertInput): Promise<{ id: string }>;
+
+  /**
+   * Data mentah untuk `computeAggregateInvoiceEligibility` (service.ts) --
+   * ordered_quantity ASLI (bukan outstanding) per sales_order_item, plus
+   * total received_quantity teragregasi lintas SELURUH delivery attempt
+   * milik order ini.
+   */
+  getAggregateInvoiceEligibilityData(
+    salesOrderId: string
+  ): Promise<{ salesOrderItemId: string; productName: string; unitPrice: number; orderedQuantity: number; aggregateReceivedQuantity: number }[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,20 +214,68 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       }[];
     };
 
+    // Item snapshot untuk delivery attempt BARU memakai OUTSTANDING quantity
+    // (ordered dikurangi total sudah diterima dari attempt sebelumnya yang
+    // sah), bukan ordered_quantity mentah -- fix invariant kuantitas agregat.
+    // Tanpa ini, attempt kedua akan selalu menawarkan ordered_quantity penuh
+    // lagi walau sebagian sudah diterima attempt pertama.
+    const itemsWithOutstanding = await Promise.all(
+      row.items.map(async (i) => ({
+        id: i.id,
+        productName: i.product?.name ?? i.product_name_raw ?? "(produk)",
+        unit: i.unit,
+        unitPrice: i.unit_price,
+        quantity: await this.getOutstandingQuantity(i.id, null),
+      }))
+    );
+
     return {
       id: row.id,
       companyId: row.company_id,
       orderNumber: row.order_number,
       customerName: row.customer?.name ?? row.customer_name_raw,
       status: row.status,
-      items: row.items.map((i) => ({
-        id: i.id,
-        productName: i.product?.name ?? i.product_name_raw ?? "(produk)",
-        unit: i.unit,
-        unitPrice: i.unit_price,
-        quantity: i.quantity,
-      })),
+      items: itemsWithOutstanding,
     };
+  }
+
+  async getOutstandingQuantity(salesOrderItemId: string, excludeDeliveryItemId: string | null = null): Promise<number> {
+    const { data, error } = await this.supabase.rpc("get_outstanding_quantity", {
+      p_sales_order_item_id: salesOrderItemId,
+      p_exclude_delivery_item_id: excludeDeliveryItemId,
+    });
+    if (error) throw new Error(`getOutstandingQuantity failed: ${error.message}`);
+    return Number(data ?? 0);
+  }
+
+  async finalizeItemQuantities(
+    deliveryId: string,
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[]
+  ): Promise<{ ok: true } | { ok: false; error: { salesOrderItemId: string; outstanding: number; requested: number } }> {
+    if (itemOutcomes.length === 0) return { ok: true };
+    const { error } = await this.supabase.rpc("finalize_delivery_item_quantities", {
+      p_delivery_id: deliveryId,
+      p_item_outcomes: itemOutcomes.map((o) => ({
+        delivery_item_id: o.deliveryItemId,
+        received_quantity: o.receivedQuantity,
+        rejected_quantity: o.rejectedQuantity,
+        returned_quantity: o.returnedQuantity,
+        unresolved_quantity: o.unresolvedQuantity,
+      })),
+    });
+    if (error) {
+      if (error.message.includes("QUANTITY_EXCEEDS_OUTSTANDING")) {
+        let detail: { salesOrderItemId: string; outstanding: number; requested: number };
+        try {
+          detail = JSON.parse((error as unknown as { details?: string }).details ?? "{}");
+        } catch {
+          detail = { salesOrderItemId: "", outstanding: 0, requested: 0 };
+        }
+        return { ok: false, error: detail };
+      }
+      throw new Error(`finalizeItemQuantities failed: ${error.message}`);
+    }
+    return { ok: true };
   }
 
   async findDeliveryByIdempotencyKey(companyId: string, idempotencyKey: string): Promise<DeliveryRecord | null> {
@@ -548,6 +633,35 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
     if (error) throw new Error(`insertOwnerAlert failed: ${error.message}`);
     return { id: (data as { id: string }).id };
   }
+
+  async getAggregateInvoiceEligibilityData(
+    salesOrderId: string
+  ): Promise<{ salesOrderItemId: string; productName: string; unitPrice: number; orderedQuantity: number; aggregateReceivedQuantity: number }[]> {
+    const { data, error } = await this.supabase
+      .from("sales_order_items")
+      .select(
+        "id, quantity, unit_price, product_name_raw, product:products!product_id(name), delivery_items(received_quantity)"
+      )
+      .eq("order_id", salesOrderId);
+    if (error) throw new Error(`getAggregateInvoiceEligibilityData failed: ${error.message}`);
+
+    const rows = (data ?? []) as unknown as {
+      id: string;
+      quantity: number;
+      unit_price: number;
+      product_name_raw: string | null;
+      product: { name: string } | null;
+      delivery_items: { received_quantity: number }[];
+    }[];
+
+    return rows.map((row) => ({
+      salesOrderItemId: row.id,
+      productName: row.product?.name ?? row.product_name_raw ?? "(produk)",
+      unitPrice: row.unit_price,
+      orderedQuantity: row.quantity,
+      aggregateReceivedQuantity: row.delivery_items.reduce((sum, di) => sum + di.received_quantity, 0),
+    }));
+  }
 }
 
 function mapDeliveryRow(data: unknown): DeliveryRecord {
@@ -655,6 +769,8 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
 
 export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   confirmedOrders = new Map<string, ConfirmedOrderSnapshot>();
+  /** Ordered quantity ASLI per sales_order_item_id -- confirmedOrders.items[].quantity di atas berubah makna menjadi "outstanding saat dibaca" (lihat getConfirmedOrder), jadi nilai asli disimpan terpisah di sini untuk komputasi outstanding itu sendiri. */
+  private originalQuantities = new Map<string, number>();
   private deliveries = new Map<string, DeliveryRecord>();
   private idempotencyIndex = new Map<string, string>(); // `${companyId}:${key}` -> deliveryId
   private conversationStates = new Map<string, DeliveryConversationState>();
@@ -664,6 +780,9 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
 
   seedConfirmedOrder(order: ConfirmedOrderSnapshot): void {
     this.confirmedOrders.set(order.id, order);
+    for (const item of order.items) {
+      this.originalQuantities.set(item.id, item.quantity);
+    }
   }
 
   private nextId(prefix: string): string {
@@ -674,7 +793,62 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   async getConfirmedOrder(salesOrderId: string, companyId: string): Promise<ConfirmedOrderSnapshot | null> {
     const order = this.confirmedOrders.get(salesOrderId);
     if (!order || order.companyId !== companyId) return null;
-    return order;
+    // Fix invariant kuantitas agregat: item snapshot untuk delivery attempt
+    // BARU memakai OUTSTANDING (dihitung fresh), bukan quantity asli yang
+    // tersimpan statis -- objek asli TIDAK dimutasi (status tetap live-referenced).
+    return {
+      ...order,
+      items: order.items.map((i) => ({ ...i, quantity: this.computeOutstanding(i.id, null) })),
+    };
+  }
+
+  private computeOutstanding(salesOrderItemId: string, excludeDeliveryItemId: string | null): number {
+    const ordered = this.originalQuantities.get(salesOrderItemId) ?? 0;
+    let receivedElsewhere = 0;
+    for (const d of this.deliveries.values()) {
+      for (const item of d.items) {
+        if (item.salesOrderItemId === salesOrderItemId && item.id !== excludeDeliveryItemId) {
+          receivedElsewhere += item.receivedQuantity;
+        }
+      }
+    }
+    return ordered - receivedElsewhere;
+  }
+
+  async getOutstandingQuantity(salesOrderItemId: string, excludeDeliveryItemId: string | null = null): Promise<number> {
+    return this.computeOutstanding(salesOrderItemId, excludeDeliveryItemId);
+  }
+
+  async finalizeItemQuantities(
+    deliveryId: string,
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[]
+  ): Promise<{ ok: true } | { ok: false; error: { salesOrderItemId: string; outstanding: number; requested: number } }> {
+    const delivery = this.deliveries.get(deliveryId);
+    if (!delivery) return { ok: true };
+
+    // Validasi SEMUA item dulu (tanpa menulis apa pun) -- meniru semantik
+    // atomic fungsi Postgres: satu item gagal berarti TIDAK ADA yang ditulis.
+    for (const outcome of itemOutcomes) {
+      const item = delivery.items.find((i) => i.id === outcome.deliveryItemId);
+      if (!item) continue;
+      const outstanding = this.computeOutstanding(item.salesOrderItemId, outcome.deliveryItemId);
+      if (outcome.receivedQuantity > outstanding) {
+        return {
+          ok: false,
+          error: { salesOrderItemId: item.salesOrderItemId, outstanding, requested: outcome.receivedQuantity },
+        };
+      }
+    }
+
+    for (const outcome of itemOutcomes) {
+      const item = delivery.items.find((i) => i.id === outcome.deliveryItemId);
+      if (!item) continue;
+      item.receivedQuantity = outcome.receivedQuantity;
+      item.rejectedQuantity = outcome.rejectedQuantity;
+      item.returnedQuantity = outcome.returnedQuantity;
+      item.unresolvedQuantity = outcome.unresolvedQuantity;
+    }
+    return { ok: true };
   }
 
   async findDeliveryByIdempotencyKey(companyId: string, idempotencyKey: string): Promise<DeliveryRecord | null> {
@@ -900,5 +1074,23 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
     const id = this.nextId("alert");
     this.ownerAlerts.push({ ...input, id, status: "pending" });
     return { id };
+  }
+
+  async getAggregateInvoiceEligibilityData(
+    salesOrderId: string
+  ): Promise<{ salesOrderItemId: string; productName: string; unitPrice: number; orderedQuantity: number; aggregateReceivedQuantity: number }[]> {
+    const order = this.confirmedOrders.get(salesOrderId);
+    if (!order) return [];
+    return order.items.map((item) => {
+      const orderedQuantity = this.originalQuantities.get(item.id) ?? item.quantity;
+      let aggregateReceivedQuantity = 0;
+      for (const d of this.deliveries.values()) {
+        if (d.salesOrderId !== salesOrderId) continue;
+        for (const di of d.items) {
+          if (di.salesOrderItemId === item.id) aggregateReceivedQuantity += di.receivedQuantity;
+        }
+      }
+      return { salesOrderItemId: item.id, productName: item.productName, unitPrice: item.unitPrice, orderedQuantity, aggregateReceivedQuantity };
+    });
   }
 }

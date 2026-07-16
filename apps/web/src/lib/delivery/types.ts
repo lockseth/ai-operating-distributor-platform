@@ -171,6 +171,35 @@ export interface InvoiceEligibility {
   varianceValue: number;
 }
 
+export interface AggregateInvoiceEligibilityItem {
+  salesOrderItemId: string;
+  productName: string;
+  orderedQuantity: number;
+  aggregateReceivedQuantity: number;
+  eligibleQuantity: number;
+  unitPrice: number;
+  eligibleValue: number;
+  /**
+   * TRUE hanya bila aggregateReceivedQuantity > orderedQuantity -- yaitu
+   * SUM received_quantity lintas delivery attempt melebihi yang dipesan.
+   * Ini seharusnya TIDAK PERNAH terjadi (dicegah atomic di
+   * finalize_delivery_item_quantities), jadi flag ini adalah alarm integritas
+   * data, bukan kondisi normal. eligibleQuantity tetap di-cap ke
+   * orderedQuantity (tidak pernah melebihi), tapi flag ini SENGAJA tidak
+   * disembunyikan -- konsumen (mis. Invoice) wajib menampilkan/menolak bila true.
+   */
+  dataIntegrityWarning: boolean;
+}
+
+/** Invoice eligibility lintas SELURUH delivery attempt milik satu sales_order (bukan satu delivery). */
+export interface AggregateInvoiceEligibility {
+  salesOrderId: string;
+  items: AggregateInvoiceEligibilityItem[];
+  totalEligibleValue: number;
+  totalOrderedValue: number;
+  hasDataIntegrityWarning: boolean;
+}
+
 export interface OwnerAlertPayload {
   customerName: string;
   orderReference: string;

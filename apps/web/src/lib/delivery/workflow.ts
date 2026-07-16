@@ -32,6 +32,8 @@ import {
   buildDispatchedReply,
   buildAskQuantityReply,
   buildInvalidQuantityReply,
+  buildQuantityExceedsOutstandingReply,
+  buildQuantityConflictReply,
   buildAskReasonReply,
   buildInvalidReasonReply,
   buildAskReasonNoteReply,
@@ -57,6 +59,7 @@ export type DeliveryProcessResult =
   | { outcome: "evidence_recorded"; deliveryId: string }
   | { outcome: "preview_shown"; deliveryId: string }
   | { outcome: "finalized"; deliveryId: string; alreadyFinalized: boolean; finalStatus: DeliveryStatus }
+  | { outcome: "quantity_conflict"; deliveryId: string }
   | { outcome: "invalid_input" }
   | { outcome: "no_pending_delivery" };
 
@@ -261,6 +264,17 @@ async function handleItemQuantity(
   const received = Number(text);
   if (!Number.isFinite(received) || received < 0 || received > item.dispatchedQuantity || !Number.isInteger(received * 1000)) {
     await deps.sender.sendMessage(chatId, buildInvalidQuantityReply(item.dispatchedQuantity));
+    return { outcome: "invalid_input" };
+  }
+
+  // Validasi dini (UX cepat, TIDAK silent clamp) terhadap outstanding lintas
+  // delivery attempt lain untuk sales_order_item yang sama -- penegakan
+  // OTORITATIF tetap terjadi atomic di finalizeItemQuantities() saat
+  // KONFIRMASI KIRIM (lihat handleFinalConfirmation), ini murni feedback awal
+  // supaya driver tidak perlu menuntaskan seluruh alur evidence dulu baru tahu.
+  const outstanding = await deps.repository.getOutstandingQuantity(item.salesOrderItemId, item.id);
+  if (received > outstanding) {
+    await deps.sender.sendMessage(chatId, buildQuantityExceedsOutstandingReply(outstanding));
     return { outcome: "invalid_input" };
   }
 
@@ -529,8 +543,26 @@ async function handleFinalConfirmation(
     return { outcome: "finalized", deliveryId: delivery.id, alreadyFinalized: true, finalStatus: existing!.status };
   }
 
-  for (const [itemId, o] of Object.entries(draft.itemOutcomes ?? {})) {
-    await deps.repository.updateItemOutcome(itemId, o);
+  // Satu-satunya jalur commit quantity: atomic, row-locked lintas SELURUH
+  // delivery attempt milik sales_order yang sama. Menolak (TIDAK silent
+  // clamp) bila kombinasi ini akan mendorong SUM received_quantity melebihi
+  // ordered_quantity -- termasuk kasus dua attempt confirm hampir bersamaan.
+  const itemOutcomeEntries = Object.entries(draft.itemOutcomes ?? {});
+  if (itemOutcomeEntries.length > 0) {
+    const result = await deps.repository.finalizeItemQuantities(
+      delivery.id,
+      itemOutcomeEntries.map(([itemId, o]) => ({ deliveryItemId: itemId, ...o }))
+    );
+    if (!result.ok) {
+      await deps.sender.sendMessage(
+        chatId,
+        buildQuantityConflictReply(result.error.salesOrderItemId, result.error.outstanding, result.error.requested)
+      );
+      // TIDAK finalize, TIDAK insert exception/recipient/alert, TIDAK sync
+      // lifecycle -- state tetap final_confirmation, delivery tetap belum
+      // terminal. Driver/admin perlu menindaklanjuti secara manual.
+      return { outcome: "quantity_conflict", deliveryId: delivery.id };
+    }
   }
 
   if (draft.reasonCode) {

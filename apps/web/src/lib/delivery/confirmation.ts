@@ -63,6 +63,14 @@ export function buildInvalidQuantityReply(dispatchedQuantity: number): string {
   return `Jumlah tidak valid. Masukkan angka antara 0 dan ${dispatchedQuantity} (jumlah yang dikirim).`;
 }
 
+export function buildQuantityExceedsOutstandingReply(outstanding: number): string {
+  return `Jumlah ini melebihi sisa yang belum diterima untuk item ini (outstanding: ${outstanding}). Kemungkinan ada delivery attempt lain untuk order yang sama sudah mencatat sebagian. Masukkan angka maksimal ${outstanding}, atau hubungi admin/supervisor bila menurut Anda ini keliru.`;
+}
+
+export function buildQuantityConflictReply(salesOrderItemId: string, outstanding: number, requested: number): string {
+  return `Tidak bisa disimpan: item ini sudah menerima lebih banyak dari delivery attempt lain sejak percakapan ini dimulai (outstanding sekarang ${outstanding}, Anda memasukkan ${requested}). Hubungi admin/supervisor untuk verifikasi jumlah yang benar sebelum melanjutkan. (ref: ${salesOrderItemId})`;
+}
+
 export function buildAskReasonReply(): string {
   const list = REASON_CODES.map((code, i) => `${i + 1}. ${REASON_LABEL[code]}`).join("\n");
   return `Mohon pilih alasan (balas nomor):\n${list}`;

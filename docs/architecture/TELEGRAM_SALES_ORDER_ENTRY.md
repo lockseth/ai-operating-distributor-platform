@@ -407,7 +407,7 @@ dan `docs/knowledge/packs/waluyo/AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` §4�
 Business logic 100% di `apps/web/src/lib/delivery/` (`types.ts`, `repository.ts`,
 `service.ts`, `confirmation.ts`, `workflow.ts`) — terpisah dari transport
 Telegram, testable via `InMemoryDeliveryRepository` (lihat `workflow.test.ts`,
-26 skenario — termasuk gap-closure fix untuk owner alert coverage & aggregate
+32 skenario — termasuk gap-closure fix untuk owner alert coverage & aggregate
 lifecycle, lihat §Owner Alert dan §Aggregate Lifecycle di bawah).
 
 ### Arsitektur & Dispatch
@@ -597,10 +597,9 @@ Sifat penting:
   attempt pemiliknya sendiri; agregat murni menjumlahkan apa yang benar-benar
   tercatat verified. Attempt yang gagal/ditolak/toko tutup otomatis
   berkontribusi 0 untuk item yang tidak diterima — tidak perlu pengecualian khusus.
-  **Batasan MVP yang diketahui**: attempt re-delivery baru men-*snapshot*
-  `ordered_quantity` dari `sales_order_items` ASLI (bukan sisa outstanding) —
-  agregasi tetap benar, tapi UI attempt kedua akan menampilkan "dipesan 20"
-  walau yang sebenarnya perlu dikirim ulang hanya sisanya.
+  Sejak fix invariant kuantitas (lihat subbagian di bawah), attempt baru
+  memakai OUTSTANDING sebagai `ordered_quantity`-nya sendiri, bukan quantity
+  asli order — batasan yang sebelumnya tercatat di sini sudah tidak berlaku.
 - **Tidak ada enum baru** — tetap `confirmed`/`delivering`/`delivered` yang
   sudah ada. `store_closed`/`failed`/`rejected` (di level delivery attempt)
   membuat order tetap `delivering` — tidak pernah mundur, tidak pernah
@@ -611,6 +610,56 @@ Sifat penting:
   manager tetap bisa override manual kapan pun (prinsip Constitution "AI
   merekomendasikan, owner memutuskan"). Sinkronisasi otomatis hanya berjalan
   dari alur Delivery Verification Telegram, tidak pernah dari UI manual.
+
+### Invariant Kuantitas Agregat — Anti Over-Delivery
+
+> **Fix (audit invariant, 2026-07-16).** Diaudit dan **dibuktikan live** bahwa
+> sebelum fix ini, SUM `received_quantity` lintas beberapa delivery attempt
+> untuk satu `sales_order_item` **bisa melebihi** `ordered_quantity` tanpa
+> ditolak sama sekali (attempt A menerima 60/100, attempt B bisa menerima 50
+> lagi → 110/100 diterima, order bahkan ditandai `delivered`). CHECK
+> constraint yang ada hanya per-baris (`received_quantity + ... <=
+> dispatched_quantity`), tidak lintas baris/attempt.
+
+Ditutup dengan fungsi Postgres atomic
+`finalize_delivery_item_quantities(delivery_id, item_outcomes)`
+(`supabase/migrations/20260718000001_delivery_quantity_invariant.sql`) —
+**satu-satunya jalur** menulis quantity final delivery, menggantikan
+`updateItemOutcome()` sekuensial yang lama:
+
+1. Mengunci (`FOR UPDATE`) seluruh `sales_order_items` yang terlibat, dalam
+   urutan id konsisten (mencegah deadlock antar finalize bersamaan).
+2. Untuk tiap item: `outstanding = ordered_quantity - SUM(received_quantity
+   dari delivery attempt LAIN)`. Baris milik attempt itu sendiri dikecualikan
+   dari perhitungan "attempt lain" — retry tetap idempotent.
+3. Bila `received_quantity` yang diajukan `>` outstanding →
+   **`RAISE EXCEPTION QUANTITY_EXCEEDS_OUTSTANDING`** (ditolak, transaksi
+   fungsi batal seluruhnya — **tidak ada silent clamp**, tidak ada penulisan
+   sebagian).
+4. Bila lolos untuk SEMUA item dalam satu delivery, baru ditulis.
+
+Lapisan tambahan (defense in depth, bukan pengganti):
+
+- **Validasi dini** di `handleItemQuantity` (`lib/delivery/workflow.ts`) —
+  `getOutstandingQuantity()` dicek sebelum driver menyelesaikan seluruh alur
+  evidence, supaya penolakan (bila ada) terasa cepat. Otoritas tetap di
+  fungsi atomic saat `KONFIRMASI KIRIM`.
+- **Delivery attempt baru default ke outstanding** — `getConfirmedOrder()`
+  sekarang mengembalikan `quantity` = OUTSTANDING (bukan `sales_order_items.quantity`
+  mentah) per item, sehingga `dispatched_quantity` attempt baru otomatis
+  terbatas ke sisa yang benar-benar belum diterima.
+- **Invoice eligibility agregat** — `computeAggregateInvoiceEligibility()`
+  (`lib/delivery/service.ts`) + `getAggregateInvoiceEligibilityData()`
+  (repository) menjumlahkan `received_quantity` lintas seluruh attempt milik
+  satu order, di-cap ke `ordered_quantity` — bila suatu saat SUM historis
+  ternyata melebihi (seharusnya mustahil sejak fix ini), `dataIntegrityWarning`
+  diset `true` secara eksplisit, **bukan** disembunyikan lewat clamp diam-diam.
+
+**Dibuktikan live terhadap Supabase lokal sungguhan** (bukan hanya in-memory):
+order=100, attempt A commit 60 (diterima), attempt B mencoba 50 → **ditolak
+`HTTP 400 QUANTITY_EXCEEDS_OUTSTANDING`** dengan `received_quantity` B tetap
+0 (tidak ada penulisan sebagian); attempt B dengan tepat 40 → **diterima**,
+total 60+40=100, `sync_sales_order_delivery_status` menandai order `delivered`.
 
 ### Reason Code (v1, dari Implementation Gate §5)
 
@@ -713,7 +762,7 @@ pnpm --filter @flowsales/web test
 ```
 
 - 13 skenario di `apps/web/src/lib/sales-orders/workflow.test.ts` (Sales Order Entry).
-- 26 skenario di `apps/web/src/lib/delivery/workflow.test.ts` (Delivery
+- 32 skenario di `apps/web/src/lib/delivery/workflow.test.ts` (Delivery
   Verification — full/partial/store_closed/rejected/changed-recipient/
   missing-evidence/duplicate/invoice-eligibility/tenant-isolation/owner-alert
   policy berbasis dampak bisnis/aggregate order lifecycle/multi-attempt).
