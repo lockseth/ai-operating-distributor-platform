@@ -250,3 +250,17 @@ Versi `1.1.0` dapat diterbitkan setelah data operasional pilot menghasilkan kali
 
 Perubahan tersebut tidak membatalkan v1.0; perubahan diterbitkan sebagai firmware-like knowledge update dengan changelog.
 
+## 11. Implementation Cross-References
+
+Bagian ini murni pointer implementasi — tidak mengubah/membatalkan WK-xx atau
+bagian lain di atas.
+
+- **AI Order-to-Delivery Planning MVP** (2026-07-16): `Sales Order confirmed
+  → AI Dispatch Planner` diimplementasikan sebagai lapisan perencanaan
+  (bukan eksekusi) sebelum Delivery Verification — lihat
+  `docs/architecture/AI_DISPATCH_PLANNING.md`. Model actor (salesman = order
+  + delivery actor untuk Waluyo, dapat berbeda untuk tenant lain) mengikuti
+  §8 di atas ("Tenant-specific threshold tidak boleh dianggap berlaku
+  universal") — `dispatch_planning.default_actor_strategy` adalah tenant
+  policy, bukan default global.
+
