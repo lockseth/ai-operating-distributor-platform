@@ -288,3 +288,62 @@ export interface AuthUser {
   roles: SystemRole[];
   permissions: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Decision Kernel — shared contracts (AI Decision Kernel Foundation Gate)
+//
+// Types only. Setiap domain (sales-orders, dispatch, delivery, dst) tetap
+// memiliki logic keputusannya sendiri — bagian ini hanya menstandardisasi
+// BENTUK output/audit yang dipakai berulang, mencegah drift seperti yang
+// sudah terjadi pada knowledge_candidates (lihat Operating Brain Readiness
+// Report). Tidak ada orchestrator atau business logic di sini.
+// ---------------------------------------------------------------------------
+
+/** Satu alasan keputusan — code untuk logic/filtering, message untuk manusia. */
+export interface DecisionReason {
+  code: string;
+  message: string;
+}
+
+/** Siapa/tenant mana yang bertanggung jawab atas sebuah keputusan/aksi. */
+export interface ActorContext {
+  actorId: UUID | null;
+  companyId: UUID;
+  isAiDecision: boolean;
+}
+
+/** Metadata audit standar untuk keputusan lintas domain (bukan tabel baru —
+ * setiap domain tetap memetakan ini ke kolom event table miliknya sendiri). */
+export interface DecisionAuditMetadata {
+  actor: ActorContext;
+  reasons: DecisionReason[];
+  /** 0..1. Opsional — tidak semua domain punya confidence score (mis. discount
+   * validation memakai boolean flag, bukan confidence). Jangan dipaksakan. */
+  confidenceScore?: number;
+}
+
+export type KnowledgeCandidateType =
+  | "product_alias"
+  | "customer_alias"
+  | "unit_alias"
+  | "dispatch_planning_override"
+  | "other";
+
+/** Kontrak resmi untuk menulis knowledge_candidates — satu bentuk untuk
+ * semua domain, dipakai lewat insertKnowledgeCandidate() (@flowsales/database).
+ * status SELALU 'pending' (diset oleh helper, bukan caller) — koreksi domain
+ * tidak boleh langsung mengubah Published Knowledge. */
+export interface KnowledgeCandidateInput {
+  companyId: UUID;
+  candidateType: KnowledgeCandidateType;
+  rawText: string;
+  suggestedValue: Record<string, JsonValue>;
+  sourceOrderId?: UUID | null;
+  submittedBy: UUID | null;
+}
+
+/** Tenant policy access contract — settings dibaca sebagai map key->value
+ * (JSONB, dari tabel `settings`) lalu diekstrak lewat readTenantPolicy()
+ * (@flowsales/shared). I/O (query ke Supabase) tetap tanggung jawab domain
+ * masing-masing — kontrak ini hanya menstandardisasi bentuk & fallback. */
+export type TenantPolicySettings = Record<string, JsonValue>;

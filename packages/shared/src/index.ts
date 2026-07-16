@@ -156,3 +156,34 @@ export function hasPermission(
     userPermissions.includes("*")
   );
 }
+
+// ---------------------------------------------------------------------------
+// Tenant Policy — typed reader (AI Decision Kernel Foundation Gate)
+//
+// Pure, tanpa I/O — domain tetap bertanggung jawab query ke tabel `settings`
+// sendiri (tenant/company scoping adalah keputusan domain, bukan shared
+// helper). Ini hanya menstandardisasi KEY NAMING (namespace.key, pola sama
+// seperti buildPermissionKey) dan FALLBACK EXTRACTION agar tidak setiap
+// domain menulis logic cast/fallback-nya sendiri.
+// ---------------------------------------------------------------------------
+
+import type { JsonValue, TenantPolicySettings } from "@flowsales/types";
+
+export function buildPolicyKey(namespace: string, key: string): string {
+  return `${namespace}.${key}`;
+}
+
+/**
+ * Ekstrak satu nilai typed dari map settings (hasil query `settings` table
+ * yang sudah di-load domain). Key tidak ditemukan / null -> fallback.
+ * Tidak melakukan validasi tipe runtime (caller yang tahu bentuk aslinya) —
+ * ini murni standarisasi lookup+fallback, bukan schema validator.
+ */
+export function readTenantPolicy<T extends JsonValue>(
+  settings: TenantPolicySettings,
+  key: string,
+  fallback: T
+): T {
+  const value = settings[key];
+  return value === undefined || value === null ? fallback : (value as T);
+}

@@ -121,6 +121,8 @@ describe("AI Dispatch Planner", () => {
 
     expect(repo.knowledgeCandidates).toHaveLength(1);
     expect(repo.knowledgeCandidates[0].candidateType).toBe("dispatch_planning_override");
+    // Fix Foundation Gate: source_order_id wajib terisi (sebelumnya hilang, lihat repository.ts).
+    expect(repo.knowledgeCandidates[0].sourceOrderId).toBe("order-1");
   });
 
   it("4b. Manual Override — hold requires reason and does not silently learn without one", async () => {

@@ -146,6 +146,7 @@ export async function overrideDispatchPlan(
   await deps.repository.insertKnowledgeCandidate({
     companyId,
     dispatchPlanId: planId,
+    salesOrderId: plan.salesOrderId,
     action: override.action,
     reason: override.reason,
     submittedBy: override.actorId,

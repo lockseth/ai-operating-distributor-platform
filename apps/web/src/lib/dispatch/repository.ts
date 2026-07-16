@@ -9,6 +9,9 @@
 // =============================================================================
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { JsonValue, KnowledgeCandidateInput } from "@flowsales/types";
+import { readTenantPolicy } from "@flowsales/shared";
+import { insertKnowledgeCandidate as insertKnowledgeCandidateShared } from "@flowsales/database";
 import type {
   DispatchPlan,
   DispatchPlanEvent,
@@ -77,6 +80,7 @@ export interface DispatchRepositoryInterface {
   insertKnowledgeCandidate(input: {
     companyId: string;
     dispatchPlanId: string;
+    salesOrderId: string;
     action: OverrideAction;
     reason: string;
     submittedBy: string;
@@ -156,21 +160,33 @@ export class SupabaseDispatchRepository implements DispatchRepositoryInterface {
   }
 
   private async getTenantPolicy(companyId: string): Promise<TenantDispatchPolicy> {
-    const { data } = await this.supabase
-      .from("settings")
-      .select("key, value")
-      .eq("company_id", companyId)
-      .in("key", ["dispatch_planning.max_tonnage_per_route_kg", "dispatch_planning.min_order_value_for_same_day", "dispatch_planning.default_actor_strategy"]);
+    const keys = [
+      "dispatch_planning.max_tonnage_per_route_kg",
+      "dispatch_planning.min_order_value_for_same_day",
+      "dispatch_planning.default_actor_strategy",
+    ];
+    const { data } = await this.supabase.from("settings").select("key, value").eq("company_id", companyId).in("key", keys);
 
-    const policy: TenantDispatchPolicy = { ...DEFAULT_POLICY };
+    // I/O (query keys mana yang relevan) tetap tanggung jawab domain ini —
+    // hanya lookup+fallback per-key yang distandardisasi lewat readTenantPolicy.
+    const settingsMap: Record<string, JsonValue> = {};
     for (const row of data ?? []) {
-      if (row.key === "dispatch_planning.max_tonnage_per_route_kg") policy.maxTonnagePerRouteKg = Number(row.value) || null;
-      if (row.key === "dispatch_planning.min_order_value_for_same_day") policy.minOrderValueForSameDay = Number(row.value) || null;
-      if (row.key === "dispatch_planning.default_actor_strategy" && (row.value === "order_salesperson" || row.value === "unassigned")) {
-        policy.defaultActorStrategy = row.value;
-      }
+      settingsMap[row.key] = row.value as JsonValue;
     }
-    return policy;
+
+    const maxTonnageRaw = readTenantPolicy(settingsMap, "dispatch_planning.max_tonnage_per_route_kg", null as number | null);
+    const minOrderValueRaw = readTenantPolicy(settingsMap, "dispatch_planning.min_order_value_for_same_day", null as number | null);
+    const actorStrategyRaw = readTenantPolicy(
+      settingsMap,
+      "dispatch_planning.default_actor_strategy",
+      DEFAULT_POLICY.defaultActorStrategy as JsonValue
+    );
+
+    return {
+      maxTonnagePerRouteKg: typeof maxTonnageRaw === "number" ? maxTonnageRaw : Number(maxTonnageRaw) || null,
+      minOrderValueForSameDay: typeof minOrderValueRaw === "number" ? minOrderValueRaw : Number(minOrderValueRaw) || null,
+      defaultActorStrategy: actorStrategyRaw === "order_salesperson" ? "order_salesperson" : "unassigned",
+    };
   }
 
   async getPlanningInput(
@@ -331,26 +347,28 @@ export class SupabaseDispatchRepository implements DispatchRepositoryInterface {
   async insertKnowledgeCandidate(input: {
     companyId: string;
     dispatchPlanId: string;
+    salesOrderId: string;
     action: OverrideAction;
     reason: string;
     submittedBy: string;
     previousDecision: PlanningDecision;
     newDecision: { deliveryDate?: string; deliveryArea?: string; assignedActorId?: string | null };
   }): Promise<void> {
-    const { error } = await this.supabase.from("knowledge_candidates").insert({
-      company_id: input.companyId,
-      candidate_type: "dispatch_planning_override",
-      raw_text: `AI: ${input.previousDecision.planningReason}`,
-      suggested_value: {
+    const candidate: KnowledgeCandidateInput = {
+      companyId: input.companyId,
+      candidateType: "dispatch_planning_override",
+      rawText: `AI: ${input.previousDecision.planningReason}`,
+      suggestedValue: {
         dispatchPlanId: input.dispatchPlanId,
         action: input.action,
         reason: input.reason,
-        previousDecision: input.previousDecision,
-        newDecision: input.newDecision,
+        previousDecision: input.previousDecision as unknown as JsonValue,
+        newDecision: input.newDecision as unknown as JsonValue,
       },
-      submitted_by: input.submittedBy,
-    });
-    if (error) throw new Error(`Gagal insert knowledge_candidates: ${error.message}`);
+      sourceOrderId: input.salesOrderId, // fix: sebelumnya tidak diisi (lihat Operating Brain Readiness Report §C3)
+      submittedBy: input.submittedBy,
+    };
+    await insertKnowledgeCandidateShared(this.supabase, candidate);
   }
 }
 
@@ -361,7 +379,12 @@ export class SupabaseDispatchRepository implements DispatchRepositoryInterface {
 export class InMemoryDispatchRepository implements DispatchRepositoryInterface {
   public plans = new Map<string, DispatchPlan>();
   public events: DispatchPlanEvent[] = [];
-  public knowledgeCandidates: Array<{ companyId: string; candidateType: string; suggestedValue: Record<string, unknown> }> = [];
+  public knowledgeCandidates: Array<{
+    companyId: string;
+    candidateType: string;
+    sourceOrderId: string | null;
+    suggestedValue: Record<string, unknown>;
+  }> = [];
   private planningInputs = new Map<string, PlanningInput>();
   private idCounter = 0;
 
@@ -482,6 +505,7 @@ export class InMemoryDispatchRepository implements DispatchRepositoryInterface {
   async insertKnowledgeCandidate(input: {
     companyId: string;
     dispatchPlanId: string;
+    salesOrderId: string;
     action: OverrideAction;
     reason: string;
     submittedBy: string;
@@ -491,6 +515,7 @@ export class InMemoryDispatchRepository implements DispatchRepositoryInterface {
     this.knowledgeCandidates.push({
       companyId: input.companyId,
       candidateType: "dispatch_planning_override",
+      sourceOrderId: input.salesOrderId,
       suggestedValue: {
         dispatchPlanId: input.dispatchPlanId,
         action: input.action,
