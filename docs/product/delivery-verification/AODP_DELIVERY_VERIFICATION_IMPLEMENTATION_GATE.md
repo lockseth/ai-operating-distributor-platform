@@ -1,5 +1,32 @@
 # AODP Delivery Verification — Implementation Gate
 
+## 0. Implementation Status (2026-07-16)
+
+**MVP diimplementasikan** — lihat `docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md`
+§Delivery Verification untuk detail operasional (flow Telegram, evidence
+minimum, invoice eligibility contract, owner alert outbox).
+
+Ringkasan lulus/tidak terhadap Definition of Done (§9 dokumen ini):
+
+| Item DoD | Status |
+|---|---|
+| Migration & RLS tersedia | ✅ `supabase/migrations/20260716000001_delivery_verification.sql` |
+| Service/domain logic terpisah dari Telegram transport | ✅ `apps/web/src/lib/delivery/service.ts` |
+| Full/partial/rejected/store-closed lulus test | ✅ 15 skenario (`lib/delivery/workflow.test.ts`) + live smoke test terhadap Supabase lokal |
+| Idempotency & cross-tenant isolation lulus test | ✅ |
+| Evidence authorization lulus test | ✅ (evidence tidak lengkap ditolak; tidak ada API hapus evidence/exception/audit) |
+| Invoice eligibility selalu dari verified received quantity | ✅ diverifikasi test + live query |
+| Telegram happy path & exception path dapat didemokan | ✅ diverifikasi hidup lewat curl terhadap webhook + Supabase lokal |
+| Owner alert payload tidak membocorkan data tenant lain | ✅ (company_id selalu dari identity server-side) |
+| Dokumentasi, onboarding requirement, demo script diperbarui | 🟡 Sebagian — dokumentasi teknis & onboarding requirement diperbarui; **demo script (`docs/sales-kit/demo-movie/`) TIDAK diperbarui** karena berkonflik langsung dengan instruksi eksplisit lain di task yang sama ("pertahankan ... jangan disentuh" / "jangan mengubah file sales-kit pra-eksisting milik user") — dilaporkan sebagai konflik instruksi, bukan diselesaikan sepihak |
+| Tidak ada placeholder yang diklaim sebagai live feature | ✅ |
+
+Yang **belum** dikerjakan (sesuai scope MVP, bukan kelalaian):
+Invoice final, Collection, provider WhatsApp aktif (alert tetap outbox
+`pending`), GPS provider integration, ML fraud verdict, route deviation
+engine, warehouse/WMS penuh — lihat §3 "Excluded from this workflow" di
+bawah, tidak berubah.
+
 ## 1. Decision
 
 Delivery Verification adalah langkah berikutnya dari vertical slice AODP setelah Telegram Sales Order Entry.

@@ -16,6 +16,7 @@ import { verifyTelegramSecret, HttpTelegramSender, type TelegramUpdate } from "@
 import { SupabaseSalesOrderRepository } from "@/lib/sales-orders/repository";
 import { SupabaseKnowledgeProvider } from "@/lib/sales-orders/knowledge-provider";
 import { processTelegramUpdate, type WorkflowDeps } from "@/lib/sales-orders/workflow";
+import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
 
 // 60 update/menit per IP — cukup longgar untuk trafik bot wajar, mencegah flood.
 const RATE_LIMIT = 60;
@@ -55,11 +56,13 @@ export async function POST(request: Request) {
       repository: new SupabaseSalesOrderRepository(supabase),
       knowledgeProvider: new SupabaseKnowledgeProvider(supabase),
       sender: new HttpTelegramSender(botToken),
+      deliveryRepository: new SupabaseDeliveryRepository(supabase),
     };
 
     const result = await processTelegramUpdate(update, deps);
+    const outcome = result.outcome === "delivery" ? result.result.outcome : result.outcome;
 
-    return NextResponse.json({ ok: true, outcome: result.outcome });
+    return NextResponse.json({ ok: true, outcome });
   } catch (err) {
     console.error("[Webhook /telegram]", err);
     // Tetap balas 200 setelah update tervalidasi supaya Telegram tidak retry

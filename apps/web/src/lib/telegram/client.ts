@@ -66,6 +66,10 @@ export interface TelegramUpdate {
     message_id: number;
     text?: string;
     voice?: { file_id: string; duration: number };
+    /** Telegram mengirim beberapa resolusi per foto — dipakai entry terakhir (terbesar). */
+    photo?: { file_id: string; width: number; height: number }[];
+    document?: { file_id: string; file_name?: string };
+    location?: { latitude: number; longitude: number };
     chat: { id: number };
     from?: { id: number; username?: string };
   };

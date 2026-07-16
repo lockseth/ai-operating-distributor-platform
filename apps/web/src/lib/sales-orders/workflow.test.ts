@@ -11,6 +11,7 @@ import { InMemoryKnowledgeProvider } from "./knowledge-provider";
 import { RecordingTelegramSender } from "@/lib/telegram/client";
 import type { TelegramUpdate } from "@/lib/telegram/client";
 import type { KnowledgeContext } from "./types";
+import { InMemoryDeliveryRepository } from "@/lib/delivery/repository";
 
 const COMPANY_ID = "company-1";
 const USER_ID = "user-1";
@@ -20,11 +21,13 @@ function makeDeps(seed: Partial<KnowledgeContext> = {}): WorkflowDeps & {
   repository: InMemorySalesOrderRepository;
   knowledgeProvider: InMemoryKnowledgeProvider;
   sender: RecordingTelegramSender;
+  deliveryRepository: InMemoryDeliveryRepository;
 } {
   const repository = new InMemorySalesOrderRepository();
   const knowledgeProvider = new InMemoryKnowledgeProvider(seed);
   const sender = new RecordingTelegramSender();
-  return { repository, knowledgeProvider, sender };
+  const deliveryRepository = new InMemoryDeliveryRepository();
+  return { repository, knowledgeProvider, sender, deliveryRepository };
 }
 
 function registerSales(repository: InMemorySalesOrderRepository, chatId = CHAT_ID) {

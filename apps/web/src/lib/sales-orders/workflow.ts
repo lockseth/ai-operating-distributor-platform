@@ -23,11 +23,14 @@ import {
   buildNoPendingOrderReply,
   buildOrderConfirmedReply,
 } from "./confirmation";
+import type { DeliveryRepositoryInterface } from "@/lib/delivery/repository";
+import { processDeliveryConversation, type DeliveryProcessResult } from "@/lib/delivery/workflow";
 
 export interface WorkflowDeps {
   repository: SalesOrderTelegramRepository;
   knowledgeProvider: KnowledgeProvider;
   sender: TelegramSender;
+  deliveryRepository: DeliveryRepositoryInterface;
 }
 
 export type ProcessResult =
@@ -40,7 +43,8 @@ export type ProcessResult =
   | { outcome: "corrected_draft_updated"; orderId: string }
   | { outcome: "confirmed"; orderId: string; alreadyConfirmed: boolean }
   | { outcome: "awaiting_correction"; orderId: string }
-  | { outcome: "no_pending_order" };
+  | { outcome: "no_pending_order" }
+  | { outcome: "delivery"; result: DeliveryProcessResult };
 
 const CONFIRM_KEYWORD = "KONFIRMASI";
 const CHANGE_KEYWORD = "UBAH";
@@ -92,6 +96,27 @@ export async function processTelegramUpdate(
     // Tidak membocorkan data internal — pesan generik saja.
     await deps.sender.sendMessage(chatId, buildUnregisteredUserReply());
     return { outcome: "unregistered" };
+  }
+
+  // --- Alur Delivery Verification (driver) didahulukan bila sedang berjalan
+  // untuk identity ini. Satu bot Telegram, satu ledger idempotency
+  // (telegram_update_events) melayani kedua alur — lihat lib/delivery/repository.ts. ---
+  const deliveryState = await deps.deliveryRepository.getConversationState(identity.identityId);
+  if (deliveryState.awaiting !== "none") {
+    const deliveryEvent = await deps.repository.insertEvent({
+      telegramUpdateId: update.update_id,
+      companyId: identity.companyId,
+      telegramIdentityId: identity.identityId,
+      messageType: message.voice ? "voice" : message.text ? "text" : "other",
+      processingStatus: "received",
+      rawPayload: update,
+    });
+    const deliveryResult = await processDeliveryConversation(message, chatId, identity, deliveryState, deliveryEvent.id, {
+      repository: deps.deliveryRepository,
+      sender: deps.sender,
+    });
+    await deps.repository.updateEventStatus(deliveryEvent.id, "processed");
+    return { outcome: "delivery", result: deliveryResult };
   }
 
   if (message.voice) {

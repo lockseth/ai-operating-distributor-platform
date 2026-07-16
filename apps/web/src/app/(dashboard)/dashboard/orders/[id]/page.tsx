@@ -6,6 +6,11 @@ import { createClient } from "@/lib/supabase/server";
 import { CancelButton } from "@/components/orders/cancel-button";
 import { StatusUpdater } from "@/components/orders/status-updater";
 import { OrderStatusBadge } from "@/components/orders/order-status-badge";
+import { AssignDriverForm } from "@/components/delivery/assign-driver-form";
+import { DeliveryPanel } from "@/components/delivery/delivery-panel";
+import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
+import { computeInvoiceEligibility } from "@/lib/delivery/service";
+import { getAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/lib/orders/actions";
 import {
   ChevronLeft, Edit2, Plus, ShoppingCart, User, Calendar,
@@ -93,6 +98,47 @@ export default async function OrderDetailPage({
   const canCancel  = hasPermission(user.permissions, "orders.delete") || canEdit;
   const isEditable = ["draft", "confirmed"].includes(order.status);
   const isCancellable = !["delivered", "invoiced", "paid", "cancelled"].includes(order.status);
+
+  // --- Delivery Verification (tahap 2 vertical slice) ---
+  const canManageDelivery = hasPermission(user.permissions, "delivery.manage");
+  const deliveryRepository = new SupabaseDeliveryRepository(supabase);
+  const delivery = await deliveryRepository.getLatestDeliveryForOrder(order.id);
+
+  let deliveryEvents: { eventType: string; toStatus: string | null; createdAt: string }[] = [];
+  let ownerAlertStatus: "pending" | "sent" | "failed" | null = null;
+  if (delivery) {
+    const { data: eventRows } = await supabase
+      .from("delivery_events")
+      .select("event_type, to_status, created_at")
+      .eq("delivery_id", delivery.id)
+      .order("created_at", { ascending: true });
+    deliveryEvents = ((eventRows ?? []) as { event_type: string; to_status: string | null; created_at: string }[]).map((e) => ({
+      eventType: e.event_type,
+      toStatus: e.to_status,
+      createdAt: e.created_at,
+    }));
+
+    const { data: alertRow } = await supabase
+      .from("owner_alerts")
+      .select("status")
+      .eq("delivery_id", delivery.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    ownerAlertStatus = (alertRow as { status: "pending" | "sent" | "failed" } | null)?.status ?? null;
+  }
+
+  let availableDrivers: { id: string; full_name: string }[] = [];
+  if (!delivery && order.status === "confirmed" && canManageDelivery) {
+    const admin = getAdminClient();
+    const { data: driverRows } = await admin
+      .from("user_roles")
+      .select("user:users!user_id(id, full_name), role:roles!role_id(name)")
+      .eq("company_id", user.company_id);
+    availableDrivers = ((driverRows ?? []) as unknown as { user: { id: string; full_name: string } | null; role: { name: string } | null }[])
+      .filter((r) => r.role?.name === "driver" && r.user)
+      .map((r) => ({ id: r.user!.id, full_name: r.user!.full_name }));
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-5">
@@ -249,6 +295,25 @@ export default async function OrderDetailPage({
           </tbody>
         </table>
       </div>
+
+      {/* Delivery Verification */}
+      {delivery ? (
+        <DeliveryPanel
+          status={delivery.status}
+          attemptNumber={delivery.attemptNumber}
+          items={delivery.items}
+          exceptions={delivery.exceptions}
+          evidence={delivery.evidence}
+          recipient={delivery.recipient}
+          events={deliveryEvents}
+          invoiceEligibility={computeInvoiceEligibility(delivery)}
+          ownerAlertStatus={ownerAlertStatus}
+        />
+      ) : (
+        order.status === "confirmed" && canManageDelivery && (
+          <AssignDriverForm salesOrderId={order.id} drivers={availableDrivers} />
+        )
+      )}
 
       {/* Notes */}
       {order.notes && (

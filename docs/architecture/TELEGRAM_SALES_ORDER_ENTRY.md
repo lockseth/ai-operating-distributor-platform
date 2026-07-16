@@ -1,9 +1,21 @@
-# Telegram Sales Order Entry — MVP
+# Telegram Sales Order Entry & Delivery Verification
 
-Vertical slice: input order sales via Telegram, dari pesan masuk sampai draft
-order tersimpan (belum: PO tercetak, delivery verification, invoice,
-notifikasi WhatsApp owner, dashboard baru, warehouse deduction, pengiriman
-barang — lihat scope di task asli).
+Dua tahap pertama vertical slice AODP (Constitution L16, AODP Waluyo Living
+Knowledge Pack v1.0 §4):
+
+`Sales Order → Delivery Verification → Invoice → Collection → Owner Alert`
+
+**Tahap 1 — Sales Order Entry**: input order via Telegram, dari pesan masuk
+sampai draft order tersimpan.
+**Tahap 2 — Delivery Verification**: rekonsiliasi order→kirim→terima, evidence,
+exception, invoice eligibility, owner alert. Lihat §Delivery Verification di
+bawah.
+
+Belum dibangun: Invoice final, Collection, notifikasi WhatsApp owner
+sungguhan (provider belum ada — lihat §Delivery Verification → Owner Alert),
+dashboard Collection/Business Guard, warehouse deduction, GPS provider
+integration, ML fraud verdict — lihat scope resmi di
+`docs/product/delivery-verification/AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md`.
 
 ## Status Production Readiness (per audit terakhir — Production Bootstrap Preflight)
 
@@ -254,6 +266,15 @@ Belum ada UI (di luar scope MVP ini). Daftarkan manual via SQL — **jangan
 pernah** mempercayai `company_id`/`user_id` dari payload Telegram, hanya baris
 di `telegram_identities` yang menjadi sumber kebenaran identitas.
 
+> **Driver memakai mekanisme yang sama.** `telegram_identities` tidak
+> membedakan role — satu tabel melayani sales, admin, supervisor, **maupun
+> driver**. Ikuti prosedur di bawah persis sama untuk mendaftarkan driver,
+> cukup pastikan user AODP yang didaftarkan memiliki role `driver` (role ini
+> sudah ada sejak awal, lihat seed di `20260626000002_create_users_roles_permissions.sql`).
+> Tanpa driver terdaftar, tombol "Assign & Kirim Tugas" di halaman order
+> (§Delivery Verification) akan menolak dengan pesan jelas — bukan mengarang
+> `chat_id`.
+
 **Jangan mengarang `telegram_chat_id`.** ID ini unik per user Telegram dan
 harus didapat dari update Telegram yang sungguhan — bukan ditebak/dikira-kira.
 Prosedur aman berikut memakai teknik "update pertama yang belum terdaftar",
@@ -378,6 +399,146 @@ insert into public.knowledge_discount_policies (company_id, scope, max_percentag
 values ('<company_id>', 'global', 15); -- diskon >15% akan ditandai discount_exception
 ```
 
+## Delivery Verification
+
+Tahap 2 vertical slice — implementasi MVP per
+`docs/product/delivery-verification/AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md`
+dan `docs/knowledge/packs/waluyo/AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` §4–§9.
+Business logic 100% di `apps/web/src/lib/delivery/` (`types.ts`, `repository.ts`,
+`service.ts`, `confirmation.ts`, `workflow.ts`) — terpisah dari transport
+Telegram, testable via `InMemoryDeliveryRepository` (lihat `workflow.test.ts`,
+15 skenario).
+
+### Arsitektur & Dispatch
+
+Delivery memakai **bot Telegram yang sama** dan **ledger idempotency yang
+sama** (`telegram_update_events`) dengan Sales Order Entry — Telegram hanya
+mengizinkan satu webhook URL per bot, jadi tidak mungkin (dan tidak perlu)
+membuat webhook terpisah. Routing internal:
+
+```
+processTelegramUpdate() [lib/sales-orders/workflow.ts]
+  → resolveIdentity()                — sama seperti Sales Order
+  → cek delivery_conversation_state   — bila awaiting != 'none', didahulukan
+      → processDeliveryConversation() [lib/delivery/workflow.ts]
+  → (jika tidak) lanjut ke logika Sales Order seperti biasa
+```
+
+Satu identity Telegram bisa menjadi driver, sales, atau keduanya — dibedakan
+lewat `delivery_conversation_state` (terpisah dari `telegram_conversation_state`
+milik Sales Order) yang menentukan pesan masuk berikutnya diproses sebagai
+apa.
+
+### Membuat Delivery (assign driver)
+
+Belum ada trigger otomatis dari konfirmasi order — **sengaja manual**, dipicu
+owner/manager/admin lewat tombol "Assign & Kirim Tugas" di halaman detail
+order (`/dashboard/orders/[id]`, muncul saat status order `confirmed` dan
+belum ada delivery). Server action `createDeliveryAction`
+(`lib/delivery/actions.ts`):
+
+- Tenant **selalu** dari sesi (`getAuthUser()`), tidak pernah dari input form.
+- Driver **wajib** sudah terdaftar di `telegram_identities` — tidak pernah
+  mengarang `chat_id` (sama prinsipnya dengan §Mendaftarkan Sales di atas;
+  driver didaftarkan lewat prosedur yang sama, cukup ganti role user ke `driver`).
+- Idempotent lewat `deliveries.idempotency_key = 'order:<sales_order_id>'` —
+  memanggil action dua kali untuk order yang sama tidak membuat delivery ganda.
+- Mengirim pesan tugas awal ke driver via Telegram, lalu men-set
+  `delivery_conversation_state.awaiting = 'start_confirmation'`.
+
+### Alur Telegram Driver (happy path)
+
+1. Driver menerima pesan tugas, balas **`MULAI KIRIM`** → status `dispatched`
+   (MVP: seluruh `ordered_quantity` otomatis jadi `dispatched_quantity` —
+   tidak ada langkah picking/warehouse terpisah, sesuai exclusion Implementation
+   Gate §3 "Full warehouse/WMS optimization").
+2. Tiba di toko, balas salah satu: **`DITERIMA PENUH`**, **`DITERIMA SEBAGIAN`**,
+   **`DITOLAK`**, **`TOKO TUTUP`**, atau **`GAGAL`** → status `arrived`.
+3. Untuk `DITERIMA SEBAGIAN`/`DITOLAK`: bot menanyakan jumlah diterima per
+   item satu per satu (angka polos, bukan tombol — konsisten dengan pola
+   KONFIRMASI/UBAH Sales Order). Sisa (dispatched − diterima) otomatis masuk
+   `unresolvedQuantity` (untuk partial) atau `rejectedQuantity` (untuk
+   rejected) — MVP tidak punya langkah terpisah untuk memilah retur vs rusak,
+   lihat §Known Limitations.
+4. Bot meminta **reason code** (daftar 11 kode dari Implementation Gate §5,
+   `OTHER_REQUIRES_NOTE` wajib disertai catatan). `TOKO TUTUP` melewati
+   langkah ini (reason otomatis `STORE_CLOSED`).
+5. Bot meminta **evidence** sesuai outcome (lihat tabel di bawah) — mengirim
+   foto (evidence foto lalu tanda tangan, dalam urutan itu), share location
+   Telegram (hanya wajib untuk `TOKO TUTUP`), atau nama penerima sebagai
+   teks. **Tidak pernah diloloskan tanpa bukti asli** — bot terus meminta
+   ulang sampai lengkap, tidak pernah mengarang lokasi/tanda tangan yang
+   belum dikirim driver.
+6. Bot menampilkan **ringkasan rekonsiliasi** (dikirim vs diterima, selisih,
+   nilai invoice eligible).
+7. Driver balas **`KONFIRMASI KIRIM`** → transaksional: quantities disimpan,
+   exception (bila ada) dicatat, recipient dicatat, delivery masuk status
+   final, owner alert dibuat bila relevan. **Idempotent** — `KONFIRMASI KIRIM`
+   berulang pada delivery yang sudah final tidak mengubah apa pun (dibalas
+   "sudah final sebelumnya", mirror pola `confirmOrder()` di Sales Order).
+
+### Evidence Minimum per Outcome
+
+| Outcome | Status Final | Evidence Wajib | Reason Wajib |
+|---|---|---|---|
+| `DITERIMA PENUH` | `verified` | foto + tanda tangan + nama penerima | tidak |
+| `DITERIMA SEBAGIAN` | `partially_received` | foto + tanda tangan + nama penerima | ya |
+| `DITOLAK` | `rejected` | foto | ya |
+| `TOKO TUTUP` | `store_closed` | foto + **lokasi** (DV-03, wajib khusus outcome ini) | tidak (otomatis `STORE_CLOSED`) |
+| `GAGAL` | `failed` | tidak ada yang wajib | ya |
+
+Sumber aturan: `AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` §5 (DV-01–DV-04).
+Kombinasi lain (mis. bobot evidence tambahan) belum dikalibrasi — lihat Pack §10.
+
+### Invoice Eligibility Contract
+
+`computeInvoiceEligibility()` (`lib/delivery/service.ts`) — **query murni,
+bukan invoice** — dikonsumsi tahap Invoice berikutnya:
+
+```ts
+interface InvoiceEligibility {
+  deliveryId: string; salesOrderId: string; status: DeliveryStatus; isFinal: boolean;
+  items: { salesOrderItemId, deliveryItemId, productName, eligibleQuantity, unitPrice, eligibleValue }[];
+  totalEligibleValue: number; totalOrderedValue: number; varianceValue: number;
+}
+```
+
+`eligibleQuantity` **selalu** dari `received_quantity` — tidak pernah
+`ordered_quantity`/`dispatched_quantity` (Implementation Gate §9, diverifikasi
+test #8/#9 dan live smoke test terhadap Supabase asli).
+
+### Owner Alert (Outbox WhatsApp)
+
+Tabel `owner_alerts` — **belum ada provider WhatsApp aktif**, jadi alert
+**selalu tersimpan `status = 'pending'`** dan **tidak pernah** ditandai
+`'sent'` oleh kode saat ini (sesuai instruksi: jangan pernah menandai
+terkirim bila belum benar-benar terkirim). Dibuat hanya untuk outcome yang
+mengubah invoice eligibility (`partially_received`, `rejected`) — `store_closed`/
+`failed` murni operasional (tugas reschedule via Telegram, bukan alert WhatsApp
+owner), dan `verified` tanpa variance tidak pernah membuat alert (test #15).
+
+Mengirim alert pending secara nyata (integrasi provider WhatsApp) **di luar
+scope MVP ini** — begitu provider tersedia, proses terpisah bisa membaca
+`owner_alerts WHERE status = 'pending'`, mengirim, lalu `UPDATE ... SET status
+= 'sent', sent_at = now()`.
+
+### Reason Code (v1, dari Implementation Gate §5)
+
+`STORE_CLOSED` · `CUSTOMER_PARTIAL_ACCEPTANCE` · `CUSTOMER_REJECTED` ·
+`ITEM_DAMAGED` · `ITEM_MISMATCH` · `QUANTITY_MISMATCH` ·
+`PRICE_OR_DISCOUNT_DISPUTE` · `RECIPIENT_NOT_AUTHORIZED` ·
+`ADDRESS_NOT_FOUND` · `VEHICLE_OR_DRIVER_ISSUE` · `OTHER_REQUIRES_NOTE`
+(wajib catatan).
+
+### UI — Order Detail Page
+
+`/dashboard/orders/[id]` menampilkan (hanya bila delivery ada):
+status, rekonsiliasi per item (dipesan/dikirim/diterima/selisih), invoice
+eligible value, exception + severity, recipient, ringkasan evidence (ikon
+per tipe), timeline `delivery_events`, dan badge status owner alert
+(pending/sent/gagal). Tidak ada dashboard baru — menumpang di halaman order
+yang sudah ada, sesuai instruksi scope.
+
 ## Cara Uji Webhook (curl)
 
 Semua contoh di bawah memakai `TELEGRAM_WEBHOOK_SECRET=dev-secret` dan
@@ -440,15 +601,37 @@ database.
 | `duplicate_update` | `update_id` sudah pernah diproses — tidak ada efek samping |
 | `no_pending_order` | KONFIRMASI/UBAH dikirim tanpa draft yang menunggu (atau order sudah confirmed) |
 
+Bila update didelegasikan ke alur Delivery Verification, `outcome` di respons
+adalah outcome delivery-nya langsung (bukan `"delivery"` literal — route
+me-*flatten*-kannya, lihat `app/api/webhooks/telegram/route.ts`):
+
+| outcome (delivery) | Arti |
+|---|---|
+| `dispatched` | `MULAI KIRIM` diterima, status → `dispatched` |
+| `outcome_recorded` | Outcome (DITERIMA PENUH/SEBAGIAN/DITOLAK/TOKO TUTUP/GAGAL) tercatat |
+| `quantity_recorded` | Jumlah satu item tercatat, lanjut item berikutnya atau ke reason |
+| `reason_recorded` / `reason_note_recorded` | Reason code / catatan tercatat |
+| `evidence_recorded` | Satu bukti tercatat — bisa masih kurang (evidence lain diminta lagi) atau sudah lengkap (lanjut ke preview) |
+| `finalized` | `KONFIRMASI KIRIM` diproses; `alreadyFinalized: true` bila diulang pada delivery yang sudah final |
+| `invalid_input` | Input tidak sesuai yang diharapkan di state saat ini (angka di luar rentang, keyword salah, dst.) |
+| `no_pending_delivery` | Tidak ada delivery yang sedang menunggu untuk identity ini |
+
 ## Menjalankan Test
 
 ```bash
 pnpm --filter @flowsales/web test
 ```
 
-13 skenario di `apps/web/src/lib/sales-orders/workflow.test.ts`, seluruhnya
-memakai `InMemorySalesOrderRepository` + `InMemoryKnowledgeProvider` — tidak
-butuh Supabase/Telegram hidup.
+- 13 skenario di `apps/web/src/lib/sales-orders/workflow.test.ts` (Sales Order Entry).
+- 15 skenario di `apps/web/src/lib/delivery/workflow.test.ts` (Delivery
+  Verification — full/partial/store_closed/rejected/changed-recipient/
+  missing-evidence/duplicate/invoice-eligibility/tenant-isolation/owner-alert).
+
+Seluruhnya memakai in-memory fakes (`InMemorySalesOrderRepository`,
+`InMemoryKnowledgeProvider`, `InMemoryDeliveryRepository`) — tidak butuh
+Supabase/Telegram hidup. Selain itu, alur Delivery Verification juga sudah
+diverifikasi hidup end-to-end terhadap Supabase lokal sungguhan (full delivery,
+partial delivery, duplicate KONFIRMASI KIRIM) — bukan hanya in-memory.
 
 ## Living Knowledge Platform — Catatan Arsitektur
 
@@ -481,3 +664,29 @@ butuh Supabase/Telegram hidup.
 - Belum ada UI admin untuk approve `knowledge_candidates` atau mendaftarkan
   `telegram_identities` — keduanya manual via SQL untuk saat ini (lihat
   arsitektur interface di atas — bukan jalan buntu, tinggal ditambah dashboard).
+
+**Delivery Verification:**
+
+- MVP mengasumsikan seluruh `ordered_quantity` dikirim sekaligus (dispatch
+  otomatis saat `MULAI KIRIM`) — tidak ada langkah picking/partial-dispatch
+  dari gudang (sesuai exclusion Implementation Gate §3).
+- Sisa kuantitas yang tidak diterima otomatis diklasifikasi `unresolved`
+  (partial) atau `rejected` (rejected) — belum ada langkah terpisah bagi
+  driver memilah retur vs rusak vs belum jelas; kolom `returned_quantity`
+  ada di schema tapi belum diisi lewat alur Telegram saat ini.
+- Deteksi foto vs tanda tangan murni berdasar **urutan kirim** (foto pertama
+  = bukti barang, foto kedua = tanda tangan) — Telegram tidak membedakan tipe
+  media ini secara native. Driver yang mengirim dalam urutan salah akan
+  tercatat dengan label yang tertukar.
+- `evidenceSummary` pada owner alert berupa daftar tipe evidence (mis.
+  "photo, signature"), belum menyertakan thumbnail/link — pihak yang
+  menindaklanjuti perlu membuka data delivery langsung untuk melihat bukti.
+- Severity exception (`low`/`medium`/`high`) dihitung dari aturan kualitatif
+  (outcome + apakah ada penerimaan sama sekali), **bukan** dari ambang nilai
+  nominal — materiality threshold belum dikalibrasi (Pack v1.0 §10).
+- `owner_alerts` tidak pernah otomatis terkirim — tidak ada provider WhatsApp
+  aktif di MVP ini, alert tetap `pending` sampai proses pengiriman terpisah
+  dibangun.
+- Pembuatan delivery dari order confirmed **manual** (tombol di halaman
+  order), bukan otomatis — mengikuti instruksi scope "jangan membuka
+  dashboard/module baru yang luas".
