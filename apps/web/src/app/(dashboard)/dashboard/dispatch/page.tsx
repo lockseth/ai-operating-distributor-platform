@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
@@ -124,11 +125,12 @@ async function DispatchPlanList({ companyId }: { companyId: string }) {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Salesman</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Status</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Alasan AI</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {plans.map((p) => (
-                  <tr key={p.id} className={CONFLICT_STATUSES.includes(p.planning_status as never) ? "bg-red-50/40" : undefined}>
+                  <tr key={p.id} className={`group ${CONFLICT_STATUSES.includes(p.planning_status as never) ? "bg-red-50/40" : ""}`}>
                     <td className="px-4 py-3">
                       <span className="font-mono text-xs font-semibold text-gray-800">{p.sales_order?.order_number ?? "—"}</span>
                     </td>
@@ -142,6 +144,14 @@ async function DispatchPlanList({ companyId }: { companyId: string }) {
                     <td className="px-4 py-3 text-xs text-gray-500 max-w-xs">
                       <p>{p.planning_reason || "—"}</p>
                       {p.is_override && <span className="text-amber-600">Hasil override manusia</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/dashboard/dispatch/${p.id}`}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        Review →
+                      </Link>
                     </td>
                   </tr>
                 ))}

@@ -88,3 +88,79 @@ describe("AI Dispatch Planner — UI wiring", () => {
     expect(pageSource).toContain("getAuthUser()");
   });
 });
+
+// =============================================================================
+// Human Review & Operational Control Gate — pelengkap structural. Bukti
+// keamanan mutation yang sebenarnya ada di human-review.test.ts (behavioral).
+// =============================================================================
+
+const detailPageSource = readFileSync(
+  path.resolve(__dirname, "../../app/(dashboard)/dashboard/dispatch/[id]/page.tsx"),
+  "utf-8"
+);
+const assignFormSource = readFileSync(
+  path.resolve(__dirname, "../../components/dispatch/assign-salesman-form.tsx"),
+  "utf-8"
+);
+const acceptButtonSource = readFileSync(
+  path.resolve(__dirname, "../../components/dispatch/accept-plan-button.tsx"),
+  "utf-8"
+);
+const holdFormSource = readFileSync(path.resolve(__dirname, "../../components/dispatch/hold-plan-form.tsx"), "utf-8");
+
+describe("AI Dispatch Planner — Human Review & Operational Control", () => {
+  it("11. Setiap mutation action baru memeriksa permission (fail-closed) sebelum memakai admin client", () => {
+    const newActionSignatures = ["assignSalesmanAction", "acceptDispatchPlanAction"];
+    for (const fnName of newActionSignatures) {
+      const start = actionsSource.indexOf(`export async function ${fnName}`);
+      expect(start).toBeGreaterThan(-1);
+      const body = actionsSource.slice(start, start + 700);
+      const authIdx = body.indexOf("getAuthUser()");
+      const permIdx = body.indexOf("hasPermission(");
+      const adminIdx = body.indexOf("getAdminClient()");
+      expect(authIdx).toBeGreaterThan(-1);
+      expect(permIdx).toBeGreaterThan(-1);
+      expect(adminIdx).toBeGreaterThan(-1);
+      // Urutan wajib: auth session -> permission check -> baru admin client.
+      expect(authIdx).toBeLessThan(permIdx);
+      expect(permIdx).toBeLessThan(adminIdx);
+    }
+  });
+
+  it("12. Seluruh UI baru (review page + form) memakai 'Salesman', tidak pernah 'Driver'/'Pengirim'", () => {
+    for (const src of [detailPageSource, assignFormSource, acceptButtonSource, holdFormSource]) {
+      expect(src.toLowerCase()).not.toMatch(/\bdriver\b/);
+      expect(src.toLowerCase()).not.toMatch(/\bpengirim\b/);
+    }
+    expect(detailPageSource).toContain("Salesman");
+    expect(assignFormSource).toContain("Salesman");
+  });
+
+  it("13. Error dari mutation baru tidak pernah forward raw exception/error.message ke client", () => {
+    // assignSalesmanAction & acceptDispatchPlanAction hanya mengembalikan
+    // string terkontrol dari outcome union (invalid_input/invalid_actor/
+    // not_acceptable/plan_not_found) -- tidak ada `catch` yang meneruskan
+    // error.message mentah ke DispatchActionResult.
+    expect(actionsSource).not.toMatch(/error:\s*error\.message/);
+    expect(actionsSource).not.toMatch(/error:\s*err\.message/);
+    expect(actionsSource).not.toMatch(/catch\s*\(\s*error\s*\)/);
+  });
+
+  it("Review page menampilkan riwayat event (dispatch_plan_events) dan indikator human-modified (is_override)", () => {
+    expect(detailPageSource).toContain("dispatch_plan_events");
+    expect(detailPageSource).toContain("is_override");
+    expect(detailPageSource).toContain(".eq(\"company_id\", user.company_id)");
+  });
+
+  it("Halaman/action tidak mengarang PlanningStatus baru (mis. 'rejected') di luar enum existing", () => {
+    for (const src of [actionsSource, detailPageSource]) {
+      expect(src).not.toMatch(/"rejected"/);
+      expect(src).not.toMatch(/'rejected'/);
+    }
+  });
+
+  it("assignSalesmanAction dan acceptDispatchPlanAction memanggil workflow (bukan query dispatch_plans langsung untuk mutasi)", () => {
+    expect(actionsSource).toContain("assignSalesman(");
+    expect(actionsSource).toContain("acceptDispatchPlan(");
+  });
+});

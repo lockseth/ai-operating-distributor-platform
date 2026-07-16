@@ -64,10 +64,21 @@ const DEFAULT_POLICY: TenantDispatchPolicy = {
   defaultActorStrategy: "unassigned",
 };
 
+export interface SalesmanOption {
+  id: string;
+  fullName: string;
+}
+
 export interface DispatchRepositoryInterface {
   findPlanBySalesOrder(companyId: string, salesOrderId: string): Promise<DispatchPlan | null>;
   getPlan(companyId: string, planId: string): Promise<DispatchPlan | null>;
   createPlan(input: CreatePlanInput): Promise<DispatchPlan>;
+  /** Daftar user dengan role 'sales', aktif, dalam company yang sama -- satu-satunya sumber "Salesman" yang sah untuk assignment. */
+  findSalesmenByCompany(companyId: string): Promise<SalesmanOption[]>;
+  /** Verifikasi ulang server-side: userId benar-benar Salesman aktif di company ini. */
+  isSalesmanInCompany(companyId: string, userId: string): Promise<boolean>;
+  /** Idempotency check untuk event non-status-changing seperti human_reviewed. */
+  hasEventOfType(companyId: string, dispatchPlanId: string, eventType: string): Promise<boolean>;
   getPlanningInput(
     companyId: string,
     salesOrderId: string,
@@ -157,6 +168,42 @@ export class SupabaseDispatchRepository implements DispatchRepositoryInterface {
       throw new Error(`Gagal membuat dispatch plan: ${error.message}`);
     }
     return mapPlanRow(data);
+  }
+
+  async findSalesmenByCompany(companyId: string): Promise<SalesmanOption[]> {
+    // Pola sama seperti daftar driver di orders/[id]/page.tsx: user_roles
+    // join users+roles, filter role='sales' & aktif di sisi aplikasi (bukan
+    // filter PostgREST bersarang) -- konsisten dengan pola yang sudah
+    // terbukti bekerja di repo ini.
+    const { data } = await this.supabase
+      .from("user_roles")
+      .select("user:users!user_id(id, full_name, is_active), role:roles!role_id(name)")
+      .eq("company_id", companyId);
+
+    const rows = (data ?? []) as unknown as {
+      user: { id: string; full_name: string; is_active: boolean } | null;
+      role: { name: string } | null;
+    }[];
+
+    return rows
+      .filter((r) => r.role?.name === "sales" && r.user?.is_active === true)
+      .map((r) => ({ id: r.user!.id, fullName: r.user!.full_name }));
+  }
+
+  async isSalesmanInCompany(companyId: string, userId: string): Promise<boolean> {
+    const salesmen = await this.findSalesmenByCompany(companyId);
+    return salesmen.some((s) => s.id === userId);
+  }
+
+  async hasEventOfType(companyId: string, dispatchPlanId: string, eventType: string): Promise<boolean> {
+    const { data } = await this.supabase
+      .from("dispatch_plan_events")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("dispatch_plan_id", dispatchPlanId)
+      .eq("event_type", eventType)
+      .limit(1);
+    return (data ?? []).length > 0;
   }
 
   private async getTenantPolicy(companyId: string): Promise<TenantDispatchPolicy> {
@@ -387,6 +434,8 @@ export class InMemoryDispatchRepository implements DispatchRepositoryInterface {
   }> = [];
   private planningInputs = new Map<string, PlanningInput>();
   private idCounter = 0;
+  /** company -> daftar salesman aktif yang sah untuk company itu. */
+  private salesmenByCompany = new Map<string, SalesmanOption[]>();
 
   private nextId(prefix: string): string {
     this.idCounter += 1;
@@ -395,6 +444,24 @@ export class InMemoryDispatchRepository implements DispatchRepositoryInterface {
 
   seedPlanningInput(salesOrderId: string, input: PlanningInput): void {
     this.planningInputs.set(salesOrderId, input);
+  }
+
+  seedSalesmen(companyId: string, salesmen: SalesmanOption[]): void {
+    this.salesmenByCompany.set(companyId, salesmen);
+  }
+
+  async findSalesmenByCompany(companyId: string): Promise<SalesmanOption[]> {
+    return this.salesmenByCompany.get(companyId) ?? [];
+  }
+
+  async isSalesmanInCompany(companyId: string, userId: string): Promise<boolean> {
+    return (this.salesmenByCompany.get(companyId) ?? []).some((s) => s.id === userId);
+  }
+
+  async hasEventOfType(companyId: string, dispatchPlanId: string, eventType: string): Promise<boolean> {
+    return this.events.some(
+      (e) => e.companyId === companyId && e.dispatchPlanId === dispatchPlanId && e.eventType === eventType
+    );
   }
 
   async findPlanBySalesOrder(companyId: string, salesOrderId: string): Promise<DispatchPlan | null> {
