@@ -1,21 +1,36 @@
 # AODP Delivery Verification — Implementation Gate
 
-## 0. Implementation Status (2026-07-16)
+## 0. Implementation Status (2026-07-16, updated post gap-closure fix)
 
 **MVP diimplementasikan** — lihat `docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md`
 §Delivery Verification untuk detail operasional (flow Telegram, evidence
-minimum, invoice eligibility contract, owner alert outbox).
+minimum, invoice eligibility contract, owner alert outbox, aggregate lifecycle).
+
+**Targeted closure fix (audit commit `1adc2bb`):** dua gap produk ditemukan
+dan ditutup:
+
+1. **Owner alert coverage** — versi awal hanya membuat alert untuk
+   `partially_received`/`rejected` (hardcode). Diganti `requiresOwnerAlert()`
+   berbasis dampak bisnis (Pack v1.0 §4.5) — `store_closed` dan `failed`
+   sekarang **selalu** menghasilkan pending alert juga.
+2. **Aggregate sales order lifecycle** — `sales_orders.status` (`confirmed`/
+   `delivering`/`delivered`) sekarang disinkronkan otomatis dan atomic dari
+   agregat `delivery_items.received_quantity` lintas seluruh delivery
+   attempt, lewat fungsi Postgres `sync_sales_order_delivery_status`
+   (`supabase/migrations/20260717000001_delivery_order_lifecycle_sync.sql`).
 
 Ringkasan lulus/tidak terhadap Definition of Done (§9 dokumen ini):
 
 | Item DoD | Status |
 |---|---|
-| Migration & RLS tersedia | ✅ `supabase/migrations/20260716000001_delivery_verification.sql` |
+| Migration & RLS tersedia | ✅ `20260716000001_delivery_verification.sql` + `20260717000001_delivery_order_lifecycle_sync.sql` |
 | Service/domain logic terpisah dari Telegram transport | ✅ `apps/web/src/lib/delivery/service.ts` |
-| Full/partial/rejected/store-closed lulus test | ✅ 15 skenario (`lib/delivery/workflow.test.ts`) + live smoke test terhadap Supabase lokal |
-| Idempotency & cross-tenant isolation lulus test | ✅ |
+| Full/partial/rejected/store-closed/**failed** lulus test | ✅ 26 skenario (`lib/delivery/workflow.test.ts`) + live smoke test terhadap Supabase lokal |
+| Idempotency & cross-tenant isolation lulus test | ✅ (termasuk alert & lifecycle order) |
 | Evidence authorization lulus test | ✅ (evidence tidak lengkap ditolak; tidak ada API hapus evidence/exception/audit) |
 | Invoice eligibility selalu dari verified received quantity | ✅ diverifikasi test + live query |
+| Owner alert berbasis dampak bisnis, bukan hardcode outcome | ✅ `requiresOwnerAlert()` — store_closed & failed sekarang selalu alert |
+| Aggregate order lifecycle (confirmed→delivering→delivered) atomic & idempoten | ✅ `sync_sales_order_delivery_status`, `FOR UPDATE` lock, diverifikasi live (single & multi-attempt) |
 | Telegram happy path & exception path dapat didemokan | ✅ diverifikasi hidup lewat curl terhadap webhook + Supabase lokal |
 | Owner alert payload tidak membocorkan data tenant lain | ✅ (company_id selalu dari identity server-side) |
 | Dokumentasi, onboarding requirement, demo script diperbarui | 🟡 Sebagian — dokumentasi teknis & onboarding requirement diperbarui; **demo script (`docs/sales-kit/demo-movie/`) TIDAK diperbarui** karena berkonflik langsung dengan instruksi eksplisit lain di task yang sama ("pertahankan ... jangan disentuh" / "jangan mengubah file sales-kit pra-eksisting milik user") — dilaporkan sebagai konflik instruksi, bukan diselesaikan sepihak |

@@ -142,7 +142,7 @@ describe("Delivery Verification workflow", () => {
     expect(final.exceptions[0]!.reasonCode).toBe("CUSTOMER_PARTIAL_ACCEPTANCE");
   });
 
-  it("3. store closed -> tidak ada barang eligible invoice, tidak ada owner alert (operasional)", async () => {
+  it("3. store closed -> tidak ada barang eligible invoice, WAJIB satu pending owner alert (reschedule)", async () => {
     const deps = makeDeps();
     const delivery = await seedDelivery(deps.repository, { salesOrderId: "order-3" });
 
@@ -159,7 +159,32 @@ describe("Delivery Verification workflow", () => {
     const final = (await deps.repository.getDelivery(delivery.id))!;
     const eligibility = computeInvoiceEligibility(final);
     expect(eligibility.totalEligibleValue).toBe(0);
-    expect(deps.repository.ownerAlerts.filter((a) => a.deliveryId === delivery.id)).toHaveLength(0);
+
+    const alerts = deps.repository.ownerAlerts.filter((a) => a.deliveryId === delivery.id);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.status).toBe("pending");
+    expect(alerts[0]!.payload.acceptedValue).toBe(0);
+    expect(alerts[0]!.payload.recommendation.toLowerCase()).toContain("jadwalkan ulang");
+  });
+
+  it("3b. failed delivery -> WAJIB satu pending owner alert dengan reason + evidence summary", async () => {
+    const deps = makeDeps();
+    const delivery = await seedDelivery(deps.repository, { salesOrderId: "order-3b" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("GAGAL"));
+    await step(deps, textMsg("9")); // reason #9 = ADDRESS_NOT_FOUND
+    const result = await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    expect(result.outcome).toBe("finalized");
+    if (result.outcome !== "finalized") throw new Error("unexpected outcome");
+    expect(result.finalStatus).toBe("failed");
+
+    const alerts = deps.repository.ownerAlerts.filter((a) => a.deliveryId === delivery.id);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.status).toBe("pending");
+    expect(alerts[0]!.payload.reason).toBe("ADDRESS_NOT_FOUND");
+    expect(alerts[0]!.payload.evidenceSummary).toBe("tidak ada"); // GAGAL tidak mewajibkan evidence -- jujur, tidak dikarang
   });
 
   it("4. rejected delivery -> tidak eligible invoice, owner alert severity high", async () => {
@@ -440,5 +465,222 @@ describe("Delivery Verification workflow", () => {
     await step(deps, textMsg("KONFIRMASI KIRIM"));
 
     expect(deps.repository.ownerAlerts.filter((a) => a.deliveryId === delivery.id)).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // Gap-closure fix (audit atas commit 1adc2bb): owner alert coverage
+  // berbasis dampak bisnis + sinkronisasi lifecycle agregat sales_orders.
+  // ---------------------------------------------------------------------
+
+  it("16. owner alert selalu tertandai company_id pembuatnya -- tidak pernah terbaca lintas tenant", async () => {
+    const deps = makeDeps();
+    const deliveryA = await seedDelivery(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-16" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITOLAK"));
+    await step(deps, textMsg("0"));
+    await step(deps, textMsg("0"));
+    await step(deps, textMsg("3"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    // Company B tidak pernah punya baris alert milik company A -- penegakan
+    // sesungguhnya di production adalah RLS policy "owner_alerts_select"
+    // (migration 20260716000001) yang mensyaratkan company_id =
+    // get_user_company_id(), tanpa policy lintas tenant sama sekali.
+    expect(deps.repository.ownerAlerts.filter((a) => a.companyId === COMPANY_B)).toHaveLength(0);
+    const alertsForA = deps.repository.ownerAlerts.filter((a) => a.companyId === COMPANY_A && a.deliveryId === deliveryA.id);
+    expect(alertsForA).toHaveLength(1);
+  });
+
+  it("17. teks bebas berisi 'company_id' tidak pernah memengaruhi tenant alert -- selalu dari identity server-side", async () => {
+    const deps = makeDeps();
+    const delivery = await seedDelivery(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-17" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITOLAK"));
+    await step(deps, textMsg("0"));
+    await step(deps, textMsg("0"));
+    await step(deps, textMsg("11")); // OTHER_REQUIRES_NOTE
+    // TelegramUpdate tidak punya field company_id sama sekali -- mencoba
+    // menyisipkannya lewat teks bebas (catatan reason) tidak pernah dibaca
+    // sebagai identitas tenant oleh workflow manapun.
+    await step(deps, textMsg("company_id: company-b -- barang rusak saat perjalanan"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const alerts = deps.repository.ownerAlerts.filter((a) => a.deliveryId === delivery.id);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]!.companyId).toBe(COMPANY_A);
+  });
+
+  it("18. MULAI KIRIM (dispatch pertama) mengubah sales_orders.status confirmed -> delivering", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-18" });
+    const before = await deps.repository.getConfirmedOrder("order-18", COMPANY_A);
+    expect(before!.status).toBe("confirmed");
+
+    await step(deps, textMsg("MULAI KIRIM"));
+
+    const after = await deps.repository.getConfirmedOrder("order-18", COMPANY_A);
+    expect(after!.status).toBe("delivering");
+  });
+
+  it("19. full verified delivery -> sales_orders.status delivering -> delivered", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-19" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA PENUH"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const after = await deps.repository.getConfirmedOrder("order-19", COMPANY_A);
+    expect(after!.status).toBe("delivered");
+  });
+
+  it("20. partial delivery -> sales_orders.status tetap delivering, bukan delivered", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-20" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("15"));
+    await step(deps, textMsg("10"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const after = await deps.repository.getConfirmedOrder("order-20", COMPANY_A);
+    expect(after!.status).toBe("delivering");
+  });
+
+  it("21. store closed -> sales_orders.status tetap delivering, tidak pernah delivered", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-21" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("TOKO TUTUP"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, locationMsg(-6.2, 106.8));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const after = await deps.repository.getConfirmedOrder("order-21", COMPANY_A);
+    expect(after!.status).not.toBe("delivered");
+    expect(after!.status).toBe("delivering");
+  });
+
+  it("22. failed delivery -> sales_orders.status tetap delivering, tidak pernah delivered", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-22" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("GAGAL"));
+    await step(deps, textMsg("9"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    const after = await deps.repository.getConfirmedOrder("order-22", COMPANY_A);
+    expect(after!.status).not.toBe("delivered");
+    expect(after!.status).toBe("delivering");
+  });
+
+  it("23. dua delivery attempt yang secara agregat memenuhi order -> delivered (tidak double count)", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-23" });
+
+    // Attempt 1: partial, terima 15/20 item1, 10/10 item2 (item2 sudah penuh).
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("15"));
+    await step(deps, textMsg("10"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    let order = await deps.repository.getConfirmedOrder("order-23", COMPANY_A);
+    expect(order!.status).toBe("delivering"); // item1 belum penuh (15/20)
+
+    // Attempt 2 (re-delivery) khusus sisa item1. Catatan MVP: attempt baru
+    // men-snapshot ordered_quantity dari ORIGINAL sales_order_item (20),
+    // bukan sisa outstanding -- kualitas agregasi yang diuji di sini adalah
+    // SUM received_quantity lintas attempt, bukan validasi sisa per attempt.
+    const item1 = order!.items[0]!;
+    const delivery2 = await deps.repository.createDelivery({
+      companyId: COMPANY_A,
+      salesOrderId: "order-23",
+      idempotencyKey: null,
+      createdBy: "owner-1",
+      items: [
+        {
+          salesOrderItemId: item1.id,
+          productName: item1.productName,
+          unit: item1.unit,
+          unitPrice: item1.unitPrice,
+          orderedQuantity: item1.quantity,
+        },
+      ],
+    });
+    await deps.repository.assignDriver(delivery2.id, DRIVER_A.userId);
+    await deps.repository.setConversationState(DRIVER_A.identityId, COMPANY_A, {
+      pendingDeliveryId: delivery2.id,
+      awaiting: "start_confirmation",
+      currentItemIndex: 0,
+      draftState: {},
+    });
+
+    // Terima 5 sisanya -> total received item1 = 15 + 5 = 20 = ordered.
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA SEBAGIAN"));
+    await step(deps, textMsg("5"));
+    await step(deps, textMsg("2"));
+    await step(deps, photoMsg("p2"));
+    await step(deps, photoMsg("s2"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM"));
+
+    order = await deps.repository.getConfirmedOrder("order-23", COMPANY_A);
+    expect(order!.status).toBe("delivered");
+  });
+
+  it("24. duplicate KONFIRMASI KIRIM pada delivery yang sudah final tidak mengubah lifecycle order dua kali", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { salesOrderId: "order-24" });
+
+    await step(deps, textMsg("MULAI KIRIM"));
+    await step(deps, textMsg("DITERIMA PENUH"));
+    await step(deps, photoMsg("p1"));
+    await step(deps, photoMsg("s1"));
+    await step(deps, textMsg("Pak Budi"));
+    await step(deps, textMsg("KONFIRMASI KIRIM")); // finalize pertama -> delivered
+    await step(deps, textMsg("KONFIRMASI KIRIM")); // retry -- idempotent, tidak error/berubah
+
+    const order = await deps.repository.getConfirmedOrder("order-24", COMPANY_A);
+    expect(order!.status).toBe("delivered");
+  });
+
+  it("25. delivery milik tenant lain tidak memengaruhi status order tenant lain", async () => {
+    const deps = makeDeps();
+    await seedDelivery(deps.repository, { companyId: COMPANY_A, salesOrderId: "order-25a" });
+    const driverB: ResolvedIdentity = { identityId: "identity-driver-b25", companyId: COMPANY_B, userId: "driver-b25", userFullName: "Wati" };
+    await seedDelivery(deps.repository, { companyId: COMPANY_B, salesOrderId: "order-25b", identity: driverB });
+
+    // Selesaikan delivery company B secara penuh -- company A tidak disentuh sama sekali.
+    await step(deps, textMsg("MULAI KIRIM"), driverB);
+    await step(deps, textMsg("DITERIMA PENUH"), driverB);
+    await step(deps, photoMsg("pb"), driverB);
+    await step(deps, photoMsg("sb"), driverB);
+    await step(deps, textMsg("Bu Wati"), driverB);
+    await step(deps, textMsg("KONFIRMASI KIRIM"), driverB);
+
+    const orderA = await deps.repository.getConfirmedOrder("order-25a", COMPANY_A);
+    const orderB = await deps.repository.getConfirmedOrder("order-25b", COMPANY_B);
+    expect(orderA!.status).toBe("confirmed"); // belum ada MULAI KIRIM company A sama sekali
+    expect(orderB!.status).toBe("delivered");
   });
 });

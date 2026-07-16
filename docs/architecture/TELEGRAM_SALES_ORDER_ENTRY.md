@@ -407,7 +407,8 @@ dan `docs/knowledge/packs/waluyo/AODP_WALUYO_LIVING_KNOWLEDGE_PACK_v1.0.md` §4�
 Business logic 100% di `apps/web/src/lib/delivery/` (`types.ts`, `repository.ts`,
 `service.ts`, `confirmation.ts`, `workflow.ts`) — terpisah dari transport
 Telegram, testable via `InMemoryDeliveryRepository` (lihat `workflow.test.ts`,
-15 skenario).
+26 skenario — termasuk gap-closure fix untuk owner alert coverage & aggregate
+lifecycle, lihat §Owner Alert dan §Aggregate Lifecycle di bawah).
 
 ### Arsitektur & Dispatch
 
@@ -507,20 +508,109 @@ interface InvoiceEligibility {
 `ordered_quantity`/`dispatched_quantity` (Implementation Gate §9, diverifikasi
 test #8/#9 dan live smoke test terhadap Supabase asli).
 
-### Owner Alert (Outbox WhatsApp)
+### Owner Alert (Outbox WhatsApp) — Policy Berbasis Dampak Bisnis
+
+> **Update (gap-closure fix, 2026-07-16):** versi awal hanya membuat alert
+> untuk outcome `partially_received`/`rejected` secara hardcode. Ini **tidak
+> memenuhi** Living Knowledge Pack v1.0 §4.5 (owner harus melihat *seluruh*
+> penyimpangan yang butuh keputusannya, bukan subset yang di-hardcode).
+> Diganti dengan `requiresOwnerAlert()` (`lib/delivery/service.ts`) —
+> kebijakan terpusat berbasis dampak bisnis, bukan daftar outcome tertutup.
+
+`requiresOwnerAlert(finalStatus, invoiceEligibility, exceptions)` membuat
+pending alert jika **salah satu** benar:
+
+1. Invoice eligibility bervariansi dari nilai order (`varianceValue !== 0`);
+2. Outcome termasuk kelas yang inheren butuh perhatian owner: `store_closed`,
+   `rejected`, `failed`, `partially_received` — barang tidak sampai sesuai
+   rencana, terlepas dari nilai variance-nya (`store_closed`/`failed` selalu
+   punya `acceptedValue = 0`, jadi kriteria #1 pun sudah pasti kena — kriteria
+   #2 adalah jaring pengaman eksplisit, bukan duplikasi tanpa tujuan);
+3. Ada exception dengan severity `medium`/`high`.
+
+**Satu-satunya pengecualian:** delivery `verified` (full, tanpa variance)
+**tidak pernah** menghasilkan alert — itulah jalur "semua beres" (Pack v1.0
+§4.5: *"Prioritas, bukan volume"*, test #15).
+
+| Outcome | Alert? | Payload menjelaskan |
+|---|---|---|
+| `verified` (full, tanpa variance) | **Tidak pernah** | — |
+| `partially_received` | Selalu (variance ≠ 0) | Selisih nilai, minta verifikasi sebelum invoice |
+| `rejected` | Selalu | Alasan penolakan, severity `high` bila 0% diterima |
+| `store_closed` | **Selalu (baru)** | `acceptedValue = 0`, rekomendasi jadwal ulang + cek jam operasional |
+| `failed` | **Selalu (baru)** | Reason code + evidence yang tersedia (atau "tidak ada" bila memang tidak dikirim — tidak dikarang) |
 
 Tabel `owner_alerts` — **belum ada provider WhatsApp aktif**, jadi alert
 **selalu tersimpan `status = 'pending'`** dan **tidak pernah** ditandai
-`'sent'` oleh kode saat ini (sesuai instruksi: jangan pernah menandai
-terkirim bila belum benar-benar terkirim). Dibuat hanya untuk outcome yang
-mengubah invoice eligibility (`partially_received`, `rejected`) — `store_closed`/
-`failed` murni operasional (tugas reschedule via Telegram, bukan alert WhatsApp
-owner), dan `verified` tanpa variance tidak pernah membuat alert (test #15).
+`'sent'` oleh kode saat ini. Idempotent: hanya dibuat sekali per finalize
+sungguhan (retry `KONFIRMASI KIRIM` pada delivery yang sudah final tidak
+pernah membuat alert kedua — dijaga oleh guard `alreadyFinalized` yang sama
+dengan §Aggregate Lifecycle di bawah). Tenant-scoped lewat `identity.companyId`
+server-side, tidak pernah dari teks bebas driver (test #16, #17) — ditegakkan
+juga oleh RLS `owner_alerts_select`.
 
 Mengirim alert pending secara nyata (integrasi provider WhatsApp) **di luar
 scope MVP ini** — begitu provider tersedia, proses terpisah bisa membaca
 `owner_alerts WHERE status = 'pending'`, mengirim, lalu `UPDATE ... SET status
 = 'sent', sent_at = now()`.
+
+### Aggregate Lifecycle — `deliveries.status` vs `sales_orders.status`
+
+> **Baru (gap-closure fix, 2026-07-16).**
+
+Dua status yang **berbeda level dan tidak boleh disamakan**:
+
+- **`deliveries.status`** — status **satu delivery attempt** (planned →
+  dispatched → arrived → verified/partially_received/rejected/store_closed/failed).
+  Satu `sales_order` bisa punya lebih dari satu delivery attempt (re-delivery
+  setelah `store_closed`/`failed`) — lihat `attempt_number`.
+- **`sales_orders.status`** — lifecycle **agregat** order (`confirmed` →
+  `delivering` → `delivered`, enum yang sudah ada sejak migration 003 lewat
+  `updateOrderStatusAction`/`StatusUpdater` manual). Menjawab pertanyaan
+  "apakah SELURUH barang pesanan ini sudah benar-benar sampai", lintas semua
+  attempt.
+
+Disinkronkan otomatis lewat fungsi Postgres atomic
+`sync_sales_order_delivery_status(sales_order_id)`
+(`supabase/migrations/20260717000001_delivery_order_lifecycle_sync.sql`),
+dipanggil dari `lib/delivery/workflow.ts` di dua titik:
+
+1. **Setelah `MULAI KIRIM` (dispatch pertama)** — bila order masih `confirmed`,
+   pindah ke `delivering`. No-op idempoten bila sudah `delivering` (attempt
+   kedua dst. tidak mengulang transisi ini).
+2. **Setelah `KONFIRMASI KIRIM` (finalize)**, hanya pada finalize sungguhan
+   (bukan retry) — menghitung ulang **agregat** `SUM(delivery_items.received_quantity)`
+   lintas **seluruh** delivery attempt milik order, per `sales_order_item`.
+   Bila **setiap** item sudah tertutup penuh → `delivered` (+ `delivered_at`).
+   Bila belum → tetap `delivering`.
+
+Sifat penting:
+
+- **Idempoten** — dihitung ulang dari sumber kebenaran (SUM langsung dari
+  `delivery_items`) setiap kali dipanggil, bukan increment/counter yang bisa
+  drift. Memanggil berkali-kali (retry) menghasilkan keputusan yang sama.
+- **Atomic** — fungsi memakai `SELECT ... FOR UPDATE` mengunci baris order
+  selama komputasi, sehingga dua delivery attempt yang finalize hampir
+  bersamaan untuk order yang sama tidak saling menimpa keputusan status
+  (diserialisasi oleh lock, bukan race).
+- **Tidak double count** — setiap `delivery_items` row hanya dimutasi oleh
+  attempt pemiliknya sendiri; agregat murni menjumlahkan apa yang benar-benar
+  tercatat verified. Attempt yang gagal/ditolak/toko tutup otomatis
+  berkontribusi 0 untuk item yang tidak diterima — tidak perlu pengecualian khusus.
+  **Batasan MVP yang diketahui**: attempt re-delivery baru men-*snapshot*
+  `ordered_quantity` dari `sales_order_items` ASLI (bukan sisa outstanding) —
+  agregasi tetap benar, tapi UI attempt kedua akan menampilkan "dipesan 20"
+  walau yang sebenarnya perlu dikirim ulang hanya sisanya.
+- **Tidak ada enum baru** — tetap `confirmed`/`delivering`/`delivered` yang
+  sudah ada. `store_closed`/`failed`/`rejected` (di level delivery attempt)
+  membuat order tetap `delivering` — tidak pernah mundur, tidak pernah
+  dipaksa `delivered`.
+- **Koeksistensi dengan `StatusUpdater` manual** — tombol update status
+  manual di halaman order (`updateOrderStatusAction`, pre-existing) **tetap
+  berfungsi apa adanya** dan independen dari sinkronisasi otomatis ini; owner/
+  manager tetap bisa override manual kapan pun (prinsip Constitution "AI
+  merekomendasikan, owner memutuskan"). Sinkronisasi otomatis hanya berjalan
+  dari alur Delivery Verification Telegram, tidak pernah dari UI manual.
 
 ### Reason Code (v1, dari Implementation Gate §5)
 
@@ -623,15 +713,19 @@ pnpm --filter @flowsales/web test
 ```
 
 - 13 skenario di `apps/web/src/lib/sales-orders/workflow.test.ts` (Sales Order Entry).
-- 15 skenario di `apps/web/src/lib/delivery/workflow.test.ts` (Delivery
+- 26 skenario di `apps/web/src/lib/delivery/workflow.test.ts` (Delivery
   Verification — full/partial/store_closed/rejected/changed-recipient/
-  missing-evidence/duplicate/invoice-eligibility/tenant-isolation/owner-alert).
+  missing-evidence/duplicate/invoice-eligibility/tenant-isolation/owner-alert
+  policy berbasis dampak bisnis/aggregate order lifecycle/multi-attempt).
 
 Seluruhnya memakai in-memory fakes (`InMemorySalesOrderRepository`,
 `InMemoryKnowledgeProvider`, `InMemoryDeliveryRepository`) — tidak butuh
 Supabase/Telegram hidup. Selain itu, alur Delivery Verification juga sudah
 diverifikasi hidup end-to-end terhadap Supabase lokal sungguhan (full delivery,
-partial delivery, duplicate KONFIRMASI KIRIM) — bukan hanya in-memory.
+partial delivery, duplicate KONFIRMASI KIRIM, dan — sejak gap-closure fix —
+`store_closed` yang menghasilkan owner alert live + transisi
+`confirmed → delivering → delivered` live lewat fungsi Postgres
+`sync_sales_order_delivery_status`) — bukan hanya in-memory.
 
 ## Living Knowledge Platform — Catatan Arsitektur
 
@@ -690,3 +784,15 @@ partial delivery, duplicate KONFIRMASI KIRIM) — bukan hanya in-memory.
 - Pembuatan delivery dari order confirmed **manual** (tombol di halaman
   order), bukan otomatis — mengikuti instruksi scope "jangan membuka
   dashboard/module baru yang luas".
+- Re-delivery attempt (attempt ke-2 dst. untuk order yang sama) men-*snapshot*
+  `ordered_quantity` dari `sales_order_items` **asli** (bukan sisa
+  outstanding) — agregasi lifecycle (§Aggregate Lifecycle) tetap benar karena
+  berbasis SUM `received_quantity`, tapi tampilan "dipesan" pada attempt
+  kedua bisa terlihat sama dengan attempt pertama, bukan sisa yang
+  sebenarnya perlu dikirim ulang.
+- `sync_sales_order_delivery_status` adalah **satu-satunya fungsi Postgres
+  (RPC)** di codebase ini — seluruh modul lain memakai REST/PostgREST
+  langsung tanpa stored procedure. Dipilih khusus untuk langkah ini karena
+  butuh jaminan atomic (row lock + agregat) yang tidak bisa didapat dari
+  beberapa panggilan REST berurutan — bukan pola baru yang dipakai di tempat
+  lain, sengaja dibatasi ke satu titik yang benar-benar butuh.

@@ -181,17 +181,57 @@ export function computeExceptionSeverity(outcome: DeliveryOutcome, invoiceEligib
     return "medium";
   }
   // store_closed / failed: belum ada barang berpindah tangan, tidak ada
-  // dampak invoice langsung -- operasional (reschedule), bukan finansial.
+  // dampak invoice langsung -- tetap butuh perhatian owner (lihat
+  // requiresOwnerAlert) tapi risikonya operasional, bukan finansial.
   return "low";
 }
 
 /**
- * Owner alert (WhatsApp, §4.5) hanya untuk variance yang MENGUBAH invoice
- * eligibility atau butuh keputusan owner -- store_closed/failed murni
- * operasional (tugas reschedule lewat Telegram, bukan WhatsApp owner).
+ * Owner alert (WhatsApp, §4.5) policy terpusat -- dipicu oleh DAMPAK BISNIS,
+ * bukan daftar outcome yang di-hardcode. Prinsip (AODP Waluyo Living
+ * Knowledge Pack v1.0 §4.5, Implementation Gate §7):
+ *
+ *   1. Verified received value berbeda dari yang seharusnya diterima
+ *      (invoice eligibility bervariansi dari nilai order); ATAU
+ *   2. Outcome termasuk kelas yang secara inheren butuh perhatian owner
+ *      (store_closed, rejected, failed, partially_received) -- barang tidak
+ *      sampai ke tangan customer sesuai rencana, terlepas dari nilai variance-nya
+ *      (mis. store_closed/failed punya invoice eligible = 0, variance = nilai
+ *      order penuh -- tetap harus mengalir lewat cabang #1 juga, cabang #2
+ *      ini eksplisit sebagai jaring pengaman bila suatu saat ada order
+ *      bernilai 0); ATAU
+ *   3. Ada exception dengan severity yang butuh keputusan owner/supervisor
+ *      (medium/high -- bukan sekadar dicatat, tapi perlu ditindaklanjuti).
+ *
+ *   Pengecualian tunggal: delivery `verified` (full, tanpa exception) TIDAK
+ *   PERNAH menghasilkan alert -- itulah jalur "semua beres", justru noise
+ *   bila dialert (Pack v1.0 §4.5: "Prioritas, bukan volume").
  */
-export function shouldGenerateOwnerAlert(finalStatus: DeliveryStatus, invoiceEligibility: InvoiceEligibility): boolean {
-  return (finalStatus === "rejected" || finalStatus === "partially_received") && invoiceEligibility.varianceValue !== 0;
+const OUTCOME_REQUIRES_OWNER_ATTENTION: readonly DeliveryStatus[] = [
+  "store_closed",
+  "rejected",
+  "failed",
+  "partially_received",
+];
+
+export function requiresOwnerAlert(
+  finalStatus: DeliveryStatus,
+  invoiceEligibility: InvoiceEligibility,
+  exceptions: { severity: ExceptionSeverity }[] = []
+): boolean {
+  // Full delivery bersih -- tidak pernah alert, walau ada exception "low"
+  // yang entah bagaimana menempel (tidak terjadi di alur saat ini, tapi
+  // dijaga eksplisit sesuai instruksi "jangan buat critical variance alert
+  // untuk full delivery tanpa variance").
+  if (finalStatus === "verified" && invoiceEligibility.varianceValue === 0) {
+    return false;
+  }
+
+  if (OUTCOME_REQUIRES_OWNER_ATTENTION.includes(finalStatus)) return true;
+  if (invoiceEligibility.varianceValue !== 0) return true;
+  if (exceptions.some((e) => e.severity === "medium" || e.severity === "high")) return true;
+
+  return false;
 }
 
 export function buildOwnerAlertPayload(input: {
@@ -203,6 +243,13 @@ export function buildOwnerAlertPayload(input: {
   evidenceSummary: string;
   actor: string;
 }): OwnerAlertPayload {
+  const RECOMMENDATION: Partial<Record<DeliveryStatus, string>> = {
+    rejected: "Tinjau alasan penolakan bersama sales/driver sebelum pengiriman ulang.",
+    partially_received: "Verifikasi selisih dengan customer sebelum invoice diterbitkan.",
+    store_closed: "Toko tutup saat pengiriman -- jadwalkan ulang pengiriman dan konfirmasi jam operasional toko ke sales/customer.",
+    failed: "Pengiriman gagal (lihat alasan) -- tinjau kendala dan jadwalkan ulang; periksa evidence yang tersedia sebelum menugaskan ulang driver.",
+  };
+
   return {
     customerName: input.customerName,
     orderReference: input.orderReference,
@@ -214,9 +261,7 @@ export function buildOwnerAlertPayload(input: {
     evidenceSummary: input.evidenceSummary,
     actor: input.actor,
     recommendation:
-      input.finalStatus === "rejected"
-        ? "Tinjau alasan penolakan bersama sales/driver sebelum pengiriman ulang."
-        : "Verifikasi selisih dengan customer sebelum invoice diterbitkan.",
+      RECOMMENDATION[input.finalStatus] ?? "Tinjau detail delivery ini sebelum melanjutkan proses invoice.",
   };
 }
 

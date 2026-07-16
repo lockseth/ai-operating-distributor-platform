@@ -97,6 +97,15 @@ export interface DeliveryRepositoryInterface {
 
   assignDriver(deliveryId: string, driverId: string): Promise<void>;
 
+  /**
+   * Sinkronisasi atomic lifecycle agregat sales_orders.status dari total
+   * received_quantity lintas seluruh delivery attempt milik order ini.
+   * Idempoten — aman dipanggil berulang. Lihat migration
+   * `sync_sales_order_delivery_status` (Supabase) untuk implementasi atomic
+   * (row lock + agregat dalam satu transaksi fungsi).
+   */
+  syncSalesOrderStatus(salesOrderId: string): Promise<string | null>;
+
   /** MVP: dispatched_quantity = ordered_quantity untuk semua item (lihat catatan scope di service.ts). */
   recordDispatch(deliveryId: string): Promise<void>;
 
@@ -273,6 +282,14 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
 
   async assignDriver(deliveryId: string, driverId: string): Promise<void> {
     await this.supabase.from("deliveries").update({ assigned_driver_id: driverId }).eq("id", deliveryId);
+  }
+
+  async syncSalesOrderStatus(salesOrderId: string): Promise<string | null> {
+    const { data, error } = await this.supabase.rpc("sync_sales_order_delivery_status", {
+      p_sales_order_id: salesOrderId,
+    });
+    if (error) throw new Error(`syncSalesOrderStatus failed: ${error.message}`);
+    return (data as string | null) ?? null;
   }
 
   async recordDispatch(deliveryId: string): Promise<void> {
@@ -720,6 +737,34 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   async assignDriver(deliveryId: string, driverId: string): Promise<void> {
     const d = this.deliveries.get(deliveryId);
     if (d) d.assignedDriverId = driverId;
+  }
+
+  /**
+   * Mirror logika `sync_sales_order_delivery_status` (migration) secara
+   * fungsional: idempoten, dihitung ulang dari sumber kebenaran (bukan
+   * increment). In-memory tidak punya row lock sungguhan, tapi karena
+   * JS single-threaded, tidak ada race condition untuk direplikasi di sini.
+   */
+  async syncSalesOrderStatus(salesOrderId: string): Promise<string | null> {
+    const order = this.confirmedOrders.get(salesOrderId);
+    if (!order) return null;
+    if (!["confirmed", "delivering"].includes(order.status)) return order.status;
+
+    const receivedByItem = new Map<string, number>();
+    for (const d of this.deliveries.values()) {
+      if (d.salesOrderId !== salesOrderId) continue;
+      for (const item of d.items) {
+        receivedByItem.set(item.salesOrderItemId, (receivedByItem.get(item.salesOrderItemId) ?? 0) + item.receivedQuantity);
+      }
+    }
+    const fullyCovered = order.items.every((i) => (receivedByItem.get(i.id) ?? 0) >= i.quantity);
+
+    if (fullyCovered) {
+      order.status = "delivered";
+    } else if (order.status === "confirmed") {
+      order.status = "delivering";
+    }
+    return order.status;
   }
 
   async recordDispatch(deliveryId: string): Promise<void> {

@@ -22,7 +22,7 @@ import {
   computeDiscrepancies,
   computeInvoiceEligibility,
   computeExceptionSeverity,
-  shouldGenerateOwnerAlert,
+  requiresOwnerAlert,
   buildOwnerAlertPayload,
 } from "./service";
 import {
@@ -101,7 +101,7 @@ export async function processDeliveryConversation(
 
   switch (state.awaiting) {
     case "start_confirmation":
-      return handleStartConfirmation(message, chatId, identity, delivery.id, telegramUpdateEventId, deps);
+      return handleStartConfirmation(message, chatId, identity, delivery.id, delivery.salesOrderId, telegramUpdateEventId, deps);
     case "outcome_selection":
       return handleOutcomeSelection(message, chatId, identity, delivery.id, state, telegramUpdateEventId, deps);
     case "item_quantity":
@@ -125,6 +125,7 @@ async function handleStartConfirmation(
   chatId: number,
   identity: ResolvedIdentity,
   deliveryId: string,
+  salesOrderId: string,
   telegramUpdateEventId: string,
   deps: DeliveryWorkflowDeps
 ): Promise<DeliveryProcessResult> {
@@ -135,6 +136,10 @@ async function handleStartConfirmation(
   }
 
   await deps.repository.recordDispatch(deliveryId);
+  // Delivery pertama untuk order ini benar-benar mulai bergerak -> lifecycle
+  // agregat confirmed -> delivering (no-op idempoten bila order sudah
+  // delivering dari attempt sebelumnya, lihat sync_sales_order_delivery_status).
+  await deps.repository.syncSalesOrderStatus(salesOrderId);
   await deps.repository.insertEvent({
     companyId: identity.companyId,
     deliveryId,
@@ -581,8 +586,16 @@ async function handleFinalConfirmation(
     payload: { outcome },
   });
 
+  if (!alreadyFinalized) {
+    // Lifecycle agregat: hitung ulang dari total received_quantity lintas
+    // seluruh delivery attempt milik order ini (idempoten, atomic — lihat
+    // migration sync_sales_order_delivery_status). Hanya dipanggil sekali
+    // per finalize sungguhan, retry KONFIRMASI KIRIM tidak memanggilnya lagi.
+    await deps.repository.syncSalesOrderStatus(delivery.salesOrderId);
+  }
+
   const invoiceEligibility = computeInvoiceEligibility(finalized);
-  if (!alreadyFinalized && shouldGenerateOwnerAlert(finalStatus, invoiceEligibility)) {
+  if (!alreadyFinalized && requiresOwnerAlert(finalStatus, invoiceEligibility, finalized.exceptions)) {
     const evidenceSummary = (draft.evidenceTypes ?? []).join(", ") || "tidak ada";
     const payload = buildOwnerAlertPayload({
       customerName: "(lihat detail order)",
