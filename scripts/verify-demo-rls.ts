@@ -40,6 +40,8 @@ const DEMO_SALES_EMAIL = "sales.demo@waluyo.aodp.test";
 const ISOLATION_OWNER_EMAIL = "owner.isolation@aodp.test";
 
 function pwKeyFor(email: string): string {
+  if (email === DEMO_OWNER_EMAIL) return "AODP_DEMO_OWNER_PASSWORD";
+  if (email === DEMO_SALES_EMAIL) return "AODP_DEMO_SALES_PASSWORD";
   return `DEMO_OWNER_PASSWORD_${email.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}`;
 }
 

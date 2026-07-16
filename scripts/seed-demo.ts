@@ -2,23 +2,38 @@
  * scripts/seed-demo.ts
  *
  * Seed sintetis untuk Supabase project AODP-Waluyo-Demo (Demo/Staging,
- * bukan production). Idempotent — aman dijalankan berulang.
+ * bukan production). Idempotent — aman dijalankan berulang, TIDAK PERNAH
+ * merotasi password akun yang sudah ada (lihat Section E/G gate Demo
+ * Access & Tenant Branding). Untuk mengganti password gunakan
+ * scripts/reset-demo-access.ts secara eksplisit.
  *
  * Membuat:
  *   - Tenant demo "PT. Sumber Warna Alam Sudiada" (settings.environment = "DEMO",
  *     settings.coverage_areas = wilayah awal Cirebon Timur/Kota/Barat)
- *   - Satu akun owner demo untuk tenant tsb (password acak, TIDAK di-log ke
- *     console — ditulis ke .env.demo.local sebagai DEMO_OWNER_PASSWORD)
+ *   - Owner demo (AODP_DEMO_OWNER_EMAIL) dan Sales demo (AODP_DEMO_SALES_EMAIL)
+ *     — Sales demo adalah FIXTURE untuk uji RLS role sales, BUKAN hasil
+ *     Salesman Enrollment: tidak punya status biometric/identity verified,
+ *     tidak dinyatakan siap operasional. Model active/inactive salesman
+ *     belum ada di schema — limitation ini didokumentasikan, bukan dibangun
+ *     di gate ini (lihat docs/development/DEMO_ACCESS_TENANT_BRANDING.md).
  *   - Satu produk sintetis minimum (untuk verifikasi RLS pada tabel bisnis)
  *   - Satu tenant sintetis KEDUA + owner-nya, khusus untuk membuktikan
  *     tenant isolation (bukan data Waluyo)
  *
- * TIDAK membuat: toko/customer asli, transaksi asli, salesman/Telegram
- * enrollment (di luar scope gate ini).
+ * TIDAK membuat: toko/customer asli, transaksi asli, Telegram enrollment,
+ * KPI/target/coverage (di luar scope gate ini).
  *
- * Env vars dibaca dari .env.demo.local (root repo):
- *   NEXT_PUBLIC_SUPABASE_DEMO_URL
- *   SUPABASE_DEMO_SERVICE_ROLE_KEY
+ * Env vars dibaca/ditulis di .env.demo.local (root repo, gitignored):
+ *   NEXT_PUBLIC_SUPABASE_DEMO_URL       (input, wajib)
+ *   SUPABASE_DEMO_SERVICE_ROLE_KEY      (input, wajib)
+ *   AODP_DEMO_OWNER_EMAIL               (ditulis, non-secret)
+ *   AODP_DEMO_OWNER_PASSWORD            (ditulis HANYA saat akun baru dibuat;
+ *                                         dipertahankan jika sudah ada)
+ *   AODP_DEMO_SALES_EMAIL               (ditulis, non-secret)
+ *   AODP_DEMO_SALES_PASSWORD            (ditulis HANYA saat akun baru dibuat;
+ *                                         dipertahankan jika sudah ada)
+ *
+ * Nilai TIDAK PERNAH dicetak ke console/log.
  */
 
 import { createClient } from "@supabase/supabase-js";
@@ -44,10 +59,15 @@ function loadEnv(): void {
   }
 }
 
-function appendEnvIfMissing(key: string, value: string): void {
+function setEnvIfMissing(key: string, value: string): void {
   const current = fs.readFileSync(ENV_FILE, "utf-8");
-  if (current.includes(`${key}=`)) return;
+  if (new RegExp(`^${key}=`, "m").test(current)) return;
   fs.appendFileSync(ENV_FILE, `${key}=${value}\n`);
+}
+
+/** Kunci lama (per-email, sebelum konvensi AODP_DEMO_*) — dibaca untuk migrasi carry-forward, TIDAK PERNAH untuk membuat password baru. */
+function legacyPasswordKeyFor(email: string): string {
+  return `DEMO_OWNER_PASSWORD_${email.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}`;
 }
 
 loadEnv();
@@ -79,18 +99,22 @@ const DEMO_OWNER = {
   email: "owner.demo@waluyo.aodp.test",
   fullName: "Demo Owner — Waluyo",
   phone: "0812-0000-9001",
+  emailEnvKey: "AODP_DEMO_OWNER_EMAIL",
+  passwordEnvKey: "AODP_DEMO_OWNER_PASSWORD",
+};
+
+const DEMO_SALES = {
+  email: "sales.demo@waluyo.aodp.test",
+  fullName: "Demo Sales — Waluyo (fixture uji RLS, bukan Salesman Enrollment)",
+  phone: "0812-0000-9003",
+  emailEnvKey: "AODP_DEMO_SALES_EMAIL",
+  passwordEnvKey: "AODP_DEMO_SALES_PASSWORD",
 };
 
 const ISOLATION_OWNER = {
   email: "owner.isolation@aodp.test",
   fullName: "Isolation Test Owner (Synthetic)",
   phone: "0812-0000-9002",
-};
-
-const DEMO_SALES = {
-  email: "sales.demo@waluyo.aodp.test",
-  fullName: "Demo Sales — Waluyo (RLS test only)",
-  phone: "0812-0000-9003",
 };
 
 async function findAuthUserByEmail(email: string): Promise<string | null> {
@@ -127,15 +151,30 @@ async function upsertCompany(spec: { name: string; slug: string; settings?: Reco
   return data.id as string;
 }
 
+/**
+ * Upsert user + role. Password TIDAK PERNAH dirotasi untuk akun yang sudah
+ * ada — hanya dibuat sekali saat akun baru pertama kali diciptakan. Jika
+ * `passwordEnvKey` diberikan, nilai password (baru ATAU hasil migrasi dari
+ * legacy key) ditulis ke kunci kanonik tsb tanpa pernah dicetak.
+ */
 async function upsertUserWithRole(
   companyId: string,
-  spec: { email: string; fullName: string; phone: string },
+  spec: { email: string; fullName: string; phone: string; emailEnvKey?: string; passwordEnvKey?: string },
   roleName: string
-): Promise<{ userId: string; passwordCreated: boolean }> {
+): Promise<{ userId: string; created: boolean }> {
   let userId = await findAuthUserByEmail(spec.email);
-  let passwordCreated = false;
+  let created = false;
+
   if (!userId) {
-    const password = crypto.randomBytes(18).toString("base64url");
+    // Akun belum ada -> buat baru. Reuse nilai pre-set (env kanonik atau
+    // legacy key) jika operator sudah menyiapkannya; generate acak HANYA
+    // jika tidak ada nilai sama sekali. Ini BUKAN rotasi — akun memang baru.
+    const preset =
+      (spec.passwordEnvKey && process.env[spec.passwordEnvKey]) ||
+      process.env[legacyPasswordKeyFor(spec.email)] ||
+      null;
+    const password = preset ?? crypto.randomBytes(18).toString("base64url");
+
     const { data, error } = await supabase.auth.admin.createUser({
       email: spec.email,
       password,
@@ -144,15 +183,25 @@ async function upsertUserWithRole(
     });
     if (error) throw new Error(`Gagal membuat auth user ${spec.email}: ${error.message}`);
     userId = data.user.id;
-    appendEnvIfMissing(
-      `DEMO_OWNER_PASSWORD_${spec.email.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}`,
-      password
-    );
-    passwordCreated = true;
+    created = true;
+
+    if (spec.passwordEnvKey) setEnvIfMissing(spec.passwordEnvKey, password);
     console.log(`  auth user dibuat: ${spec.email} (password ditulis ke .env.demo.local, tidak ditampilkan)`);
   } else {
-    console.log(`  auth user sudah ada: ${spec.email}`);
+    console.log(`  auth user sudah ada: ${spec.email} (password TIDAK diubah)`);
+    // Carry-forward: kalau kunci kanonik belum ada tapi legacy key punya
+    // nilai (dari seed lama), salin apa adanya -- bukan rotasi, hanya
+    // penamaan ulang referensi ke password yang SAMA persis.
+    if (spec.passwordEnvKey && !process.env[spec.passwordEnvKey]) {
+      const legacy = process.env[legacyPasswordKeyFor(spec.email)];
+      if (legacy) {
+        setEnvIfMissing(spec.passwordEnvKey, legacy);
+        console.log(`  password dimigrasi ke kunci kanonik ${spec.passwordEnvKey} (nilai tidak berubah)`);
+      }
+    }
   }
+
+  if (spec.emailEnvKey) setEnvIfMissing(spec.emailEnvKey, spec.email);
 
   const { error: profileErr } = await supabase.from("users").upsert(
     { id: userId, company_id: companyId, email: spec.email, full_name: spec.fullName, phone: spec.phone, is_active: true },
@@ -173,7 +222,7 @@ async function upsertUserWithRole(
     .upsert({ user_id: userId, role_id: roleRow.id, company_id: companyId }, { onConflict: "user_id,role_id,company_id" });
   if (urErr) throw new Error(`Gagal assign role ${roleName} ke ${spec.email}: ${urErr.message}`);
 
-  return { userId, passwordCreated };
+  return { userId, created };
 }
 
 async function upsertSyntheticProduct(companyId: string, sku: string, name: string): Promise<void> {
@@ -194,7 +243,7 @@ async function main() {
   console.log("[2] Owner demo (Waluyo)");
   const demoOwner = await upsertUserWithRole(demoCompanyId, DEMO_OWNER, "owner");
 
-  console.log("[3] Sales demo (Waluyo) — khusus uji RLS role sales, bukan Salesman Enrollment");
+  console.log("[3] Sales demo (Waluyo) — fixture uji RLS, bukan Salesman Enrollment");
   const demoSales = await upsertUserWithRole(demoCompanyId, DEMO_SALES, "sales");
 
   console.log("[4] Produk sintetis (tenant demo)");
@@ -209,13 +258,15 @@ async function main() {
   console.log("[7] Produk sintetis (tenant isolation)");
   await upsertSyntheticProduct(isolationCompanyId, "ISO-SKU-001", "Produk Sintetis Isolation Tenant");
 
-  console.log("\nSeed demo selesai.");
+  console.log("\nSeed demo selesai. Password TIDAK dirotasi untuk akun yang sudah ada.");
   console.log(
     JSON.stringify(
       {
         demo_company_id: demoCompanyId,
         demo_owner_user_id: demoOwner.userId,
+        demo_owner_account_created_this_run: demoOwner.created,
         demo_sales_user_id: demoSales.userId,
+        demo_sales_account_created_this_run: demoSales.created,
         isolation_company_id: isolationCompanyId,
         isolation_owner_user_id: isolationOwner.userId,
       },

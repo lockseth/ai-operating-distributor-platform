@@ -13,6 +13,7 @@ export interface AuthUser {
     slug: string;
     logo_url: string | null;
     subscription_plan: string;
+    settings: Record<string, unknown> | null;
   };
   roles: string[];
   permissions: string[];
@@ -33,6 +34,7 @@ const DEMO_AUTH_USER: AuthUser = {
     slug: "aodp-demo",
     logo_url: null,
     subscription_plan: "owner_protection",
+    settings: null,
   },
   roles: ["owner"],
   permissions: [
@@ -85,7 +87,7 @@ export async function getAuthUser(): Promise<AuthUser> {
   // Company
   const { data: companyData } = await supabase
     .from("companies")
-    .select("id, name, slug, logo_url, subscription_plan")
+    .select("id, name, slug, logo_url, subscription_plan, settings")
     .eq("id", profile.company_id)
     .maybeSingle();
 
@@ -95,6 +97,7 @@ export async function getAuthUser(): Promise<AuthUser> {
     slug: string;
     logo_url: string | null;
     subscription_plan: string;
+    settings: Record<string, unknown> | null;
   } | null;
 
   if (!company) redirect("/login");

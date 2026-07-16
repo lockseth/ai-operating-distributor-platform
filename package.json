@@ -13,7 +13,11 @@
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "db:migrate": "supabase db push",
     "db:reset": "supabase db reset",
-    "seed:dev": "tsx scripts/seed-dev.ts"
+    "seed:dev": "tsx scripts/seed-dev.ts",
+    "seed:demo": "tsx scripts/seed-demo.ts",
+    "reset:demo-access": "tsx scripts/reset-demo-access.ts",
+    "verify:demo-rls": "tsx scripts/verify-demo-rls.ts",
+    "verify:demo-auth": "tsx scripts/verify-demo-auth.ts"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.49.8",

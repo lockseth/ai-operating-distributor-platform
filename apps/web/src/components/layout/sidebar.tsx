@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AuthUser } from "@/lib/auth/get-user";
 import { getDashboardHref } from "@/lib/auth/permissions";
+import { resolveCompanyBranding } from "@/lib/branding/service";
 
 interface SidebarProps {
   user: AuthUser;
@@ -181,27 +182,42 @@ export function Sidebar({ user }: SidebarProps) {
     pathname === dashboardHref ||
     (pathname === "/dashboard" && dashboardHref.startsWith("/dashboard/"));
 
-  const brandColor =
-    (user.company as unknown as { settings?: { brand_color?: string } })
-      ?.settings?.brand_color ?? "#2563EB";
+  const branding = resolveCompanyBranding(user.company);
 
   return (
     <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-white">
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-5">
-        <div
-          className="flex h-7 w-7 items-center justify-center rounded-md text-xs font-bold text-white"
-          style={{ backgroundColor: brandColor }}
-        >
-          {user.company.name.charAt(0)}
-        </div>
+        {branding.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element -- logo tenant eksternal, di luar next/image domain allowlist
+          <img
+            src={branding.logoUrl}
+            alt={branding.name}
+            className="h-7 w-7 shrink-0 rounded-md object-cover"
+          />
+        ) : (
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-xs font-bold text-white"
+            style={{ backgroundColor: branding.brandColor }}
+          >
+            {branding.name.charAt(0)}
+          </div>
+        )}
         <div className="overflow-hidden">
           <p className="truncate text-xs font-semibold text-gray-900 leading-tight">
-            {user.company.name}
+            {branding.name}
           </p>
           <p className="text-xs text-gray-400">AODP</p>
         </div>
       </div>
+
+      {branding.isDemoEnvironment && (
+        <div className="border-b border-purple-100 bg-purple-50 px-5 py-1.5">
+          <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+            DEMO ENVIRONMENT
+          </span>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-3">
@@ -272,6 +288,7 @@ export function Sidebar({ user }: SidebarProps) {
             </p>
           </div>
         </div>
+        <p className="mt-1 px-2 text-center text-[10px] text-gray-300">Powered by AODP</p>
       </div>
     </aside>
   );
