@@ -66,7 +66,7 @@ export interface SalesOrderTelegramRepository {
     eventId: string,
     processingStatus: EventProcessingStatus,
     resultingOrderId?: string | null,
-    errorMessage?: string | null
+    errorMessage?: string | null,
   ): Promise<void>;
 
   /** Tidak pernah percaya company_id/user_id dari payload — selalu resolve dari sini. */
@@ -77,7 +77,7 @@ export interface SalesOrderTelegramRepository {
   setConversationState(
     identityId: string,
     companyId: string,
-    state: ConversationState
+    state: ConversationState,
   ): Promise<void>;
 
   createDraftOrder(input: {
@@ -100,11 +100,13 @@ export interface SalesOrderTelegramRepository {
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
-    }
+    },
   ): Promise<PersistedOrder>;
 
   /** Idempotent: memanggil ulang pada order yang sudah confirmed tidak membuat perubahan. */
-  confirmOrder(orderId: string): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }>;
+  confirmOrder(
+    orderId: string,
+  ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,7 +116,9 @@ export interface SalesOrderTelegramRepository {
 export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepository {
   constructor(private readonly supabase: SupabaseClient) {}
 
-  async findEventByUpdateId(telegramUpdateId: number): Promise<{ id: string } | null> {
+  async findEventByUpdateId(
+    telegramUpdateId: number,
+  ): Promise<{ id: string } | null> {
     const { data } = await this.supabase
       .from("telegram_update_events")
       .select("id")
@@ -159,7 +163,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     eventId: string,
     processingStatus: EventProcessingStatus,
     resultingOrderId?: string | null,
-    errorMessage?: string | null
+    errorMessage?: string | null,
   ): Promise<void> {
     await this.supabase
       .from("telegram_update_events")
@@ -171,10 +175,14 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .eq("id", eventId);
   }
 
-  async resolveIdentity(telegramChatId: number): Promise<ResolvedIdentity | null> {
+  async resolveIdentity(
+    telegramChatId: number,
+  ): Promise<ResolvedIdentity | null> {
     const { data } = await this.supabase
       .from("telegram_identities")
-      .select("id, company_id, user_id, is_active, user:users!user_id(full_name)")
+      .select(
+        "id, company_id, user_id, is_active, user:users!user_id(full_name, company_id, is_active)",
+      )
       .eq("telegram_chat_id", telegramChatId)
       .eq("is_active", true)
       .maybeSingle();
@@ -184,13 +192,24 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       id: string;
       company_id: string;
       user_id: string;
-      user: { full_name: string } | null;
+      user: {
+        full_name: string;
+        company_id: string;
+        is_active: boolean;
+      } | null;
     };
+    if (
+      !row.user ||
+      row.user.is_active !== true ||
+      row.user.company_id !== row.company_id
+    ) {
+      return null;
+    }
     return {
       identityId: row.id,
       companyId: row.company_id,
       userId: row.user_id,
-      userFullName: row.user?.full_name ?? "Sales",
+      userFullName: row.user.full_name,
     };
   }
 
@@ -202,14 +221,17 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .maybeSingle();
 
     if (!data) return { pendingOrderId: null, awaiting: "none" };
-    const row = data as { pending_order_id: string | null; awaiting: ConversationAwaiting };
+    const row = data as {
+      pending_order_id: string | null;
+      awaiting: ConversationAwaiting;
+    };
     return { pendingOrderId: row.pending_order_id, awaiting: row.awaiting };
   }
 
   async setConversationState(
     identityId: string,
     companyId: string,
-    state: ConversationState
+    state: ConversationState,
   ): Promise<void> {
     await this.supabase.from("telegram_conversation_state").upsert(
       {
@@ -218,7 +240,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         pending_order_id: state.pendingOrderId,
         awaiting: state.awaiting,
       },
-      { onConflict: "telegram_identity_id" }
+      { onConflict: "telegram_identity_id" },
     );
   }
 
@@ -236,7 +258,10 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .order("order_number", { ascending: false })
       .limit(1);
 
-    const lastSeq = (data?.[0] as { order_number: string } | undefined)?.order_number?.replace(prefix, "") ?? "0000";
+    const lastSeq =
+      (
+        data?.[0] as { order_number: string } | undefined
+      )?.order_number?.replace(prefix, "") ?? "0000";
     const nextSeq = String(parseInt(lastSeq, 10) + 1).padStart(4, "0");
     return `${prefix}${nextSeq}`;
   }
@@ -278,26 +303,30 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .select("id")
       .single();
 
-    if (orderError) throw new Error(`createDraftOrder failed: ${orderError.message}`);
+    if (orderError)
+      throw new Error(`createDraftOrder failed: ${orderError.message}`);
     const orderId = (orderRow as { id: string }).id;
 
     if (priced.items.length > 0) {
-      const { error: itemsError } = await this.supabase.from("sales_order_items").insert(
-        priced.items.map((item) => ({
-          order_id: orderId,
-          product_id: item.productId,
-          product_name_raw: item.productId ? null : item.productName,
-          quantity: item.quantity,
-          unit: item.unit,
-          unit_price: item.unitPrice,
-          discount_type: item.discountType,
-          discount_value: item.discountValue,
-          amount_before_discount: item.amountBeforeDiscount,
-          discount_amount: item.amountBeforeDiscount - item.amountAfterDiscount,
-          discount_exception: item.discountException,
-          total_amount: item.amountAfterDiscount,
-        }))
-      );
+      const { error: itemsError } = await this.supabase
+        .from("sales_order_items")
+        .insert(
+          priced.items.map((item) => ({
+            order_id: orderId,
+            product_id: item.productId,
+            product_name_raw: item.productId ? null : item.productName,
+            quantity: item.quantity,
+            unit: item.unit,
+            unit_price: item.unitPrice,
+            discount_type: item.discountType,
+            discount_value: item.discountValue,
+            amount_before_discount: item.amountBeforeDiscount,
+            discount_amount:
+              item.amountBeforeDiscount - item.amountAfterDiscount,
+            discount_exception: item.discountException,
+            total_amount: item.amountAfterDiscount,
+          })),
+        );
       if (itemsError) {
         await this.supabase.from("sales_orders").delete().eq("id", orderId);
         throw new Error(`createDraftOrder items failed: ${itemsError.message}`);
@@ -320,7 +349,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
-    }
+    },
   ): Promise<PersistedOrder> {
     const { priced } = input;
 
@@ -341,32 +370,41 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .eq("id", orderId)
       .eq("status", "draft"); // guard: hanya order yang masih draft yang boleh dikoreksi
 
-    if (updateError) throw new Error(`updateDraftOrder failed: ${updateError.message}`);
+    if (updateError)
+      throw new Error(`updateDraftOrder failed: ${updateError.message}`);
 
-    await this.supabase.from("sales_order_items").delete().eq("order_id", orderId);
+    await this.supabase
+      .from("sales_order_items")
+      .delete()
+      .eq("order_id", orderId);
 
     if (priced.items.length > 0) {
-      const { error: itemsError } = await this.supabase.from("sales_order_items").insert(
-        priced.items.map((item) => ({
-          order_id: orderId,
-          product_id: item.productId,
-          product_name_raw: item.productId ? null : item.productName,
-          quantity: item.quantity,
-          unit: item.unit,
-          unit_price: item.unitPrice,
-          discount_type: item.discountType,
-          discount_value: item.discountValue,
-          amount_before_discount: item.amountBeforeDiscount,
-          discount_amount: item.amountBeforeDiscount - item.amountAfterDiscount,
-          discount_exception: item.discountException,
-          total_amount: item.amountAfterDiscount,
-        }))
-      );
-      if (itemsError) throw new Error(`updateDraftOrder items failed: ${itemsError.message}`);
+      const { error: itemsError } = await this.supabase
+        .from("sales_order_items")
+        .insert(
+          priced.items.map((item) => ({
+            order_id: orderId,
+            product_id: item.productId,
+            product_name_raw: item.productId ? null : item.productName,
+            quantity: item.quantity,
+            unit: item.unit,
+            unit_price: item.unitPrice,
+            discount_type: item.discountType,
+            discount_value: item.discountValue,
+            amount_before_discount: item.amountBeforeDiscount,
+            discount_amount:
+              item.amountBeforeDiscount - item.amountAfterDiscount,
+            discount_exception: item.discountException,
+            total_amount: item.amountAfterDiscount,
+          })),
+        );
+      if (itemsError)
+        throw new Error(`updateDraftOrder items failed: ${itemsError.message}`);
     }
 
     const updated = await this.getOrder(orderId);
-    if (!updated) throw new Error("updateDraftOrder: order not found after update");
+    if (!updated)
+      throw new Error("updateDraftOrder: order not found after update");
     return updated;
   }
 
@@ -374,7 +412,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     const { data } = await this.supabase
       .from("sales_orders")
       .select(
-        "id, order_number, status, requires_discount_review, customer_name_raw, delivery_note, total_amount, discount_amount, final_amount, customer:customers!customer_id(id, name), items:sales_order_items(product_id, product_name_raw, quantity, unit, unit_price, discount_type, discount_value, amount_before_discount, discount_exception, total_amount)"
+        "id, order_number, status, requires_discount_review, customer_name_raw, delivery_note, total_amount, discount_amount, final_amount, customer:customers!customer_id(id, name), items:sales_order_items(product_id, product_name_raw, quantity, unit, unit_price, discount_type, discount_value, amount_before_discount, discount_exception, total_amount)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -417,7 +455,8 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         unitPrice: i.unit_price,
         discountType: i.discount_type,
         discountValue: i.discount_value,
-        amountBeforeDiscount: i.amount_before_discount ?? i.quantity * i.unit_price,
+        amountBeforeDiscount:
+          i.amount_before_discount ?? i.quantity * i.unit_price,
         amountAfterDiscount: i.total_amount,
         discountException: i.discount_exception,
         requiresReview: false,
@@ -438,7 +477,9 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     };
   }
 
-  async confirmOrder(orderId: string): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
+  async confirmOrder(
+    orderId: string,
+  ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
     const existing = await this.getOrder(orderId);
     if (!existing) throw new Error("Order not found");
 
@@ -453,7 +494,10 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       .eq("status", "draft"); // guard: hanya transisi dari draft, mencegah race/duplikasi
 
     const updated = await this.getOrder(orderId);
-    return { order: updated ?? { ...existing, status: "confirmed" }, alreadyConfirmed: false };
+    return {
+      order: updated ?? { ...existing, status: "confirmed" },
+      alreadyConfirmed: false,
+    };
   }
 }
 
@@ -488,7 +532,9 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     return `${prefix}-${this.seq}`;
   }
 
-  async findEventByUpdateId(telegramUpdateId: number): Promise<{ id: string } | null> {
+  async findEventByUpdateId(
+    telegramUpdateId: number,
+  ): Promise<{ id: string } | null> {
     const e = this.events.get(telegramUpdateId);
     return e ? { id: e.id } : null;
   }
@@ -518,9 +564,13 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     return { id };
   }
 
-  async updateEventStatus(eventId: string, processingStatus: EventProcessingStatus): Promise<void> {
+  async updateEventStatus(
+    eventId: string,
+    processingStatus: EventProcessingStatus,
+  ): Promise<void> {
     for (const [updateId, e] of this.events) {
-      if (e.id === eventId) this.events.set(updateId, { ...e, status: processingStatus });
+      if (e.id === eventId)
+        this.events.set(updateId, { ...e, status: processingStatus });
     }
   }
 
@@ -529,15 +579,26 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     return this.events.get(telegramUpdateId);
   }
 
-  async resolveIdentity(telegramChatId: number): Promise<ResolvedIdentity | null> {
+  async resolveIdentity(
+    telegramChatId: number,
+  ): Promise<ResolvedIdentity | null> {
     return this.identities.get(telegramChatId) ?? null;
   }
 
   async getConversationState(identityId: string): Promise<ConversationState> {
-    return this.conversationStates.get(identityId) ?? { pendingOrderId: null, awaiting: "none" };
+    return (
+      this.conversationStates.get(identityId) ?? {
+        pendingOrderId: null,
+        awaiting: "none",
+      }
+    );
   }
 
-  async setConversationState(identityId: string, _companyId: string, state: ConversationState): Promise<void> {
+  async setConversationState(
+    identityId: string,
+    _companyId: string,
+    state: ConversationState,
+  ): Promise<void> {
     this.conversationStates.set(identityId, state);
   }
 
@@ -574,7 +635,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
-    }
+    },
   ): Promise<PersistedOrder> {
     const existing = this.orders.get(orderId);
     if (!existing) throw new Error("Order not found");
@@ -589,7 +650,9 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     return updated;
   }
 
-  async confirmOrder(orderId: string): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
+  async confirmOrder(
+    orderId: string,
+  ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
     const existing = this.orders.get(orderId);
     if (!existing) throw new Error("Order not found");
     if (existing.status === "confirmed") {

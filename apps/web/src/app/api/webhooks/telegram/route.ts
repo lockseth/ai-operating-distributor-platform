@@ -11,12 +11,24 @@
 
 import { NextResponse } from "next/server";
 import { getAdminClient } from "@/lib/supabase/admin";
-import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-limit";
-import { verifyTelegramSecret, HttpTelegramSender, type TelegramUpdate } from "@/lib/telegram/client";
+import {
+  checkRateLimit,
+  getClientIp,
+  buildRateLimitResponse,
+} from "@/lib/rate-limit";
+import {
+  verifyTelegramSecret,
+  HttpTelegramSender,
+  type TelegramUpdate,
+} from "@/lib/telegram/client";
 import { SupabaseSalesOrderRepository } from "@/lib/sales-orders/repository";
 import { SupabaseKnowledgeProvider } from "@/lib/sales-orders/knowledge-provider";
-import { processTelegramUpdate, type WorkflowDeps } from "@/lib/sales-orders/workflow";
+import {
+  processTelegramUpdate,
+  type WorkflowDeps,
+} from "@/lib/sales-orders/workflow";
 import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
+import { SupabaseTelegramEnrollmentRepository } from "@/lib/telegram-enrollment/repository";
 
 // 60 update/menit per IP — cukup longgar untuk trafik bot wajar, mencegah flood.
 const RATE_LIMIT = 60;
@@ -30,7 +42,10 @@ export async function POST(request: Request) {
 
     const secretHeader = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
     if (!verifyTelegramSecret(secretHeader)) {
-      return NextResponse.json({ error: "Unauthorized: invalid or missing secret" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized: invalid or missing secret" },
+        { status: 401 },
+      );
     }
 
     const rawBody = await request.text();
@@ -47,8 +62,13 @@ export async function POST(request: Request) {
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
     if (!botToken) {
-      console.error("[Webhook /telegram] TELEGRAM_BOT_TOKEN belum dikonfigurasi");
-      return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+      console.error(
+        "[Webhook /telegram] TELEGRAM_BOT_TOKEN belum dikonfigurasi",
+      );
+      return NextResponse.json(
+        { error: "Server misconfigured" },
+        { status: 500 },
+      );
     }
 
     const supabase = getAdminClient();
@@ -57,10 +77,12 @@ export async function POST(request: Request) {
       knowledgeProvider: new SupabaseKnowledgeProvider(supabase),
       sender: new HttpTelegramSender(botToken),
       deliveryRepository: new SupabaseDeliveryRepository(supabase),
+      enrollmentRepository: new SupabaseTelegramEnrollmentRepository(supabase),
     };
 
     const result = await processTelegramUpdate(update, deps);
-    const outcome = result.outcome === "delivery" ? result.result.outcome : result.outcome;
+    const outcome =
+      result.outcome === "delivery" ? result.result.outcome : result.outcome;
 
     return NextResponse.json({ ok: true, outcome });
   } catch (err) {

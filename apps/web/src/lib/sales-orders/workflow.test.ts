@@ -12,6 +12,8 @@ import { RecordingTelegramSender } from "@/lib/telegram/client";
 import type { TelegramUpdate } from "@/lib/telegram/client";
 import type { KnowledgeContext } from "./types";
 import { InMemoryDeliveryRepository } from "@/lib/delivery/repository";
+import { InMemoryTelegramEnrollmentRepository } from "@/lib/telegram-enrollment/repository";
+import { hashEnrollmentToken } from "@/lib/telegram-enrollment/token";
 
 const COMPANY_ID = "company-1";
 const USER_ID = "user-1";
@@ -22,15 +24,26 @@ function makeDeps(seed: Partial<KnowledgeContext> = {}): WorkflowDeps & {
   knowledgeProvider: InMemoryKnowledgeProvider;
   sender: RecordingTelegramSender;
   deliveryRepository: InMemoryDeliveryRepository;
+  enrollmentRepository: InMemoryTelegramEnrollmentRepository;
 } {
   const repository = new InMemorySalesOrderRepository();
   const knowledgeProvider = new InMemoryKnowledgeProvider(seed);
   const sender = new RecordingTelegramSender();
   const deliveryRepository = new InMemoryDeliveryRepository();
-  return { repository, knowledgeProvider, sender, deliveryRepository };
+  const enrollmentRepository = new InMemoryTelegramEnrollmentRepository();
+  return {
+    repository,
+    knowledgeProvider,
+    sender,
+    deliveryRepository,
+    enrollmentRepository,
+  };
 }
 
-function registerSales(repository: InMemorySalesOrderRepository, chatId = CHAT_ID) {
+function registerSales(
+  repository: InMemorySalesOrderRepository,
+  chatId = CHAT_ID,
+) {
   repository.seedIdentity(chatId, {
     identityId: "identity-1",
     companyId: COMPANY_ID,
@@ -39,7 +52,11 @@ function registerSales(repository: InMemorySalesOrderRepository, chatId = CHAT_I
   });
 }
 
-function textUpdate(updateId: number, text: string, chatId = CHAT_ID): TelegramUpdate {
+function textUpdate(
+  updateId: number,
+  text: string,
+  chatId = CHAT_ID,
+): TelegramUpdate {
   return {
     update_id: updateId,
     message: {
@@ -64,7 +81,8 @@ describe("Telegram Sales Order workflow", () => {
 
     const result = await processTelegramUpdate(textUpdate(1, text), deps);
     expect(result.outcome).toBe("draft_created");
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const order = await deps.repository.getOrder(result.orderId);
     expect(order?.status).toBe("draft");
@@ -87,7 +105,8 @@ describe("Telegram Sales Order workflow", () => {
 
     const result = await processTelegramUpdate(textUpdate(2, text), deps);
     expect(result.outcome).toBe("draft_created");
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const order = await deps.repository.getOrder(result.orderId);
     expect(order?.priced.customerName).toBeNull();
@@ -107,11 +126,18 @@ describe("Telegram Sales Order workflow", () => {
 
     const result = await processTelegramUpdate(textUpdate(3, text), deps);
     expect(result.outcome).toBe("draft_created");
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const order = await deps.repository.getOrder(result.orderId);
-    expect(order?.priced.items.map((i) => i.productName)).toEqual(["Produk A", "Produk B", "Produk C"]);
-    expect(order?.priced.estimatedTotal).toBe(3 * 10000 + 4 * 20000 + 5 * 30000);
+    expect(order?.priced.items.map((i) => i.productName)).toEqual([
+      "Produk A",
+      "Produk B",
+      "Produk C",
+    ]);
+    expect(order?.priced.estimatedTotal).toBe(
+      3 * 10000 + 4 * 20000 + 5 * 30000,
+    );
   });
 
   it("4. diskon persen dihitung benar", async () => {
@@ -120,7 +146,8 @@ describe("Telegram Sales Order workflow", () => {
     const text = "Order Toko D:\nBarang X 10 dus harga 100000 diskon 10%";
 
     const result = await processTelegramUpdate(textUpdate(4, text), deps);
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
     const order = await deps.repository.getOrder(result.orderId);
     const item = order!.priced.items[0]!;
     expect(item.discountType).toBe("percentage");
@@ -135,7 +162,8 @@ describe("Telegram Sales Order workflow", () => {
     const text = "Order Toko E:\nBarang Y 10 dus harga 100000 potongan 50000";
 
     const result = await processTelegramUpdate(textUpdate(5, text), deps);
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
     const order = await deps.repository.getOrder(result.orderId);
     const item = order!.priced.items[0]!;
     expect(item.discountType).toBe("nominal");
@@ -147,7 +175,10 @@ describe("Telegram Sales Order workflow", () => {
     const deps = makeDeps();
     registerSales(deps.repository);
 
-    const result = await processTelegramUpdate(textUpdate(6, "Halo, apa kabar hari ini?"), deps);
+    const result = await processTelegramUpdate(
+      textUpdate(6, "Halo, apa kabar hari ini?"),
+      deps,
+    );
     expect(result.outcome).toBe("not_order");
     expect(deps.sender.sent[0]!.text).toContain("belum bisa dikenali");
   });
@@ -156,8 +187,11 @@ describe("Telegram Sales Order workflow", () => {
     const deps = makeDeps(); // sengaja tidak registerSales()
 
     const result = await processTelegramUpdate(
-      textUpdate(7, "Order Toko A:\nBarang 1 dus harga 10000, ini rahasia dagang pelanggan"),
-      deps
+      textUpdate(
+        7,
+        "Order Toko A:\nBarang 1 dus harga 10000, ini rahasia dagang pelanggan",
+      ),
+      deps,
     );
     expect(result.outcome).toBe("unregistered");
     const reply = deps.sender.sent[0]!.text;
@@ -195,16 +229,23 @@ describe("Telegram Sales Order workflow", () => {
     registerSales(deps.repository);
     const created = await processTelegramUpdate(
       textUpdate(9, "Order Toko G:\nBarang W 1 dus harga 50000"),
-      deps
+      deps,
     );
-    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (created.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
-    const confirm1 = await processTelegramUpdate(textUpdate(10, "KONFIRMASI"), deps);
+    const confirm1 = await processTelegramUpdate(
+      textUpdate(10, "KONFIRMASI"),
+      deps,
+    );
     expect(confirm1.outcome).toBe("confirmed");
     if (confirm1.outcome !== "confirmed") throw new Error("unexpected outcome");
     expect(confirm1.alreadyConfirmed).toBe(false);
 
-    const confirm2 = await processTelegramUpdate(textUpdate(11, "KONFIRMASI"), deps);
+    const confirm2 = await processTelegramUpdate(
+      textUpdate(11, "KONFIRMASI"),
+      deps,
+    );
     expect(confirm2.outcome).toBe("confirmed");
     if (confirm2.outcome !== "confirmed") throw new Error("unexpected outcome");
     expect(confirm2.alreadyConfirmed).toBe(true);
@@ -219,7 +260,11 @@ describe("Telegram Sales Order workflow", () => {
     registerSales(deps.repository);
     const update: TelegramUpdate = {
       update_id: 20,
-      message: { message_id: 1, voice: { file_id: "abc123", duration: 5 }, chat: { id: CHAT_ID } },
+      message: {
+        message_id: 1,
+        voice: { file_id: "abc123", duration: 5 },
+        chat: { id: CHAT_ID },
+      },
     };
 
     const result = await processTelegramUpdate(update, deps);
@@ -233,19 +278,21 @@ describe("Telegram Sales Order workflow", () => {
 
     const created = await processTelegramUpdate(
       textUpdate(30, "Order Toko H:\nMW Putih 20 ds harga 450 ribu"),
-      deps
+      deps,
     );
-    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (created.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const ubah = await processTelegramUpdate(textUpdate(31, "UBAH"), deps);
     expect(ubah.outcome).toBe("awaiting_correction");
 
     const corrected = await processTelegramUpdate(
       textUpdate(32, "Order Toko H:\nCat Mawar Putih 20 dus harga 450 ribu"),
-      deps
+      deps,
     );
     expect(corrected.outcome).toBe("corrected_draft_updated");
-    if (corrected.outcome !== "corrected_draft_updated") throw new Error("unexpected outcome");
+    if (corrected.outcome !== "corrected_draft_updated")
+      throw new Error("unexpected outcome");
 
     // Draft yang SAMA diperbarui, bukan draft baru
     expect(corrected.orderId).toBe(created.orderId);
@@ -254,12 +301,16 @@ describe("Telegram Sales Order workflow", () => {
     expect(order?.priced.items[0]!.productName).toBe("Cat Mawar Putih");
 
     // Koreksi tersimpan sebagai candidate, BELUM published, status pending
-    expect(deps.knowledgeProvider.submittedCandidates.length).toBeGreaterThan(0);
+    expect(deps.knowledgeProvider.submittedCandidates.length).toBeGreaterThan(
+      0,
+    );
     const candidate = deps.knowledgeProvider.submittedCandidates.find(
-      (c) => c.candidateType === "product_alias"
+      (c) => c.candidateType === "product_alias",
     );
     expect(candidate?.rawText).toBe("MW Putih");
-    expect((candidate?.suggestedValue as { canonicalName?: string })?.canonicalName).toBe("Cat Mawar Putih");
+    expect(
+      (candidate?.suggestedValue as { canonicalName?: string })?.canonicalName,
+    ).toBe("Cat Mawar Putih");
   });
 
   it("12. diskon melebihi discount policy -> discount_exception true, requires_discount_review true", async () => {
@@ -279,9 +330,10 @@ describe("Telegram Sales Order workflow", () => {
 
     const result = await processTelegramUpdate(
       textUpdate(40, "Order Toko I:\nBarang V 5 dus harga 100000 diskon 20%"),
-      deps
+      deps,
     );
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const order = await deps.repository.getOrder(result.orderId);
     expect(order?.priced.items[0]!.discountException).toBe(true);
@@ -295,13 +347,45 @@ describe("Telegram Sales Order workflow", () => {
 
     const result = await processTelegramUpdate(
       textUpdate(41, "Order Toko J:\nBarang U 5 dus harga 100000 diskon 3%"),
-      deps
+      deps,
     );
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    if (result.outcome !== "draft_created")
+      throw new Error("unexpected outcome");
 
     const order = await deps.repository.getOrder(result.orderId);
     // Limit tidak diketahui -> TIDAK dianggap exception (bukan mengarang limit), tapi wajib direview
     expect(order?.priced.items[0]!.discountException).toBe(false);
     expect(order?.priced.requiresDiscountReview).toBe(true);
+  });
+
+  it("14. enrollment command chat privat -> identity claimed, token tidak masuk event ledger", async () => {
+    const deps = makeDeps();
+    const token = "AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+    deps.enrollmentRepository.seedToken({
+      tokenHash: hashEnrollmentToken(token),
+      identity: {
+        identityId: "identity-enrolled",
+        companyId: COMPANY_ID,
+        userId: USER_ID,
+        userFullName: "Andri",
+      },
+    });
+
+    const update: TelegramUpdate = {
+      update_id: 140,
+      message: {
+        message_id: 140,
+        text: `/start enroll_${token}`,
+        chat: { id: CHAT_ID, type: "private" },
+        from: { id: CHAT_ID, username: "andri" },
+      },
+    };
+    const result = await processTelegramUpdate(update, deps);
+
+    expect(result.outcome).toBe("enrollment_claimed");
+    expect(deps.sender.sent[0]!.text).toContain("berhasil terhubung");
+    const record = deps.repository.getEventRecord(140);
+    expect(record?.rawPayload).toBeNull();
+    expect(JSON.stringify(record)).not.toContain(token);
   });
 });

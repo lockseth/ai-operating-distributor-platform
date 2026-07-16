@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { UserPlus } from "lucide-react";
+import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollment-control";
 
 export const metadata = { title: "Pengguna — AODP" };
 
@@ -19,13 +20,13 @@ const ROLE_LABEL: Record<string, string> = {
 
 const ROLE_COLOR: Record<string, string> = {
   super_admin: "bg-red-50 text-red-700",
-  owner:       "bg-purple-50 text-purple-700",
-  manager:     "bg-blue-50 text-blue-700",
-  sales:       "bg-green-50 text-green-700",
-  admin:       "bg-orange-50 text-orange-700",
-  warehouse:   "bg-yellow-50 text-yellow-700",
-  finance:     "bg-teal-50 text-teal-700",
-  driver:      "bg-gray-100 text-gray-700",
+  owner: "bg-purple-50 text-purple-700",
+  manager: "bg-blue-50 text-blue-700",
+  sales: "bg-green-50 text-green-700",
+  admin: "bg-orange-50 text-orange-700",
+  warehouse: "bg-yellow-50 text-yellow-700",
+  finance: "bg-teal-50 text-teal-700",
+  driver: "bg-gray-100 text-gray-700",
 };
 
 type UserRow = {
@@ -35,6 +36,12 @@ type UserRow = {
   is_active: boolean;
   created_at: string;
   user_roles: Array<{ role: { name: string } | null }>;
+};
+
+type TelegramIdentityRow = {
+  user_id: string;
+  telegram_username: string | null;
+  is_active: boolean;
 };
 
 function formatDate(iso: string) {
@@ -60,14 +67,36 @@ export default async function UsersPage() {
 
   const { data } = await supabase
     .from("users")
-    .select(`
+    .select(
+      `
       id, full_name, email, is_active, created_at,
       user_roles!user_id(role:roles(name))
-    `)
+    `,
+    )
     .eq("company_id", user.company_id)
     .order("full_name");
 
   const users = (data ?? []) as unknown as UserRow[];
+  const canManageTelegram =
+    user.permissions.includes("telegram.manage") ||
+    ["owner", "manager", "admin", "super_admin"].some((role) =>
+      user.roles.includes(role),
+    );
+
+  const { data: telegramData } = canManageTelegram
+    ? await supabase
+        .from("telegram_identities")
+        .select("user_id, telegram_username, is_active")
+        .eq("company_id", user.company_id)
+        .eq("is_active", true)
+    : { data: [] };
+
+  const telegramByUser = new Map(
+    ((telegramData ?? []) as TelegramIdentityRow[]).map((identity) => [
+      identity.user_id,
+      identity,
+    ]),
+  );
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -87,8 +116,10 @@ export default async function UsersPage() {
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
         <p className="text-sm text-blue-800">
-          Manajemen pengguna lengkap sedang dalam pengembangan. Penambahan pengguna baru
-          untuk sementara dilakukan oleh super admin via Supabase.
+          Manajemen pengguna lengkap sedang dalam pengembangan. Penambahan
+          pengguna baru untuk sementara dilakukan oleh super admin via Supabase.
+          Identitas Telegram Salesman dapat dihubungkan secara aman dari tabel
+          ini.
         </p>
       </div>
 
@@ -111,13 +142,20 @@ export default async function UsersPage() {
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Bergabung
               </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Telegram Salesman
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {users.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-10 text-center text-sm text-gray-400">
-                  Belum ada pengguna. Setup pengguna awal dilakukan oleh super admin via Supabase.
+                <td
+                  colSpan={6}
+                  className="px-4 py-10 text-center text-sm text-gray-400"
+                >
+                  Belum ada pengguna. Setup pengguna awal dilakukan oleh super
+                  admin via Supabase.
                 </td>
               </tr>
             ) : (
@@ -127,7 +165,8 @@ export default async function UsersPage() {
                   .filter((n): n is string => !!n);
 
                 const displayName = u.full_name || u.email;
-                const initials    = displayName.charAt(0).toUpperCase();
+                const initials = displayName.charAt(0).toUpperCase();
+                const telegramIdentity = telegramByUser.get(u.id) ?? null;
 
                 return (
                   <tr key={u.id} className="hover:bg-gray-50">
@@ -173,6 +212,24 @@ export default async function UsersPage() {
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {formatDate(u.created_at)}
+                    </td>
+                    <td className="px-4 py-3 align-top">
+                      {canManageTelegram && roles.includes("sales") ? (
+                        <TelegramEnrollmentControl
+                          salesmanId={u.id}
+                          activeIdentity={
+                            telegramIdentity
+                              ? { username: telegramIdentity.telegram_username }
+                              : null
+                          }
+                        />
+                      ) : roles.includes("sales") ? (
+                        <span className="text-xs text-gray-400">
+                          Akses diperlukan
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
                     </td>
                   </tr>
                 );

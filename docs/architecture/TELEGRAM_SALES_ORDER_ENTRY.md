@@ -1,5 +1,9 @@
 # Telegram Sales Order Entry & Delivery Verification
 
+> Enrollment identitas Salesman melalui token sekali pakai didokumentasikan
+> terpisah di
+> [TELEGRAM_SALESMAN_IDENTITY_ENROLLMENT.md](TELEGRAM_SALESMAN_IDENTITY_ENROLLMENT.md).
+
 Dua tahap pertama vertical slice AODP (Constitution L16, AODP Waluyo Living
 Knowledge Pack v1.0 §4):
 

@@ -8,7 +8,10 @@
 // =============================================================================
 
 import type { TelegramUpdate, TelegramSender } from "@/lib/telegram/client";
-import type { SalesOrderTelegramRepository, ResolvedIdentity } from "./repository";
+import type {
+  SalesOrderTelegramRepository,
+  ResolvedIdentity,
+} from "./repository";
 import type { KnowledgeProvider } from "./knowledge-provider";
 import type { PricedOrder } from "./types";
 import { extractSalesOrder, isLikelyOrderMessage } from "./extraction";
@@ -24,18 +27,29 @@ import {
   buildOrderConfirmedReply,
 } from "./confirmation";
 import type { DeliveryRepositoryInterface } from "@/lib/delivery/repository";
-import { processDeliveryConversation, type DeliveryProcessResult } from "@/lib/delivery/workflow";
+import {
+  processDeliveryConversation,
+  type DeliveryProcessResult,
+} from "@/lib/delivery/workflow";
+import type { TelegramEnrollmentRepository } from "@/lib/telegram-enrollment/repository";
+import {
+  buildEnrollmentReply,
+  processTelegramEnrollment,
+} from "@/lib/telegram-enrollment/workflow";
 
 export interface WorkflowDeps {
   repository: SalesOrderTelegramRepository;
   knowledgeProvider: KnowledgeProvider;
   sender: TelegramSender;
   deliveryRepository: DeliveryRepositoryInterface;
+  enrollmentRepository: TelegramEnrollmentRepository;
 }
 
 export type ProcessResult =
   | { outcome: "duplicate_update" }
   | { outcome: "ignored_update_type" }
+  | { outcome: "enrollment_claimed" }
+  | { outcome: "enrollment_rejected" }
   | { outcome: "unregistered" }
   | { outcome: "voice_pending" }
   | { outcome: "not_order" }
@@ -51,10 +65,12 @@ const CHANGE_KEYWORD = "UBAH";
 
 export async function processTelegramUpdate(
   update: TelegramUpdate,
-  deps: WorkflowDeps
+  deps: WorkflowDeps,
 ): Promise<ProcessResult> {
   // --- Idempotency: update_id yang sama TIDAK PERNAH diproses dua kali. ---
-  const existingEvent = await deps.repository.findEventByUpdateId(update.update_id);
+  const existingEvent = await deps.repository.findEventByUpdateId(
+    update.update_id,
+  );
   if (existingEvent) return { outcome: "duplicate_update" };
 
   const message = update.message;
@@ -76,6 +92,43 @@ export async function processTelegramUpdate(
   const identity = await deps.repository.resolveIdentity(chatId);
 
   if (!identity) {
+    // Enrollment didahulukan sebelum handshake generik. Token mentah tidak
+    // pernah masuk event ledger; workflow enrollment hanya meneruskan
+    // SHA-256(token) ke routine claim atomik.
+    const enrollment = await processTelegramEnrollment(
+      message,
+      deps.enrollmentRepository,
+    );
+    if (enrollment.outcome !== "not_enrollment") {
+      const claimed =
+        enrollment.outcome === "claimed" ? enrollment.identity : null;
+      await deps.repository.insertEvent({
+        telegramUpdateId: update.update_id,
+        companyId: claimed?.companyId ?? null,
+        telegramIdentityId: claimed?.identityId ?? null,
+        messageType: "text",
+        processingStatus:
+          enrollment.outcome === "claimed"
+            ? "processed"
+            : "rejected_unregistered",
+        rawPayload: null,
+        telegramChatId: chatId,
+        telegramUserId: message.from?.id ?? null,
+        telegramUsername: message.from?.username ?? null,
+        rejectionReason:
+          enrollment.outcome === "rejected"
+            ? `enrollment_${enrollment.reason}`
+            : undefined,
+      });
+      await deps.sender.sendMessage(chatId, buildEnrollmentReply(enrollment));
+      return {
+        outcome:
+          enrollment.outcome === "claimed"
+            ? "enrollment_claimed"
+            : "enrollment_rejected",
+      };
+    }
+
     // Handshake dari chat yang belum terdaftar: JANGAN simpan raw_payload
     // (isi pesan) — cukup metadata minimum untuk keperluan registrasi
     // identitas nanti (lihat prosedur "update pertama" di
@@ -101,7 +154,9 @@ export async function processTelegramUpdate(
   // --- Alur Delivery Verification (driver) didahulukan bila sedang berjalan
   // untuk identity ini. Satu bot Telegram, satu ledger idempotency
   // (telegram_update_events) melayani kedua alur — lihat lib/delivery/repository.ts. ---
-  const deliveryState = await deps.deliveryRepository.getConversationState(identity.identityId);
+  const deliveryState = await deps.deliveryRepository.getConversationState(
+    identity.identityId,
+  );
   if (deliveryState.awaiting !== "none") {
     const deliveryEvent = await deps.repository.insertEvent({
       telegramUpdateId: update.update_id,
@@ -111,10 +166,17 @@ export async function processTelegramUpdate(
       processingStatus: "received",
       rawPayload: update,
     });
-    const deliveryResult = await processDeliveryConversation(message, chatId, identity, deliveryState, deliveryEvent.id, {
-      repository: deps.deliveryRepository,
-      sender: deps.sender,
-    });
+    const deliveryResult = await processDeliveryConversation(
+      message,
+      chatId,
+      identity,
+      deliveryState,
+      deliveryEvent.id,
+      {
+        repository: deps.deliveryRepository,
+        sender: deps.sender,
+      },
+    );
     await deps.repository.updateEventStatus(deliveryEvent.id, "processed");
     return { outcome: "delivery", result: deliveryResult };
   }
@@ -142,44 +204,67 @@ export async function processTelegramUpdate(
     rawPayload: update,
   });
 
-  const conversation = await deps.repository.getConversationState(identity.identityId);
+  const conversation = await deps.repository.getConversationState(
+    identity.identityId,
+  );
   const normalizedText = text.toUpperCase();
 
   // --- Sales sedang diminta KONFIRMASI/UBAH atas draft yang sudah ada ---
   if (conversation.awaiting === "confirmation" && conversation.pendingOrderId) {
     if (normalizedText === CONFIRM_KEYWORD) {
-      const { order, alreadyConfirmed } = await deps.repository.confirmOrder(conversation.pendingOrderId);
+      const { order, alreadyConfirmed } = await deps.repository.confirmOrder(
+        conversation.pendingOrderId,
+      );
       await deps.repository.updateEventStatus(event.id, "processed", order.id);
       // State TIDAK direset ke "none" — dibiarkan "confirmation" supaya
       // KONFIRMASI berulang tetap masuk cabang ini dan ditangani idempotent
       // oleh confirmOrder() (alreadyConfirmed=true), bukan dianggap "tidak
       // ada order pending".
-      await deps.repository.setConversationState(identity.identityId, identity.companyId, {
-        pendingOrderId: order.id,
-        awaiting: "confirmation",
-      });
+      await deps.repository.setConversationState(
+        identity.identityId,
+        identity.companyId,
+        {
+          pendingOrderId: order.id,
+          awaiting: "confirmation",
+        },
+      );
       await deps.sender.sendMessage(
         chatId,
-        alreadyConfirmed ? buildAlreadyConfirmedReply() : buildOrderConfirmedReply(order.priced)
+        alreadyConfirmed
+          ? buildAlreadyConfirmedReply()
+          : buildOrderConfirmedReply(order.priced),
       );
       return { outcome: "confirmed", orderId: order.id, alreadyConfirmed };
     }
 
     if (normalizedText === CHANGE_KEYWORD) {
-      const currentOrder = await deps.repository.getOrder(conversation.pendingOrderId);
+      const currentOrder = await deps.repository.getOrder(
+        conversation.pendingOrderId,
+      );
       if (currentOrder && currentOrder.status !== "draft") {
         // Order sudah confirmed (atau status lain) — UBAH tidak berlaku lagi.
         await deps.repository.updateEventStatus(event.id, "not_order");
         await deps.sender.sendMessage(chatId, buildAlreadyConfirmedReply());
         return { outcome: "no_pending_order" };
       }
-      await deps.repository.updateEventStatus(event.id, "processed", conversation.pendingOrderId);
-      await deps.repository.setConversationState(identity.identityId, identity.companyId, {
-        pendingOrderId: conversation.pendingOrderId,
-        awaiting: "correction",
-      });
+      await deps.repository.updateEventStatus(
+        event.id,
+        "processed",
+        conversation.pendingOrderId,
+      );
+      await deps.repository.setConversationState(
+        identity.identityId,
+        identity.companyId,
+        {
+          pendingOrderId: conversation.pendingOrderId,
+          awaiting: "correction",
+        },
+      );
       await deps.sender.sendMessage(chatId, buildAskForCorrectionReply());
-      return { outcome: "awaiting_correction", orderId: conversation.pendingOrderId };
+      return {
+        outcome: "awaiting_correction",
+        orderId: conversation.pendingOrderId,
+      };
     }
     // Pesan lain saat menunggu KONFIRMASI/UBAH: jatuh ke bawah, diperlakukan
     // sebagai upaya order baru (draft lama tetap ada, tidak dihapus).
@@ -187,7 +272,14 @@ export async function processTelegramUpdate(
 
   // --- Sales baru saja UBAH, ini teks koreksinya ---
   if (conversation.awaiting === "correction" && conversation.pendingOrderId) {
-    return await handleCorrection(text, chatId, identity, conversation.pendingOrderId, event.id, deps);
+    return await handleCorrection(
+      text,
+      chatId,
+      identity,
+      conversation.pendingOrderId,
+      event.id,
+      deps,
+    );
   }
 
   // --- KONFIRMASI/UBAH tanpa draft yang sedang ditunggu ---
@@ -206,7 +298,7 @@ async function handleNewOrderText(
   chatId: number,
   identity: ResolvedIdentity,
   eventId: string,
-  deps: WorkflowDeps
+  deps: WorkflowDeps,
 ): Promise<ProcessResult> {
   const knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
   const extracted = extractSalesOrder(text, knowledge);
@@ -230,10 +322,14 @@ async function handleNewOrderText(
   });
 
   await deps.repository.updateEventStatus(eventId, "processed", created.id);
-  await deps.repository.setConversationState(identity.identityId, identity.companyId, {
-    pendingOrderId: created.id,
-    awaiting: "confirmation",
-  });
+  await deps.repository.setConversationState(
+    identity.identityId,
+    identity.companyId,
+    {
+      pendingOrderId: created.id,
+      awaiting: "confirmation",
+    },
+  );
 
   await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced));
   return { outcome: "draft_created", orderId: created.id };
@@ -245,7 +341,7 @@ async function handleCorrection(
   identity: ResolvedIdentity,
   pendingOrderId: string,
   eventId: string,
-  deps: WorkflowDeps
+  deps: WorkflowDeps,
 ): Promise<ProcessResult> {
   const previous = await deps.repository.getOrder(pendingOrderId);
   const knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
@@ -260,7 +356,13 @@ async function handleCorrection(
   const priced = buildPricedOrder(extracted, knowledge);
 
   if (previous) {
-    await submitDiffAsCandidates(deps, identity, previous.priced, priced, pendingOrderId);
+    await submitDiffAsCandidates(
+      deps,
+      identity,
+      previous.priced,
+      priced,
+      pendingOrderId,
+    );
   }
 
   await deps.repository.updateDraftOrder(pendingOrderId, {
@@ -271,10 +373,14 @@ async function handleCorrection(
   });
 
   await deps.repository.updateEventStatus(eventId, "processed", pendingOrderId);
-  await deps.repository.setConversationState(identity.identityId, identity.companyId, {
-    pendingOrderId,
-    awaiting: "confirmation",
-  });
+  await deps.repository.setConversationState(
+    identity.identityId,
+    identity.companyId,
+    {
+      pendingOrderId,
+      awaiting: "confirmation",
+    },
+  );
 
   await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced));
   return { outcome: "corrected_draft_updated", orderId: pendingOrderId };
@@ -291,14 +397,21 @@ async function submitDiffAsCandidates(
   identity: ResolvedIdentity,
   before: PricedOrder,
   after: PricedOrder,
-  sourceOrderId: string
+  sourceOrderId: string,
 ): Promise<void> {
-  if (before.customerName && after.customerName && before.customerName !== after.customerName) {
+  if (
+    before.customerName &&
+    after.customerName &&
+    before.customerName !== after.customerName
+  ) {
     await deps.knowledgeProvider.submitCandidate({
       companyId: identity.companyId,
       candidateType: "customer_alias",
       rawText: before.customerName,
-      suggestedValue: { customerId: after.customerId, canonicalName: after.customerName },
+      suggestedValue: {
+        customerId: after.customerId,
+        canonicalName: after.customerName,
+      },
       sourceOrderId,
       submittedBy: identity.userId,
     });
@@ -308,12 +421,19 @@ async function submitDiffAsCandidates(
   for (let i = 0; i < n; i++) {
     const beforeItem = before.items[i]!;
     const afterItem = after.items[i]!;
-    if (beforeItem.productName && afterItem.productName && beforeItem.productName !== afterItem.productName) {
+    if (
+      beforeItem.productName &&
+      afterItem.productName &&
+      beforeItem.productName !== afterItem.productName
+    ) {
       await deps.knowledgeProvider.submitCandidate({
         companyId: identity.companyId,
         candidateType: "product_alias",
         rawText: beforeItem.productName,
-        suggestedValue: { productId: afterItem.productId, canonicalName: afterItem.productName },
+        suggestedValue: {
+          productId: afterItem.productId,
+          canonicalName: afterItem.productName,
+        },
         sourceOrderId,
         submittedBy: identity.userId,
       });

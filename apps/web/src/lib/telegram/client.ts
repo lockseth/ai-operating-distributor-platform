@@ -70,7 +70,10 @@ export interface TelegramUpdate {
     photo?: { file_id: string; width: number; height: number }[];
     document?: { file_id: string; file_name?: string };
     location?: { latitude: number; longitude: number };
-    chat: { id: number };
+    chat: {
+      id: number;
+      type?: "private" | "group" | "supergroup" | "channel";
+    };
     from?: { id: number; username?: string };
   };
 }
