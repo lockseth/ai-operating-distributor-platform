@@ -164,6 +164,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Sistem",
     items: [
       { label: "Automation",  href: "/dashboard/automation",      icon: <IconAutomation />, permission: "settings.view" },
+      { label: "Automation Outbox (n8n)", href: "/dashboard/automation/outbox", icon: <IconAutomation />, roles: ["owner", "manager", "super_admin"] },
       { label: "Pengguna",    href: "/dashboard/users",           icon: <IconUserCog />,    permission: "users.view" },
       { label: "Import Data", href: "/dashboard/imports",         icon: <IconImport />,     permission: "imports.view" },
       { label: "Pengaturan",  href: "/dashboard/settings",        icon: <IconSettings />,   permission: "settings.view" },

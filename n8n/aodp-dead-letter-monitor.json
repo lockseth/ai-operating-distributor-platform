@@ -1,0 +1,150 @@
+{
+  "name": "AODP — Dead Letter Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "a0d0-deadletter-0001",
+      "name": "Setiap 30 Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/health",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a0d0-deadletter-0002",
+      "name": "Cek Dead Letter Count",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.health)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-dead-letter",
+              "leftValue": "={{ $json.backlog.dead_letter }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a0d0-deadletter-0003",
+      "name": "Ada Dead Letter?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "content": "Dead-letter terdeteksi -- PERLU REVIEW MANUAL. Workflow ini SENGAJA tidak otomatis mengirim notifikasi/escalation apa pun (tidak ada channel Collection/Business Guard palsu dibangun untuk phase ini). Owner/operator me-review lewat dashboard AODP (/dashboard/automation) dan memicu controlled replay dari sana bila sudah diperbaiki akar masalahnya.",
+        "height": 220,
+        "width": 340
+      },
+      "id": "a0d0-deadletter-0004",
+      "name": "Flag untuk Review Manual (No-Op)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [960, 220]
+    },
+    {
+      "parameters": {},
+      "id": "a0d0-deadletter-0005",
+      "name": "Tidak Ada Dead Letter (No-Op)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [960, 400]
+    }
+  ],
+  "connections": {
+    "Setiap 30 Menit": {
+      "main": [
+        [
+          {
+            "node": "Cek Dead Letter Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Dead Letter Count": {
+      "main": [
+        [
+          {
+            "node": "Ada Dead Letter?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ada Dead Letter?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Tidak Ada Dead Letter (No-Op)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "dead-letter" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-07T00:00:00.000Z",
+  "versionId": "aodp-dead-letter-monitor-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-dead-letter-monitor",
+  "active": false
+}

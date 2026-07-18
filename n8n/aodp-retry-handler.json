@@ -1,0 +1,169 @@
+{
+  "name": "AODP — Retry Handler (health-gated)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a0d0-retry-0001",
+      "name": "Setiap 5 Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/health",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a0d0-retry-0002",
+      "name": "Cek Health/Backlog",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.health)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-retry-backlog",
+              "leftValue": "={{ $json.backlog.retry_due }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a0d0-retry-0003",
+      "name": "Ada Retry Backlog?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/dispatch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ max_jobs: 20 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a0d0-retry-0004",
+      "name": "Proses Retry Backlog",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [960, 220],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.claim + automation.complete + automation.fail)"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "a0d0-retry-0005",
+      "name": "Tidak Ada Backlog (No-Op)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [960, 400]
+    }
+  ],
+  "connections": {
+    "Setiap 5 Menit": {
+      "main": [
+        [
+          {
+            "node": "Cek Health/Backlog",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Health/Backlog": {
+      "main": [
+        [
+          {
+            "node": "Ada Retry Backlog?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ada Retry Backlog?": {
+      "main": [
+        [
+          {
+            "node": "Proses Retry Backlog",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tidak Ada Backlog (No-Op)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "retry" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-07T00:00:00.000Z",
+  "versionId": "aodp-retry-handler-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-retry-handler",
+  "active": false
+}

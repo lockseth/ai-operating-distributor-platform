@@ -331,3 +331,16 @@ export type SetSalesKpiTargetsCalibratedResult =
         | "foundation_not_initialized";
     }
   | { outcome: "unexpected_error"; error: string };
+
+/**
+ * Resolver periode ACTIVE per tenant. Ditambahkan untuk n8n Automation
+ * Foundation (Morning Brief/KPI Daily Summary perlu tahu periode ACTIVE
+ * tanpa Owner memilih manual) -- murni tambahan baca, tidak mengubah
+ * perilaku RPC/repository yang sudah ada.
+ */
+export interface ActiveSalesKpiPeriod {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}

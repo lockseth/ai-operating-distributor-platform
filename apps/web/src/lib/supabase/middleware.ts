@@ -5,18 +5,38 @@ import { DEMO_MODE_COOKIE, isDemoModeAllowed } from "@/lib/demo/config";
 export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Webhook routes diautentikasi via secret/credential milik masing-masing,
-  // BUKAN Supabase session — pemanggilnya adalah service eksternal tanpa
-  // cookie sama sekali. Middleware auth wajib dilewati di sini, jika tidak
-  // setiap webhook selalu di-redirect ke /login sebelum route handler-nya
+  // Webhook & internal automation routes diautentikasi via secret/credential
+  // milik masing-masing, BUKAN Supabase session — pemanggilnya adalah
+  // service eksternal (n8n) tanpa cookie sama sekali. Middleware auth wajib
+  // dilewati di sini, jika tidak setiap panggilan selalu di-redirect ke
+  // /login sebelum route handler-nya (dan Bearer-token auth-nya sendiri)
   // sempat jalan.
   //
-  // SENGAJA daftar eksplisit (bukan prefix "/api/webhooks/") — supaya
-  // route baru di bawah /api/webhooks/ tidak otomatis mewarisi bypass ini
-  // hanya karena lokasinya, sebelum autentikasi mandirinya diaudit dan
-  // ditambahkan ke daftar ini secara sadar.
+  // SENGAJA daftar eksplisit (bukan prefix "/api/webhooks/" atau
+  // "/api/internal/") — supaya route baru di bawah path ini tidak otomatis
+  // mewarisi bypass ini hanya karena lokasinya, sebelum autentikasi
+  // mandirinya diaudit dan ditambahkan ke daftar ini secara sadar.
   const AUDITED_WEBHOOK_ROUTES = ["/api/webhooks/telegram", "/api/webhooks/n8n"];
-  if (AUDITED_WEBHOOK_ROUTES.includes(pathname)) {
+  // Automation Outbox internal API (n8n Automation & Orchestration
+  // Foundation) -- semua rute ini memakai resolveAutomationCredential()
+  // (Bearer token -> SHA-256 hash -> n8n_inbound_credentials, company_id
+  // SELALU dari credential) sebagai gate 401/403 mandiri sebelum operasi
+  // apa pun -- lihat lib/n8n-automation/service.ts.
+  const AUDITED_INTERNAL_AUTOMATION_ROUTES = [
+    "/api/internal/automation/claim",
+    "/api/internal/automation/complete",
+    "/api/internal/automation/fail",
+    "/api/internal/automation/replay",
+    "/api/internal/automation/health",
+    "/api/internal/automation/morning-brief",
+    "/api/internal/automation/kpi-daily-summary",
+    "/api/internal/automation/dispatch",
+    "/api/internal/automation/heartbeat",
+  ];
+  if (
+    AUDITED_WEBHOOK_ROUTES.includes(pathname) ||
+    AUDITED_INTERNAL_AUTOMATION_ROUTES.includes(pathname)
+  ) {
     return NextResponse.next({ request });
   }
 

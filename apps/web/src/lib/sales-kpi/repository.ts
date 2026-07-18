@@ -13,6 +13,7 @@ import {
   validateSalesKpiTargetInput,
 } from "./service";
 import type {
+  ActiveSalesKpiPeriod,
   CreateSalesCallTaskInput,
   CreateSalesCallTaskResult,
   CreateSalesKpiPeriodInput,
@@ -74,6 +75,8 @@ export interface SalesKpiRepository {
   setTargetsCalibrated(
     input: SetSalesKpiTargetsCalibratedInput,
   ): Promise<SetSalesKpiTargetsCalibratedResult>;
+  /** Periode dengan status ACTIVE untuk company_id ini, atau null jika tidak ada. */
+  findActivePeriod(companyId: string): Promise<ActiveSalesKpiPeriod | null>;
 }
 
 function firstRow<T>(data: unknown): T | null {
@@ -604,6 +607,18 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       outcome: "unexpected_error",
       error: `unknown outcome: ${row.result_outcome}`,
     };
+  }
+
+  async findActivePeriod(companyId: string): Promise<ActiveSalesKpiPeriod | null> {
+    const { data } = await this.client
+      .from("sales_kpi_periods")
+      .select("id, name, start_date, end_date")
+      .eq("company_id", companyId)
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+    if (!data) return null;
+    const row = data as { id: string; name: string; start_date: string; end_date: string };
+    return { id: row.id, name: row.name, startDate: row.start_date, endDate: row.end_date };
   }
 }
 
@@ -1425,5 +1440,14 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       ecTargetId: ecResult.targetId,
       ecVersion: ecResult.version,
     };
+  }
+
+  async findActivePeriod(companyId: string): Promise<ActiveSalesKpiPeriod | null> {
+    const period = this.periods.find(
+      (candidate) => candidate.companyId === companyId && candidate.status === "ACTIVE",
+    );
+    return period
+      ? { id: period.id, name: period.name, startDate: period.startDate, endDate: period.endDate }
+      : null;
   }
 }

@@ -1,6 +1,50 @@
-# n8n Workflow Templates — FlowSales AI
+# n8n Workflow Templates — FlowSales AI & AODP
 
-Template workflow n8n siap pakai untuk mengintegrasikan FlowSales AI dengan WhatsApp.  
+---
+
+## AODP — n8n Automation & Orchestration Foundation (aktif, phase terkini)
+
+Arsitektur BARU (terpisah dari workflow FlowSales AI lama di bawah): n8n
+menarik (poll/claim) job dari **automation outbox** AODP lewat internal API
+`Bearer` token, bukan menerima push webhook. Supabase tetap source of truth
+-- n8n hanya orchestration/scheduling/delivery/retry, TIDAK PERNAH menghitung
+Call/EC/EC Rate/achievement/target sendiri (semua angka datang dari
+`lib/sales-kpi/*` via endpoint `/api/internal/automation/morning-brief` dan
+`/api/internal/automation/kpi-daily-summary`).
+
+| File | Trigger | Tujuan |
+|------|---------|--------|
+| `aodp-outbox-dispatcher.json` | Cron tiap 1 menit | Claim + kirim + complete/fail job PENDING/RETRY |
+| `aodp-morning-brief.json` | Cron 07:00 Asia/Jakarta | Generate + kirim Morning Brief salesman (Telegram) |
+| `aodp-kpi-daily-summary.json` | Cron 08:00 Asia/Jakarta | Generate KPI Daily Summary Owner (structured preview, WhatsApp dry-run) |
+| `aodp-retry-handler.json` | Cron tiap 5 menit | Cek `/health`, proses retry backlog jika ada |
+| `aodp-dead-letter-monitor.json` | Cron tiap 30 menit | Flag dead-letter untuk review manual (tidak auto-escalate) |
+| `aodp-health-check.json` | Cron tiap 5 menit | POST `/heartbeat` (bukti reachability n8n langsung), lalu cek `/health`, flag jika status bukan `healthy` |
+
+**Autentikasi**: SEMUA workflow di atas memakai kredensial `httpHeaderAuth`
+generik bertipe `Authorization: Bearer <token>` -- pola YANG SAMA dengan
+`n8n_inbound_credentials` (lihat bagian hardening di bawah), scope
+`automation.*` per fungsi. Node `credentials.httpHeaderAuth.id` di setiap
+file berisi placeholder literal `REPLACE_WITH_YOUR_CREDENTIAL_ID` -- **tidak
+ada credential ID/secret production di file manapun**. Provisioning token
+tetap lewat `n8n_inbound_credentials` (service-role only, lihat migration
+`20260715000001_webhook_security_hardening.sql`), dengan `scope` diisi
+subset dari: `automation.claim`, `automation.complete`, `automation.fail`,
+`automation.replay`, `automation.health`, `automation.morning_brief.generate`,
+`automation.kpi_summary.generate`.
+
+Semua workflow **inactive by default** setelah import (`"active": false`) --
+aktifkan manual setelah kredensial dikonfigurasi dan `AODP_APP_URL` diset di
+environment n8n. Timezone workflow di-set `Asia/Jakarta` (`settings.timezone`
++ cron expression `0 7 * * *`/`0 8 * * *` WIB).
+
+Detail arsitektur lengkap: `docs/architecture/N8N_AUTOMATION_FOUNDATION.md`.
+
+---
+
+## FlowSales AI — WhatsApp Templates (lama, lihat catatan hardening)
+
+Template workflow n8n untuk mengintegrasikan FlowSales AI dengan WhatsApp.
 Setiap workflow menerima trigger dari FlowSales AI, memformat pesan Bahasa Indonesia, dan mengirimkannya via WhatsApp API provider pilihan Anda.
 
 ---

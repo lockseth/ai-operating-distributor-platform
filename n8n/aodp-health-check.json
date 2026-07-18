@@ -1,0 +1,198 @@
+{
+  "name": "AODP — Health Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "a0d0-health-0001",
+      "name": "Setiap 5 Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/heartbeat",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ worker_label: \"aodp-health-check\" }) }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a0d0-health-0006",
+      "name": "POST /heartbeat",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.health)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/health",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a0d0-health-0002",
+      "name": "GET /health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [620, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.health)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-status",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "healthy",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "a0d0-health-0003",
+      "name": "Status != healthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "content": "Status degraded/unhealthy -- respons /health TIDAK PERNAH berisi secret (hanya angka agregat + boolean). Escalation channel nyata (WhatsApp Owner, dsb.) sengaja BELUM diaktifkan pada foundation ini -- tambahkan node notifikasi setelah modul pengiriman terkait sudah PASS.",
+        "height": 200,
+        "width": 320
+      },
+      "id": "a0d0-health-0004",
+      "name": "Catatan Degraded (No-Op)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1080, 220]
+    },
+    {
+      "parameters": {},
+      "id": "a0d0-health-0005",
+      "name": "Healthy (No-Op)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1080, 400]
+    },
+    {
+      "parameters": {
+        "content": "POST /heartbeat SEBELUM GET /health -- ini SATU-SATUNYA bukti reachability n8n yang AODP miliki (bukan tebakan dari backlog). Kalau node ini tidak pernah jalan (n8n mati), AODP.health cukup melaporkan n8n.reachable=false setelah heartbeat basi >10 menit -- TIDAK PERNAH memblokir alur order/Telegram AODP sendiri.",
+        "height": 160,
+        "width": 320
+      },
+      "id": "a0d0-health-0007",
+      "name": "Catatan Heartbeat",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [400, 460]
+    }
+  ],
+  "connections": {
+    "Setiap 5 Menit": {
+      "main": [
+        [
+          {
+            "node": "POST /heartbeat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST /heartbeat": {
+      "main": [
+        [
+          {
+            "node": "GET /health",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET /health": {
+      "main": [
+        [
+          {
+            "node": "Status != healthy?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status != healthy?": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Healthy (No-Op)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "health" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-08T00:00:00.000Z",
+  "versionId": "aodp-health-check-v2",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-health-check",
+  "active": false
+}

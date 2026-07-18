@@ -1,0 +1,82 @@
+{
+  "name": "AODP — Outbox Dispatcher",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "a0d0-dispatcher-0001",
+      "name": "Setiap 1 Menit",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/dispatch",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ max_jobs: 10 }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a0d0-dispatcher-0002",
+      "name": "Claim + Kirim + Complete/Fail",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (company-scoped, scope: automation.claim + automation.complete + automation.fail)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Setiap 1 Menit": {
+      "main": [
+        [
+          {
+            "node": "Claim + Kirim + Complete/Fail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "outbox" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-07T00:00:00.000Z",
+  "versionId": "aodp-outbox-dispatcher-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-outbox-dispatcher",
+  "active": false
+}

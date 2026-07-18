@@ -1,0 +1,94 @@
+{
+  "name": "AODP — KPI Daily Summary (08:00 Asia/Jakarta, Owner preview)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a0d0-kpisummary-0001",
+      "name": "Setiap Hari 08:00 WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/kpi-daily-summary",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a0d0-kpisummary-0002",
+      "name": "Generate KPI Daily Summary (presenter AODP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.kpi_summary.generate)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "WhatsApp production TIDAK diimplementasikan pada phase ini. Job KPI_DAILY_SUMMARY selalu channel 'whatsapp' tapi endpoint /dispatch AODP selalu memperlakukannya sebagai dry-run/structured preview -- lihat automation_outbox.payload untuk isi laporan yang dapat diaudit. Node ini sengaja TIDAK memanggil provider WhatsApp apa pun.",
+        "height": 200,
+        "width": 320
+      },
+      "id": "a0d0-kpisummary-0003",
+      "name": "Catatan: WhatsApp Dry-Run Only",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [480, 480]
+    }
+  ],
+  "connections": {
+    "Setiap Hari 08:00 WIB": {
+      "main": [
+        [
+          {
+            "node": "Generate KPI Daily Summary (presenter AODP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "kpi-daily-summary" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-07T00:00:00.000Z",
+  "versionId": "aodp-kpi-daily-summary-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-kpi-daily-summary",
+  "active": false
+}
