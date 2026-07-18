@@ -9,7 +9,11 @@ import {
   validateSalesKpiPeriodInput,
   validateSalesKpiTargetInput,
 } from "./service";
-import type { SalesKpiPeriodStatus } from "./types";
+import type {
+  SalesCallTaskType,
+  SalesKpiAchievementProjection,
+  SalesKpiPeriodStatus,
+} from "./types";
 
 const MANAGE_ROLES = ["owner", "manager", "super_admin"];
 const UUID_PATTERN =
@@ -22,6 +26,16 @@ function canManageSalesKpi(user: {
   return (
     hasPermission(user.permissions, "sales_kpi.manage") ||
     MANAGE_ROLES.some((role) => user.roles.includes(role))
+  );
+}
+
+function canRecordSalesCall(user: {
+  roles: string[];
+  permissions: string[];
+}): boolean {
+  return (
+    hasPermission(user.permissions, "sales_kpi.record_call") ||
+    canManageSalesKpi(user)
   );
 }
 
@@ -233,4 +247,220 @@ export async function setSalesKpiTargetAction(
         ? "Salesman tidak aktif atau bukan anggota tenant ini."
         : "Gagal menyimpan target KPI.";
   return { ok: false, outcome: result.outcome, error };
+}
+
+// =============================================================================
+// Achievement Integration — Call & Effective Call. Achievement TIDAK PERNAH
+// diinput/di-override manual lewat action ini: recordSalesCallAction hanya
+// merekam KUNJUNGAN (Call itu sendiri), bukan angka achievement. Angka
+// achievement selalu hasil turunan ledger (lihat getSalesKpiAchievementProjectionAction).
+// =============================================================================
+
+export interface CreateSalesCallTaskFormInput {
+  salespersonId: string;
+  customerId: string;
+  taskType: SalesCallTaskType;
+  validDate: string;
+  reason: string;
+}
+
+export async function createSalesCallTaskAction(
+  input: CreateSalesCallTaskFormInput,
+): Promise<SalesKpiActionResult> {
+  const context = await getAuthorizedContext();
+  if (!context.ok) return context.result;
+  if (
+    !UUID_PATTERN.test(input.salespersonId) ||
+    !UUID_PATTERN.test(input.customerId)
+  ) {
+    return { ok: false, outcome: "invalid_input", error: "Input tidak valid." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.createCallTask({
+    companyId: context.user.company_id,
+    actorId: context.user.id,
+    salespersonId: input.salespersonId,
+    customerId: input.customerId,
+    taskType: input.taskType,
+    validDate: input.validDate,
+    reason: input.reason.trim(),
+  });
+
+  if (result.outcome === "created") {
+    return { ok: true, outcome: result.outcome, entityId: result.taskId };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] create call task failed", result.error);
+  }
+  return {
+    ok: false,
+    outcome: result.outcome,
+    error: "Gagal membuat referensi exception Call.",
+  };
+}
+
+export interface RecordSalesCallFormInput {
+  salespersonId: string;
+  customerId: string;
+  callDate: string;
+  outcomeNotes: string;
+  idempotencyKey: string;
+  coverageExceptionTaskId?: string;
+  repeatVisitTaskId?: string;
+}
+
+export async function recordSalesCallAction(
+  input: RecordSalesCallFormInput,
+): Promise<SalesKpiActionResult> {
+  const user = await getAuthUser();
+  if (user.isDemo) {
+    return { ok: false, error: "Pencatatan Call tidak tersedia pada sesi demo." };
+  }
+  if (!canRecordSalesCall(user) && user.id !== input.salespersonId) {
+    return { ok: false, error: "Tidak berwenang mencatat Call." };
+  }
+  if (
+    !UUID_PATTERN.test(input.salespersonId) ||
+    !UUID_PATTERN.test(input.customerId)
+  ) {
+    return { ok: false, outcome: "invalid_input", error: "Input tidak valid." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.recordCall({
+    companyId: user.company_id,
+    actorId: user.id,
+    salespersonId: input.salespersonId,
+    customerId: input.customerId,
+    callDate: input.callDate,
+    outcomeNotes: input.outcomeNotes.trim(),
+    idempotencyKey: input.idempotencyKey,
+    coverageExceptionTaskId: input.coverageExceptionTaskId,
+    repeatVisitTaskId: input.repeatVisitTaskId,
+  });
+
+  if (result.outcome === "recorded" || result.outcome === "already_recorded") {
+    return { ok: true, outcome: result.outcome, entityId: result.callId };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] record call failed", result.error);
+  }
+  const error =
+    result.outcome === "out_of_coverage"
+      ? "Toko di luar area/assignment Salesman ini. Perlu approval exception."
+      : result.outcome === "duplicate_same_day"
+        ? "Kunjungan ke toko ini pada hari yang sama sudah tercatat."
+        : result.outcome === "authorization_task_already_used"
+          ? "Referensi exception ini sudah dipakai untuk kunjungan lain."
+          : "Gagal mencatat Call.";
+  return { ok: false, outcome: result.outcome, error };
+}
+
+export async function linkSalesOrderCallAction(
+  orderId: string,
+  callId: string,
+): Promise<SalesKpiActionResult> {
+  const user = await getAuthUser();
+  if (user.isDemo) {
+    return { ok: false, error: "Penautan order-Call tidak tersedia pada sesi demo." };
+  }
+  if (!UUID_PATTERN.test(orderId) || !UUID_PATTERN.test(callId)) {
+    return { ok: false, outcome: "invalid_input", error: "Input tidak valid." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.linkOrderCall({
+    companyId: user.company_id,
+    actorId: user.id,
+    orderId,
+    callId,
+  });
+
+  if (result.outcome === "linked") {
+    return { ok: true, outcome: result.outcome, entityId: orderId };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] link order call failed", result.error);
+  }
+  return {
+    ok: false,
+    outcome: result.outcome,
+    error: "Gagal menautkan order ke Call.",
+  };
+}
+
+export async function reverseSalesCallAction(
+  callId: string,
+  reason: string,
+): Promise<SalesKpiActionResult> {
+  const context = await getAuthorizedContext();
+  if (!context.ok) return context.result;
+  if (!UUID_PATTERN.test(callId)) {
+    return { ok: false, outcome: "invalid_input", error: "Input tidak valid." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.reverseCall({
+    companyId: context.user.company_id,
+    actorId: context.user.id,
+    callId,
+    reason: reason.trim(),
+  });
+
+  if (result.outcome === "reversed" || result.outcome === "already_reversed") {
+    return { ok: true, outcome: result.outcome, entityId: callId };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] reverse call failed", result.error);
+  }
+  return {
+    ok: false,
+    outcome: result.outcome,
+    error: "Gagal membatalkan Call.",
+  };
+}
+
+export interface SalesKpiAchievementActionResult {
+  ok: boolean;
+  projection?: SalesKpiAchievementProjection;
+  error?: string;
+}
+
+export async function getSalesKpiAchievementProjectionAction(
+  periodId: string,
+  salespersonId: string,
+): Promise<SalesKpiAchievementActionResult> {
+  const user = await getAuthUser();
+  if (user.isDemo) {
+    return { ok: false, error: "Achievement KPI tidak tersedia pada sesi demo." };
+  }
+  if (!UUID_PATTERN.test(periodId) || !UUID_PATTERN.test(salespersonId)) {
+    return { ok: false, error: "Input tidak valid." };
+  }
+  if (user.id !== salespersonId && !canManageSalesKpi(user)) {
+    return { ok: false, error: "Tidak berwenang melihat achievement KPI Salesman ini." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.getAchievementProjection({
+    companyId: user.company_id,
+    actorId: user.id,
+    periodId,
+    salespersonId,
+  });
+
+  if (result.outcome === "ok") {
+    return { ok: true, projection: result.projection };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] get achievement projection failed", result.error);
+  }
+  return {
+    ok: false,
+    error:
+      result.outcome === "period_not_found"
+        ? "Periode KPI tidak ditemukan."
+        : "Gagal memuat achievement KPI.",
+  };
 }

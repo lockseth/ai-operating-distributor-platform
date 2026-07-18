@@ -125,3 +125,144 @@ export interface SalesKpiAuditEvent {
   oldData: unknown;
   newData: unknown;
 }
+
+// =============================================================================
+// Achievement Integration — Call & Effective Call. Achievement TIDAK PERNAH
+// diinput/di-override manual: hanya lahir dari record_sales_call, dari
+// trigger konfirmasi/pembatalan Sales Order, dan dari reverse_sales_call.
+// =============================================================================
+
+export type SalesCallTaskType = "REPEAT_VISIT" | "COVERAGE_EXCEPTION";
+export type SalesCallCoverageBasis = "ASSIGNED" | "AREA" | "EXCEPTION";
+export type SalesCallStatus = "VALID" | "REVERSED";
+export type AchievementEventType = "CREDITED" | "REVERSED";
+export type AchievementSourceType = "SALES_CALL" | "SALES_ORDER";
+
+export interface CreateSalesCallTaskInput {
+  companyId: string;
+  actorId: string;
+  salespersonId: string;
+  customerId: string;
+  taskType: SalesCallTaskType;
+  validDate: string;
+  reason: string;
+}
+
+export type CreateSalesCallTaskResult =
+  | { outcome: "created"; taskId: string }
+  | {
+      outcome:
+        | "forbidden"
+        | "invalid_task_type"
+        | "invalid_date"
+        | "reason_required"
+        | "salesperson_not_eligible"
+        | "customer_not_found";
+    }
+  | { outcome: "unexpected_error"; error: string };
+
+export interface RecordSalesCallInput {
+  companyId: string;
+  actorId: string;
+  salespersonId: string;
+  customerId: string;
+  callDate: string;
+  outcomeNotes: string;
+  idempotencyKey: string;
+  coverageExceptionTaskId?: string;
+  repeatVisitTaskId?: string;
+}
+
+export type RecordSalesCallResult =
+  | { outcome: "recorded" | "already_recorded"; callId: string }
+  | {
+      outcome:
+        | "forbidden"
+        | "invalid_input"
+        | "invalid_date"
+        | "outcome_required"
+        | "idempotency_key_required"
+        | "salesperson_not_eligible"
+        | "customer_not_found"
+        | "out_of_coverage"
+        | "duplicate_same_day"
+        | "invalid_authorization_task"
+        | "authorization_task_already_used";
+    }
+  | { outcome: "unexpected_error"; error: string };
+
+export interface LinkSalesOrderCallInput {
+  companyId: string;
+  actorId: string;
+  orderId: string;
+  callId: string;
+}
+
+export type LinkSalesOrderCallResult =
+  | { outcome: "linked" }
+  | {
+      outcome:
+        | "forbidden"
+        | "order_not_found"
+        | "already_linked"
+        | "call_not_found"
+        | "call_not_valid"
+        | "customer_mismatch"
+        | "salesperson_mismatch";
+    }
+  | { outcome: "unexpected_error"; error: string };
+
+export interface ReverseSalesCallInput {
+  companyId: string;
+  actorId: string;
+  callId: string;
+  reason: string;
+}
+
+export type ReverseSalesCallResult =
+  | { outcome: "reversed" | "already_reversed" }
+  | { outcome: "forbidden" | "call_not_found" | "reason_required" }
+  | { outcome: "unexpected_error"; error: string };
+
+export type SalesKpiPacingStatus =
+  | "NOT_STARTED"
+  | "ON_TRACK"
+  | "AHEAD"
+  | "BEHIND"
+  | "COMPLETE"
+  | "DATA_INSUFFICIENT";
+
+export interface SalesKpiAchievementLine {
+  kpiCode: SalesKpiCode;
+  /** null = "Data belum cukup" (belum ada target aktif untuk periode ini) */
+  target: number | null;
+  actual: number;
+  remaining: number | null;
+  achievementPercentage: number | null;
+  pacingStatus: SalesKpiPacingStatus;
+}
+
+export interface SalesKpiAchievementProjection {
+  companyId: string;
+  salespersonId: string;
+  periodId: string;
+  periodName: string;
+  startDate: string;
+  endDate: string;
+  call: SalesKpiAchievementLine;
+  effectiveCall: SalesKpiAchievementLine;
+  /** DATA_INSUFFICIENT hanya jika KEDUA target CALL dan EFFECTIVE_CALL belum dikonfigurasi. */
+  sourceFreshness: "COMPLETE" | "DATA_INSUFFICIENT";
+}
+
+export interface GetSalesKpiAchievementProjectionInput {
+  companyId: string;
+  actorId: string;
+  periodId: string;
+  salespersonId: string;
+}
+
+export type GetSalesKpiAchievementProjectionResult =
+  | { outcome: "ok"; projection: SalesKpiAchievementProjection }
+  | { outcome: "forbidden" | "period_not_found" }
+  | { outcome: "unexpected_error"; error: string };

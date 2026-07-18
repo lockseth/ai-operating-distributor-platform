@@ -2,15 +2,31 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   WALUYO_SALES_KPI_DEFINITIONS,
   canTransitionSalesKpiPeriod,
+  computeAchievementLine,
+  validateCreateSalesCallTaskInput,
+  validateRecordSalesCallInput,
   validateSalesKpiPeriodInput,
   validateSalesKpiTargetInput,
 } from "./service";
 import type {
+  CreateSalesCallTaskInput,
+  CreateSalesCallTaskResult,
   CreateSalesKpiPeriodInput,
   CreateSalesKpiPeriodResult,
+  GetSalesKpiAchievementProjectionInput,
+  GetSalesKpiAchievementProjectionResult,
   InitializeSalesKpiInput,
   InitializeSalesKpiResult,
+  LinkSalesOrderCallInput,
+  LinkSalesOrderCallResult,
+  RecordSalesCallInput,
+  RecordSalesCallResult,
+  ReverseSalesCallInput,
+  ReverseSalesCallResult,
+  SalesCallCoverageBasis,
+  SalesCallTaskType,
   SalesKpiAuditEvent,
+  SalesKpiCode,
   SalesKpiDefinition,
   SalesKpiManagerRole,
   SalesKpiPeriod,
@@ -33,6 +49,17 @@ export interface SalesKpiRepository {
     input: SetSalesKpiPeriodStatusInput,
   ): Promise<SetSalesKpiPeriodStatusResult>;
   setTarget(input: SetSalesKpiTargetInput): Promise<SetSalesKpiTargetResult>;
+  createCallTask(
+    input: CreateSalesCallTaskInput,
+  ): Promise<CreateSalesCallTaskResult>;
+  recordCall(input: RecordSalesCallInput): Promise<RecordSalesCallResult>;
+  linkOrderCall(
+    input: LinkSalesOrderCallInput,
+  ): Promise<LinkSalesOrderCallResult>;
+  reverseCall(input: ReverseSalesCallInput): Promise<ReverseSalesCallResult>;
+  getAchievementProjection(
+    input: GetSalesKpiAchievementProjectionInput,
+  ): Promise<GetSalesKpiAchievementProjectionResult>;
 }
 
 function firstRow<T>(data: unknown): T | null {
@@ -202,6 +229,242 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       error: `unknown outcome: ${row.result_outcome}`,
     };
   }
+
+  async createCallTask(
+    input: CreateSalesCallTaskInput,
+  ): Promise<CreateSalesCallTaskResult> {
+    const { data, error } = await this.client.rpc("create_sales_call_task", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_salesperson_id: input.salespersonId,
+      p_customer_id: input.customerId,
+      p_task_type: input.taskType,
+      p_valid_date: input.validDate,
+      p_reason: input.reason,
+    });
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = firstRow<{
+      result_outcome: string;
+      result_task_id: string | null;
+    }>(data);
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+    if (row.result_outcome === "created" && row.result_task_id) {
+      return { outcome: "created", taskId: row.result_task_id };
+    }
+    if (
+      row.result_outcome === "forbidden" ||
+      row.result_outcome === "invalid_task_type" ||
+      row.result_outcome === "invalid_date" ||
+      row.result_outcome === "reason_required" ||
+      row.result_outcome === "salesperson_not_eligible" ||
+      row.result_outcome === "customer_not_found"
+    ) {
+      return { outcome: row.result_outcome };
+    }
+    return {
+      outcome: "unexpected_error",
+      error: `unknown outcome: ${row.result_outcome}`,
+    };
+  }
+
+  async recordCall(input: RecordSalesCallInput): Promise<RecordSalesCallResult> {
+    const { data, error } = await this.client.rpc("record_sales_call", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_salesperson_id: input.salespersonId,
+      p_customer_id: input.customerId,
+      p_call_date: input.callDate,
+      p_outcome_notes: input.outcomeNotes,
+      p_idempotency_key: input.idempotencyKey,
+      p_coverage_exception_task_id: input.coverageExceptionTaskId ?? null,
+      p_repeat_visit_task_id: input.repeatVisitTaskId ?? null,
+    });
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = firstRow<{
+      result_outcome: string;
+      result_call_id: string | null;
+    }>(data);
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+    if (
+      (row.result_outcome === "recorded" ||
+        row.result_outcome === "already_recorded") &&
+      row.result_call_id
+    ) {
+      return { outcome: row.result_outcome, callId: row.result_call_id };
+    }
+    if (
+      row.result_outcome === "forbidden" ||
+      row.result_outcome === "invalid_input" ||
+      row.result_outcome === "invalid_date" ||
+      row.result_outcome === "outcome_required" ||
+      row.result_outcome === "idempotency_key_required" ||
+      row.result_outcome === "salesperson_not_eligible" ||
+      row.result_outcome === "customer_not_found" ||
+      row.result_outcome === "out_of_coverage" ||
+      row.result_outcome === "duplicate_same_day" ||
+      row.result_outcome === "invalid_authorization_task" ||
+      row.result_outcome === "authorization_task_already_used"
+    ) {
+      return { outcome: row.result_outcome };
+    }
+    return {
+      outcome: "unexpected_error",
+      error: `unknown outcome: ${row.result_outcome}`,
+    };
+  }
+
+  async linkOrderCall(
+    input: LinkSalesOrderCallInput,
+  ): Promise<LinkSalesOrderCallResult> {
+    const { data, error } = await this.client.rpc("link_sales_order_call", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_order_id: input.orderId,
+      p_call_id: input.callId,
+    });
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = firstRow<{ result_outcome: string }>(data);
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+    if (
+      row.result_outcome === "linked" ||
+      row.result_outcome === "forbidden" ||
+      row.result_outcome === "order_not_found" ||
+      row.result_outcome === "already_linked" ||
+      row.result_outcome === "call_not_found" ||
+      row.result_outcome === "call_not_valid" ||
+      row.result_outcome === "customer_mismatch" ||
+      row.result_outcome === "salesperson_mismatch"
+    ) {
+      return { outcome: row.result_outcome };
+    }
+    return {
+      outcome: "unexpected_error",
+      error: `unknown outcome: ${row.result_outcome}`,
+    };
+  }
+
+  async reverseCall(
+    input: ReverseSalesCallInput,
+  ): Promise<ReverseSalesCallResult> {
+    const { data, error } = await this.client.rpc("reverse_sales_call", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_call_id: input.callId,
+      p_reason: input.reason,
+    });
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = firstRow<{ result_outcome: string }>(data);
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+    if (
+      row.result_outcome === "reversed" ||
+      row.result_outcome === "already_reversed" ||
+      row.result_outcome === "forbidden" ||
+      row.result_outcome === "call_not_found" ||
+      row.result_outcome === "reason_required"
+    ) {
+      return { outcome: row.result_outcome };
+    }
+    return {
+      outcome: "unexpected_error",
+      error: `unknown outcome: ${row.result_outcome}`,
+    };
+  }
+
+  async getAchievementProjection(
+    input: GetSalesKpiAchievementProjectionInput,
+  ): Promise<GetSalesKpiAchievementProjectionResult> {
+    const { data: periodData, error: periodError } = await this.client
+      .from("sales_kpi_periods")
+      .select("id, name, start_date, end_date")
+      .eq("id", input.periodId)
+      .eq("company_id", input.companyId)
+      .maybeSingle();
+    if (periodError) {
+      return { outcome: "unexpected_error", error: periodError.message };
+    }
+    if (!periodData) return { outcome: "period_not_found" };
+    const period = periodData as {
+      id: string;
+      name: string;
+      start_date: string;
+      end_date: string;
+    };
+
+    const { data: targetRows, error: targetError } = await this.client
+      .from("sales_kpi_targets")
+      .select("target_value, kpi_definition:sales_kpi_definitions(code)")
+      .eq("company_id", input.companyId)
+      .eq("period_id", input.periodId)
+      .eq("salesperson_id", input.salespersonId)
+      .eq("status", "ACTIVE");
+    if (targetError) {
+      return { outcome: "unexpected_error", error: targetError.message };
+    }
+    const targets = new Map<SalesKpiCode, number>();
+    for (const row of (targetRows ?? []) as {
+      target_value: number;
+      kpi_definition: { code: SalesKpiCode } | { code: SalesKpiCode }[] | null;
+    }[]) {
+      const definition = Array.isArray(row.kpi_definition)
+        ? row.kpi_definition[0]
+        : row.kpi_definition;
+      if (definition?.code) targets.set(definition.code, row.target_value);
+    }
+
+    const { data: eventRows, error: eventError } = await this.client
+      .from("sales_kpi_achievement_events")
+      .select("kpi_code, event_type")
+      .eq("company_id", input.companyId)
+      .eq("salesperson_id", input.salespersonId)
+      .gte("business_date", period.start_date)
+      .lte("business_date", period.end_date);
+    if (eventError) {
+      return { outcome: "unexpected_error", error: eventError.message };
+    }
+    const actuals: Record<SalesKpiCode, number> = { CALL: 0, EFFECTIVE_CALL: 0 };
+    for (const row of (eventRows ?? []) as {
+      kpi_code: SalesKpiCode;
+      event_type: "CREDITED" | "REVERSED";
+    }[]) {
+      actuals[row.kpi_code] += row.event_type === "CREDITED" ? 1 : -1;
+    }
+
+    const periodBounds = { startDate: period.start_date, endDate: period.end_date };
+    const call = computeAchievementLine(
+      "CALL",
+      targets.get("CALL") ?? null,
+      actuals.CALL,
+      periodBounds,
+    );
+    const effectiveCall = computeAchievementLine(
+      "EFFECTIVE_CALL",
+      targets.get("EFFECTIVE_CALL") ?? null,
+      actuals.EFFECTIVE_CALL,
+      periodBounds,
+    );
+
+    return {
+      outcome: "ok",
+      projection: {
+        companyId: input.companyId,
+        salespersonId: input.salespersonId,
+        periodId: period.id,
+        periodName: period.name,
+        startDate: period.start_date,
+        endDate: period.end_date,
+        call,
+        effectiveCall,
+        sourceFreshness:
+          call.target === null && effectiveCall.target === null
+            ? "DATA_INSUFFICIENT"
+            : "COMPLETE",
+      },
+    };
+  }
 }
 
 interface ActorSeed {
@@ -215,6 +478,59 @@ interface SalespersonSeed {
   active: boolean;
 }
 
+interface CustomerSeed {
+  companyId: string;
+  area: string | null;
+  assignedSalesId: string | null;
+  active: boolean;
+}
+
+interface CoverageAreaSeed {
+  companyId: string;
+  salespersonId: string;
+  area: string;
+}
+
+interface CallTaskRecord {
+  id: string;
+  companyId: string;
+  salespersonId: string;
+  customerId: string;
+  taskType: SalesCallTaskType;
+  validDate: string;
+}
+
+interface CallRecord {
+  id: string;
+  companyId: string;
+  salespersonId: string;
+  customerId: string;
+  callDate: string;
+  coverageBasis: SalesCallCoverageBasis;
+  authorizationTaskId: string | null;
+  idempotencyKey: string;
+  status: "VALID" | "REVERSED";
+}
+
+interface OrderSeed {
+  companyId: string;
+  customerId: string;
+  salesId: string | null;
+  callId: string | null;
+}
+
+interface AchievementEventRecord {
+  id: string;
+  companyId: string;
+  salespersonId: string;
+  kpiCode: SalesKpiCode;
+  eventType: "CREDITED" | "REVERSED";
+  businessDate: string;
+  callId: string | null;
+  orderId: string | null;
+  reversalOfEventId: string | null;
+}
+
 export class InMemorySalesKpiRepository implements SalesKpiRepository {
   private readonly actors = new Map<string, ActorSeed>();
   private readonly salespeople = new Map<string, SalespersonSeed>();
@@ -222,6 +538,12 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
   private readonly periods: SalesKpiPeriod[] = [];
   private readonly targets: SalesKpiTarget[] = [];
   private readonly auditTrail: SalesKpiAuditEvent[] = [];
+  private readonly customers = new Map<string, CustomerSeed>();
+  private readonly coverageAreas: CoverageAreaSeed[] = [];
+  private readonly callTasks: CallTaskRecord[] = [];
+  private readonly calls: CallRecord[] = [];
+  private readonly orders = new Map<string, OrderSeed>();
+  private readonly achievementEvents: AchievementEventRecord[] = [];
   private sequence = 0;
 
   seedActor(
@@ -231,6 +553,42 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
     active = true,
   ): void {
     this.actors.set(actorId, { companyId, role, active });
+  }
+
+  seedCustomer(
+    customerId: string,
+    companyId: string,
+    opts: { area?: string | null; assignedSalesId?: string | null; active?: boolean } = {},
+  ): void {
+    this.customers.set(customerId, {
+      companyId,
+      area: opts.area ?? null,
+      assignedSalesId: opts.assignedSalesId ?? null,
+      active: opts.active ?? true,
+    });
+  }
+
+  seedCoverageArea(companyId: string, salespersonId: string, area: string): void {
+    this.coverageAreas.push({ companyId, salespersonId, area });
+  }
+
+  seedOrder(
+    orderId: string,
+    companyId: string,
+    customerId: string,
+    salesId: string | null,
+  ): void {
+    this.orders.set(orderId, { companyId, customerId, salesId, callId: null });
+  }
+
+  getCalls(companyId: string): CallRecord[] {
+    return this.calls.filter((call) => call.companyId === companyId).map((row) => ({ ...row }));
+  }
+
+  getAchievementEvents(companyId: string): AchievementEventRecord[] {
+    return this.achievementEvents
+      .filter((event) => event.companyId === companyId)
+      .map((row) => ({ ...row }));
   }
 
   seedSalesperson(
@@ -472,6 +830,314 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       outcome: current ? "updated" : "created",
       targetId: target.id,
       version: target.version,
+    };
+  }
+
+  async createCallTask(
+    input: CreateSalesCallTaskInput,
+  ): Promise<CreateSalesCallTaskResult> {
+    if (!this.canManage(input.actorId, input.companyId)) {
+      return { outcome: "forbidden" };
+    }
+    const validation = validateCreateSalesCallTaskInput(input);
+    if (validation) return { outcome: validation };
+
+    const salesperson = this.salespeople.get(input.salespersonId);
+    if (!salesperson?.active || salesperson.companyId !== input.companyId) {
+      return { outcome: "salesperson_not_eligible" };
+    }
+    const customer = this.customers.get(input.customerId);
+    if (!customer?.active || customer.companyId !== input.companyId) {
+      return { outcome: "customer_not_found" };
+    }
+
+    const taskId = this.nextId("call-task");
+    this.callTasks.push({
+      id: taskId,
+      companyId: input.companyId,
+      salespersonId: input.salespersonId,
+      customerId: input.customerId,
+      taskType: input.taskType,
+      validDate: input.validDate,
+    });
+    return { outcome: "created", taskId };
+  }
+
+  async recordCall(input: RecordSalesCallInput): Promise<RecordSalesCallResult> {
+    if (input.coverageExceptionTaskId && input.repeatVisitTaskId) {
+      return { outcome: "invalid_input" };
+    }
+    const actor = this.actors.get(input.actorId);
+    const actorAllowed = Boolean(
+      actor?.active &&
+        actor.companyId === input.companyId &&
+        (input.actorId === input.salespersonId ||
+          actor.role === "owner" ||
+          actor.role === "manager" ||
+          actor.role === "super_admin"),
+    );
+    if (!actorAllowed) return { outcome: "forbidden" };
+
+    const validation = validateRecordSalesCallInput(input);
+    if (validation) return { outcome: validation };
+
+    const existing = this.calls.find(
+      (call) =>
+        call.companyId === input.companyId &&
+        call.idempotencyKey === input.idempotencyKey,
+    );
+    if (existing) return { outcome: "already_recorded", callId: existing.id };
+
+    const salesperson = this.salespeople.get(input.salespersonId);
+    if (!salesperson?.active || salesperson.companyId !== input.companyId) {
+      return { outcome: "salesperson_not_eligible" };
+    }
+    const customer = this.customers.get(input.customerId);
+    if (!customer?.active || customer.companyId !== input.companyId) {
+      return { outcome: "customer_not_found" };
+    }
+
+    let coverageBasis: "ASSIGNED" | "AREA" | "EXCEPTION" | null = null;
+    if (customer.assignedSalesId === input.salespersonId) {
+      coverageBasis = "ASSIGNED";
+    } else if (
+      customer.area &&
+      this.coverageAreas.some(
+        (entry) =>
+          entry.companyId === input.companyId &&
+          entry.salespersonId === input.salespersonId &&
+          entry.area === customer.area,
+      )
+    ) {
+      coverageBasis = "AREA";
+    }
+
+    let authorizationTaskId: string | null = null;
+
+    if (!coverageBasis) {
+      if (!input.coverageExceptionTaskId) return { outcome: "out_of_coverage" };
+      const task = this.callTasks.find(
+        (candidate) =>
+          candidate.id === input.coverageExceptionTaskId &&
+          candidate.companyId === input.companyId &&
+          candidate.salespersonId === input.salespersonId &&
+          candidate.customerId === input.customerId &&
+          candidate.taskType === "COVERAGE_EXCEPTION" &&
+          candidate.validDate === input.callDate,
+      );
+      if (!task) return { outcome: "invalid_authorization_task" };
+      if (this.calls.some((call) => call.authorizationTaskId === task.id)) {
+        return { outcome: "authorization_task_already_used" };
+      }
+      coverageBasis = "EXCEPTION";
+      authorizationTaskId = task.id;
+    } else if (input.repeatVisitTaskId) {
+      const task = this.callTasks.find(
+        (candidate) =>
+          candidate.id === input.repeatVisitTaskId &&
+          candidate.companyId === input.companyId &&
+          candidate.salespersonId === input.salespersonId &&
+          candidate.customerId === input.customerId &&
+          candidate.taskType === "REPEAT_VISIT" &&
+          candidate.validDate === input.callDate,
+      );
+      if (!task) return { outcome: "invalid_authorization_task" };
+      if (this.calls.some((call) => call.authorizationTaskId === task.id)) {
+        return { outcome: "authorization_task_already_used" };
+      }
+      authorizationTaskId = task.id;
+    } else {
+      const duplicate = this.calls.some(
+        (call) =>
+          call.companyId === input.companyId &&
+          call.salespersonId === input.salespersonId &&
+          call.customerId === input.customerId &&
+          call.callDate === input.callDate &&
+          call.status === "VALID" &&
+          !call.authorizationTaskId,
+      );
+      if (duplicate) return { outcome: "duplicate_same_day" };
+    }
+
+    const callId = this.nextId("call");
+    this.calls.push({
+      id: callId,
+      companyId: input.companyId,
+      salespersonId: input.salespersonId,
+      customerId: input.customerId,
+      callDate: input.callDate,
+      coverageBasis,
+      authorizationTaskId,
+      idempotencyKey: input.idempotencyKey,
+      status: "VALID",
+    });
+    this.achievementEvents.push({
+      id: this.nextId("event"),
+      companyId: input.companyId,
+      salespersonId: input.salespersonId,
+      kpiCode: "CALL",
+      eventType: "CREDITED",
+      businessDate: input.callDate,
+      callId,
+      orderId: null,
+      reversalOfEventId: null,
+    });
+    return { outcome: "recorded", callId };
+  }
+
+  async linkOrderCall(
+    input: LinkSalesOrderCallInput,
+  ): Promise<LinkSalesOrderCallResult> {
+    const order = this.orders.get(input.orderId);
+    if (!order || order.companyId !== input.companyId) {
+      return { outcome: "order_not_found" };
+    }
+    const actor = this.actors.get(input.actorId);
+    const actorAllowed = Boolean(
+      order.salesId === input.actorId ||
+        (actor?.active &&
+          actor.companyId === input.companyId &&
+          (actor.role === "owner" ||
+            actor.role === "manager" ||
+            actor.role === "super_admin")),
+    );
+    if (!actorAllowed) return { outcome: "forbidden" };
+    if (order.callId) return { outcome: "already_linked" };
+
+    const call = this.calls.find(
+      (candidate) =>
+        candidate.id === input.callId && candidate.companyId === input.companyId,
+    );
+    if (!call) return { outcome: "call_not_found" };
+    if (call.status !== "VALID") return { outcome: "call_not_valid" };
+    if (call.customerId !== order.customerId) return { outcome: "customer_mismatch" };
+    if (order.salesId !== call.salespersonId) {
+      return { outcome: "salesperson_mismatch" };
+    }
+
+    order.callId = input.callId;
+    return { outcome: "linked" };
+  }
+
+  async reverseCall(
+    input: ReverseSalesCallInput,
+  ): Promise<ReverseSalesCallResult> {
+    if (!this.canManage(input.actorId, input.companyId)) {
+      return { outcome: "forbidden" };
+    }
+    if (input.reason.trim().length < 3) return { outcome: "reason_required" };
+
+    const call = this.calls.find(
+      (candidate) =>
+        candidate.id === input.callId && candidate.companyId === input.companyId,
+    );
+    if (!call) return { outcome: "call_not_found" };
+    if (call.status === "REVERSED") return { outcome: "already_reversed" };
+
+    call.status = "REVERSED";
+
+    const callEvent = this.achievementEvents.find(
+      (event) =>
+        event.callId === call.id &&
+        event.kpiCode === "CALL" &&
+        event.eventType === "CREDITED",
+    );
+    if (callEvent) {
+      this.achievementEvents.push({
+        id: this.nextId("event"),
+        companyId: callEvent.companyId,
+        salespersonId: callEvent.salespersonId,
+        kpiCode: "CALL",
+        eventType: "REVERSED",
+        businessDate: callEvent.businessDate,
+        callId: call.id,
+        orderId: null,
+        reversalOfEventId: callEvent.id,
+      });
+    }
+
+    const ecEvent = this.achievementEvents.find(
+      (event) =>
+        event.callId === call.id &&
+        event.kpiCode === "EFFECTIVE_CALL" &&
+        event.eventType === "CREDITED",
+    );
+    if (ecEvent) {
+      this.achievementEvents.push({
+        id: this.nextId("event"),
+        companyId: ecEvent.companyId,
+        salespersonId: ecEvent.salespersonId,
+        kpiCode: "EFFECTIVE_CALL",
+        eventType: "REVERSED",
+        businessDate: ecEvent.businessDate,
+        callId: call.id,
+        orderId: ecEvent.orderId,
+        reversalOfEventId: ecEvent.id,
+      });
+    }
+
+    return { outcome: "reversed" };
+  }
+
+  async getAchievementProjection(
+    input: GetSalesKpiAchievementProjectionInput,
+  ): Promise<GetSalesKpiAchievementProjectionResult> {
+    const period = this.periods.find(
+      (candidate) =>
+        candidate.id === input.periodId && candidate.companyId === input.companyId,
+    );
+    if (!period) return { outcome: "period_not_found" };
+
+    const activeTargets = this.targets.filter(
+      (target) =>
+        target.companyId === input.companyId &&
+        target.periodId === input.periodId &&
+        target.salespersonId === input.salespersonId &&
+        target.status === "ACTIVE",
+    );
+    const targetCall = activeTargets.find((t) => t.kpiCode === "CALL")?.targetValue ?? null;
+    const targetEc =
+      activeTargets.find((t) => t.kpiCode === "EFFECTIVE_CALL")?.targetValue ?? null;
+
+    const relevantEvents = this.achievementEvents.filter(
+      (event) =>
+        event.companyId === input.companyId &&
+        event.salespersonId === input.salespersonId &&
+        event.businessDate >= period.startDate &&
+        event.businessDate <= period.endDate,
+    );
+    const actualCall = relevantEvents
+      .filter((event) => event.kpiCode === "CALL")
+      .reduce((sum, event) => sum + (event.eventType === "CREDITED" ? 1 : -1), 0);
+    const actualEc = relevantEvents
+      .filter((event) => event.kpiCode === "EFFECTIVE_CALL")
+      .reduce((sum, event) => sum + (event.eventType === "CREDITED" ? 1 : -1), 0);
+
+    const periodBounds = { startDate: period.startDate, endDate: period.endDate };
+    const call = computeAchievementLine("CALL", targetCall, actualCall, periodBounds);
+    const effectiveCall = computeAchievementLine(
+      "EFFECTIVE_CALL",
+      targetEc,
+      actualEc,
+      periodBounds,
+    );
+
+    return {
+      outcome: "ok",
+      projection: {
+        companyId: input.companyId,
+        salespersonId: input.salespersonId,
+        periodId: period.id,
+        periodName: period.name,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        call,
+        effectiveCall,
+        sourceFreshness:
+          call.target === null && effectiveCall.target === null
+            ? "DATA_INSUFFICIENT"
+            : "COMPLETE",
+      },
     };
   }
 }

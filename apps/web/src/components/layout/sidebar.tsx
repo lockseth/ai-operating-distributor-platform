@@ -124,6 +124,15 @@ function IconPlatform() {
     </svg>
   );
 }
+function IconTarget() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <circle cx="12" cy="12" r="8" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="4" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="0.5" fill="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export interface NavSection {
   title?: string;
@@ -138,6 +147,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Sales Order",   href: "/dashboard/orders",     icon: <IconOrders />,     permission: "orders.view" },
       { label: "AI Dispatch Planner", href: "/dashboard/dispatch", icon: <IconDispatch />, permission: "dispatch.view" },
       { label: "Laporan Sales", href: "/dashboard/reports",    icon: <IconChart />,      permission: "reports.view" },
+      { label: "KPI Salesman",  href: "/dashboard/kpi",        icon: <IconTarget />,     permission: "sales_kpi.view" },
       { label: "Collection",    href: "/dashboard/collection", icon: <IconCollection />, roles: ["super_admin", "owner", "manager", "admin", "finance"] },
       { label: "Risk Alert",    href: "/dashboard/risk",       icon: <IconShield />,     roles: ["super_admin", "owner", "manager"] },
       { label: "AI Insights",   href: "/dashboard/ai",         icon: <IconAI />,         permission: "ai.view" },

@@ -1,8 +1,11 @@
 import {
   SALES_KPI_CODES,
   type CreateSalesKpiPeriodInput,
+  type SalesCallTaskType,
+  type SalesKpiAchievementLine,
   type SalesKpiCode,
   type SalesKpiDefinition,
+  type SalesKpiPacingStatus,
   type SalesKpiPeriodStatus,
   type SetSalesKpiTargetInput,
 } from "./types";
@@ -98,4 +101,93 @@ export function canTransitionSalesKpiPeriod(
     (current === "DRAFT" && next === "ACTIVE") ||
     (current === "ACTIVE" && next === "LOCKED")
   );
+}
+
+export function isSalesCallTaskType(
+  value: string,
+): value is SalesCallTaskType {
+  return value === "REPEAT_VISIT" || value === "COVERAGE_EXCEPTION";
+}
+
+export function validateCreateSalesCallTaskInput(input: {
+  taskType: string;
+  validDate: string;
+  reason: string;
+}): "invalid_task_type" | "invalid_date" | "reason_required" | null {
+  if (!isSalesCallTaskType(input.taskType)) return "invalid_task_type";
+  if (!isRealIsoDate(input.validDate)) return "invalid_date";
+  if (input.reason.trim().length < 3) return "reason_required";
+  return null;
+}
+
+export function validateRecordSalesCallInput(input: {
+  callDate: string;
+  outcomeNotes: string;
+  idempotencyKey: string;
+  coverageExceptionTaskId?: string;
+  repeatVisitTaskId?: string;
+}): "invalid_input" | "invalid_date" | "outcome_required" | "idempotency_key_required" | null {
+  if (input.coverageExceptionTaskId && input.repeatVisitTaskId) return "invalid_input";
+  if (!isRealIsoDate(input.callDate)) return "invalid_date";
+  if (input.outcomeNotes.trim().length < 3) return "outcome_required";
+  if (input.idempotencyKey.trim().length === 0) return "idempotency_key_required";
+  return null;
+}
+
+/**
+ * Codebase tidak memiliki authoritative tenant timezone/business-date helper
+ * (diverifikasi eksplisit sebelum implementasi). Kalender UTC dipakai di
+ * sini murni sebagai "hari ini" untuk perbandingan pacing -- konsisten
+ * dengan sales_kpi_periods.start_date/end_date yang SUDAH diperlakukan
+ * sebagai string tanggal telanjang tanpa konversi TZ di seluruh modul ini.
+ * Bukan aturan timezone baru; hanya melanjutkan konvensi yang sudah ada.
+ */
+export function todayIsoDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function daysBetween(startDate: string, endDate: string): number {
+  return Math.floor(
+    (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) /
+      86_400_000,
+  );
+}
+
+export function computeAchievementLine(
+  kpiCode: SalesKpiCode,
+  target: number | null,
+  actual: number,
+  period: { startDate: string; endDate: string },
+  today: string = todayIsoDate(),
+): SalesKpiAchievementLine {
+  if (target === null) {
+    return {
+      kpiCode,
+      target: null,
+      actual,
+      remaining: null,
+      achievementPercentage: null,
+      pacingStatus: "DATA_INSUFFICIENT",
+    };
+  }
+
+  const remaining = Math.max(0, target - actual);
+  const achievementPercentage = Math.round((actual / target) * 100);
+
+  let pacingStatus: SalesKpiPacingStatus;
+  if (today < period.startDate) {
+    pacingStatus = "NOT_STARTED";
+  } else if (today > period.endDate) {
+    pacingStatus = "COMPLETE";
+  } else {
+    const totalDays = daysBetween(period.startDate, period.endDate) + 1;
+    const elapsedDays = daysBetween(period.startDate, today) + 1;
+    const elapsedFraction = Math.min(1, Math.max(0, elapsedDays / totalDays));
+    const expectedActual = target * elapsedFraction;
+    if (actual >= expectedActual * 1.05) pacingStatus = "AHEAD";
+    else if (actual < expectedActual * 0.95) pacingStatus = "BEHIND";
+    else pacingStatus = "ON_TRACK";
+  }
+
+  return { kpiCode, target, actual, remaining, achievementPercentage, pacingStatus };
 }
