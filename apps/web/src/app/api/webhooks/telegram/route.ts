@@ -10,6 +10,7 @@
 // =============================================================================
 
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getAdminClient } from "@/lib/supabase/admin";
 import {
   checkRateLimit,
@@ -21,7 +22,7 @@ import {
   HttpTelegramSender,
   type TelegramUpdate,
 } from "@/lib/telegram/client";
-import { SupabaseSalesOrderRepository } from "@/lib/sales-orders/repository";
+import { SupabaseSalesOrderRepository, type ResolvedIdentity } from "@/lib/sales-orders/repository";
 import { SupabaseKnowledgeProvider } from "@/lib/sales-orders/knowledge-provider";
 import {
   processTelegramUpdate,
@@ -43,10 +44,65 @@ import {
   detectAddPicTrigger,
 } from "@/lib/customer-pic/conversation";
 import { processAddStoreMessage } from "@/lib/customer-pic/workflow";
+import { SupabaseMenuConversationRepository, detectMenuTrigger } from "@/lib/telegram-menu/conversation";
+import { handleMenuUpdate, type MenuRouterContext, type MenuRouterDeps } from "@/lib/telegram-menu/router";
+import { buildTaggedOrderText, isPendingOrderIntakeText } from "@/lib/telegram-menu/handlers/order-intake";
+import { SupabaseProblemReportRepository } from "@/lib/telegram-menu/handlers/report-problem";
+import { SupabaseDailySessionRepository } from "@/lib/daily-session/repository";
+import { SupabaseAgendaRepository } from "@/lib/daily-session/agenda";
+import { SupabaseTodayDeliveryRepository } from "@/lib/daily-session/deliveries";
+import { SupabaseTodayOrdersRepository } from "@/lib/daily-session/orders";
+import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
+import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 
 // 60 update/menit per IP — cukup longgar untuk trafik bot wajar, mencegah flood.
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
+
+async function loadMenuRouterContext(
+  supabase: SupabaseClient,
+  identity: ResolvedIdentity,
+  chatId: number,
+): Promise<MenuRouterContext> {
+  const { data: companyRow } = await supabase
+    .from("companies")
+    .select("name")
+    .eq("id", identity.companyId)
+    .maybeSingle();
+  const tenantName = (companyRow as { name: string } | null)?.name ?? "AODP";
+
+  const { data: coverageRows } = await supabase
+    .from("salesman_coverage_areas")
+    .select("area")
+    .eq("company_id", identity.companyId)
+    .eq("user_id", identity.userId);
+  const coverageAreas = ((coverageRows ?? []) as { area: string }[]).map((row) => row.area);
+
+  return {
+    identity,
+    chatId,
+    tenantName,
+    coverageAreas,
+    businessDate: businessDateJakarta(),
+  };
+}
+
+function buildMenuRouterDeps(supabase: SupabaseClient, sender: HttpTelegramSender): MenuRouterDeps {
+  return {
+    sender,
+    menuConversationRepository: new SupabaseMenuConversationRepository(supabase),
+    dailySessionRepository: new SupabaseDailySessionRepository(supabase),
+    salesKpiRepository: new SupabaseSalesKpiRepository(supabase),
+    agendaRepository: new SupabaseAgendaRepository(supabase),
+    customerPicRepository: new SupabaseCustomerPicRepository(supabase),
+    storePicConversationRepository: new SupabaseStorePicConversationRepository(supabase),
+    orderLookupRepository: new SupabaseOrderDisputeRepository(supabase),
+    todayDeliveryRepository: new SupabaseTodayDeliveryRepository(supabase),
+    todayOrdersRepository: new SupabaseTodayOrdersRepository(supabase),
+    deliveryRepository: new SupabaseDeliveryRepository(supabase),
+    problemReportRepository: new SupabaseProblemReportRepository(supabase),
+  };
+}
 
 export async function POST(request: Request) {
   try {
@@ -89,6 +145,50 @@ export async function POST(request: Request) {
     const salesOrderRepository = new SupabaseSalesOrderRepository(supabase);
     const deliveryRepository = new SupabaseDeliveryRepository(supabase);
     const sender = new HttpTelegramSender(botToken);
+    const workflowDeps: WorkflowDeps = {
+      repository: salesOrderRepository,
+      knowledgeProvider: new SupabaseKnowledgeProvider(supabase),
+      sender,
+      deliveryRepository,
+      enrollmentRepository: new SupabaseTelegramEnrollmentRepository(supabase),
+    };
+
+    // --- Callback dari inline keyboard Menu Utama (Waluyo Daily Operating
+    // Loop) -- HANYA menu yang memakai callback_query di codebase ini, jadi
+    // update jenis ini selalu langsung ke router menu, tidak pernah masuk
+    // cascade dispute/tambah-toko/sales-order di bawah.
+    if (update.callback_query) {
+      const callbackQuery = update.callback_query;
+      const chatId = callbackQuery.message?.chat.id;
+      if (chatId === undefined) {
+        return NextResponse.json({ ok: true, outcome: "callback_missing_chat" });
+      }
+      const alreadyProcessed = await salesOrderRepository.findEventByUpdateId(update.update_id);
+      if (alreadyProcessed) {
+        return NextResponse.json({ ok: true, outcome: "duplicate_update" });
+      }
+      const identity = await salesOrderRepository.resolveIdentity(chatId);
+      if (!identity) {
+        await sender.answerCallbackQuery(callbackQuery.id);
+        return NextResponse.json({ ok: true, outcome: "unknown_identity" });
+      }
+      const event = await salesOrderRepository.insertEvent({
+        telegramUpdateId: update.update_id,
+        companyId: identity.companyId,
+        telegramIdentityId: identity.identityId,
+        messageType: "text",
+        processingStatus: "received",
+        rawPayload: update,
+      });
+      const menuContext = await loadMenuRouterContext(supabase, identity, chatId);
+      const result = await handleMenuUpdate(
+        { text: null, callbackData: callbackQuery.data ?? null, callbackQueryId: callbackQuery.id },
+        menuContext,
+        buildMenuRouterDeps(supabase, sender),
+      );
+      await salesOrderRepository.updateEventStatus(event.id, "processed");
+      return NextResponse.json({ ok: true, outcome: `menu_${result.outcome}` });
+    }
 
     // --- Alur "Batalkan/Sengketakan Order" dan "Tambah Toko" didahulukan
     // mirip pola Delivery Verification (driver) di processTelegramUpdate:
@@ -109,15 +209,50 @@ export async function POST(request: Request) {
         if (identity) {
           const disputeConversationRepository = new SupabaseDisputeConversationRepository(supabase);
           const storePicConversationRepository = new SupabaseStorePicConversationRepository(supabase);
+          const menuConversationRepository = new SupabaseMenuConversationRepository(supabase);
           const disputeState = await disputeConversationRepository.getState(identity.identityId);
           const storePicState = await storePicConversationRepository.getState(identity.identityId);
+          const menuState = await menuConversationRepository.getState(identity.identityId);
           const disputeActive = disputeState.awaiting !== "none";
           const storePicActive = storePicState.awaiting !== "none";
+          const menuActive = menuState.awaiting !== "none";
+
+          // --- Input Order WA/Telepon (menu 4): pesan INI adalah teks order
+          // itu sendiri (sumber sudah dipilih di langkah sebelumnya) --
+          // diteruskan APA ADANYA ke processTelegramUpdate (TERKUNCI) hanya
+          // dengan penanda kata kunci disisipkan, supaya detectOrderSource()
+          // yang sudah ada mengklasifikasikannya sendiri. Diperiksa PALING
+          // AWAL (sebelum dispute/tambah-toko) karena ini kelanjutan
+          // percakapan spesifik-identity yang sedang aktif.
+          if (isPendingOrderIntakeText(menuState)) {
+            const event = await salesOrderRepository.insertEvent({
+              telegramUpdateId: update.update_id,
+              companyId: identity.companyId,
+              telegramIdentityId: identity.identityId,
+              messageType: "text",
+              processingStatus: "received",
+              rawPayload: update,
+            });
+            const taggedUpdate: TelegramUpdate = {
+              ...update,
+              message: { ...update.message!, text: buildTaggedOrderText(menuState, text) },
+            };
+            await menuConversationRepository.setState(identity.identityId, identity.companyId, {
+              awaiting: "none",
+              draft: {},
+            });
+            const orderResult = await processTelegramUpdate(taggedUpdate, workflowDeps);
+            const orderOutcome =
+              orderResult.outcome === "delivery" ? orderResult.result.outcome : orderResult.outcome;
+            await salesOrderRepository.updateEventStatus(event.id, "processed");
+            return NextResponse.json({ ok: true, outcome: `order_intake_${orderOutcome}` });
+          }
 
           let shouldHandleDispute = disputeActive;
           let shouldHandleStorePic = !disputeActive && storePicActive;
+          let shouldHandleMenu = !disputeActive && !storePicActive && menuActive;
 
-          if (!shouldHandleDispute && !shouldHandleStorePic) {
+          if (!shouldHandleDispute && !shouldHandleStorePic && !shouldHandleMenu) {
             const salesOrderConvo = await salesOrderRepository.getConversationState(identity.identityId);
             const deliveryConvo = await deliveryRepository.getConversationState(identity.identityId);
             const otherFlowActive = salesOrderConvo.awaiting !== "none" || deliveryConvo.awaiting !== "none";
@@ -125,6 +260,7 @@ export async function POST(request: Request) {
               const trigger = detectDisputeTrigger(text);
               shouldHandleDispute = trigger.isTrigger && trigger.orderNumber !== null;
               if (!shouldHandleDispute) shouldHandleStorePic = detectAddStoreTrigger(text) || detectAddPicTrigger(text);
+              if (!shouldHandleDispute && !shouldHandleStorePic) shouldHandleMenu = detectMenuTrigger(text);
             }
           }
 
@@ -165,19 +301,30 @@ export async function POST(request: Request) {
             await salesOrderRepository.updateEventStatus(event.id, "processed");
             return NextResponse.json({ ok: true, outcome: "add_store", result: storePicResult.outcome });
           }
+
+          if (shouldHandleMenu) {
+            const event = await salesOrderRepository.insertEvent({
+              telegramUpdateId: update.update_id,
+              companyId: identity.companyId,
+              telegramIdentityId: identity.identityId,
+              messageType: "text",
+              processingStatus: "received",
+              rawPayload: update,
+            });
+            const menuContext = await loadMenuRouterContext(supabase, identity, chatId);
+            const result = await handleMenuUpdate(
+              { text, callbackData: null, callbackQueryId: null },
+              menuContext,
+              buildMenuRouterDeps(supabase, sender),
+            );
+            await salesOrderRepository.updateEventStatus(event.id, "processed");
+            return NextResponse.json({ ok: true, outcome: `menu_${result.outcome}` });
+          }
         }
       }
     }
 
-    const deps: WorkflowDeps = {
-      repository: salesOrderRepository,
-      knowledgeProvider: new SupabaseKnowledgeProvider(supabase),
-      sender,
-      deliveryRepository,
-      enrollmentRepository: new SupabaseTelegramEnrollmentRepository(supabase),
-    };
-
-    const result = await processTelegramUpdate(update, deps);
+    const result = await processTelegramUpdate(update, workflowDeps);
     const outcome =
       result.outcome === "delivery" ? result.result.outcome : result.outcome;
 

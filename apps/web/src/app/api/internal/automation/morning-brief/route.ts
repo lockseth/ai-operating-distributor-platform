@@ -13,7 +13,7 @@ import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-
 import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential } from "@/lib/n8n-automation/service";
 import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directory";
-import { buildMorningBrief, morningBriefIdempotencyKey } from "@/lib/n8n-automation/morning-brief";
+import { composeMorningBriefForSalesman, morningBriefIdempotencyKey } from "@/lib/n8n-automation/morning-brief";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
 
@@ -52,7 +52,6 @@ export async function POST(request: Request) {
     const tenantName = (companyRow as { name: string } | null)?.name ?? "AODP";
 
     const salesKpiRepository = new SupabaseSalesKpiRepository(admin);
-    const activePeriod = await salesKpiRepository.findActivePeriod(credential.companyId);
 
     const directory = new SupabaseSalesmanDirectory(admin);
     const recipients = await directory.listEligibleMorningBriefRecipients(credential.companyId);
@@ -62,35 +61,14 @@ export async function POST(request: Request) {
     const results: Record<string, unknown>[] = [];
 
     for (const recipient of recipients) {
-      let projection = null;
-      let baseline = null;
-      if (activePeriod) {
-        const projectionResult = await salesKpiRepository.getAchievementProjection({
-          companyId: credential.companyId,
-          actorId: credential.id,
-          periodId: activePeriod.id,
-          salespersonId: recipient.userId,
-        });
-        projection = projectionResult.outcome === "ok" ? projectionResult.projection : null;
-
-        const baselineResult = await salesKpiRepository.getCalibrationBaseline({
-          companyId: credential.companyId,
-          actorId: credential.id,
-          periodId: activePeriod.id,
-          salespersonId: recipient.userId,
-        });
-        baseline = baselineResult.outcome === "ok" ? baselineResult.baseline : null;
-      }
-
-      const content = buildMorningBrief({
+      const content = await composeMorningBriefForSalesman(
+        { salesKpiRepository },
+        credential.companyId,
+        credential.id,
+        { userId: recipient.userId, fullName: recipient.fullName, coverageAreas: recipient.coverageAreas },
         tenantName,
-        salesmanFullName: recipient.fullName,
-        coverageAreas: recipient.coverageAreas,
         businessDate,
-        activePeriod,
-        projection,
-        baseline,
-      });
+      );
 
       const enqueueResult = await repository.enqueueJob({
         companyId: credential.companyId,

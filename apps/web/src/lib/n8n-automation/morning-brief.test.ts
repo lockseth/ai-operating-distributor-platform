@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildMorningBrief, morningBriefIdempotencyKey } from "./morning-brief";
+import { buildMorningBrief, composeMorningBriefForSalesman, morningBriefIdempotencyKey } from "./morning-brief";
+import { InMemorySalesKpiRepository } from "@/lib/sales-kpi/repository";
 import type { SalesKpiAchievementProjection } from "@/lib/sales-kpi/types";
 
 const ACTIVE_PERIOD = {
@@ -115,6 +116,76 @@ describe("buildMorningBrief -- n8n tidak menghitung Call/EC/EC Rate sendiri", ()
       },
     });
     expect(content.text).toContain("baseline historis");
+  });
+});
+
+describe("composeMorningBriefForSalesman -- dipakai jalur cron proaktif MAUPUN Telegram on-demand (/start)", () => {
+  it("tanpa periode ACTIVE -> sama seperti buildMorningBrief langsung (NO_ACTIVE_PERIOD)", async () => {
+    const repo = new InMemorySalesKpiRepository();
+    repo.seedActor("owner-1", "waluyo", "owner");
+    repo.seedSalesperson("sales-1", "waluyo");
+    const content = await composeMorningBriefForSalesman(
+      { salesKpiRepository: repo },
+      "waluyo",
+      "owner-1",
+      { userId: "sales-1", fullName: "Budi", coverageAreas: ["Utara"] },
+      "Waluyo Distributor",
+      "2026-08-10",
+    );
+    expect(content.structured.status).toBe("NO_ACTIVE_PERIOD");
+  });
+
+  it("dengan periode ACTIVE dan Call tercatat -> projection actual mengikuti ledger, bukan dikarang ulang", async () => {
+    const repo = new InMemorySalesKpiRepository();
+    repo.seedActor("owner-1", "waluyo", "owner");
+    repo.seedSalesperson("sales-1", "waluyo");
+    repo.seedActor("sales-1", "waluyo", "sales" as never);
+    repo.seedCustomer("cust-1", "waluyo", { assignedSalesId: "sales-1" });
+    await repo.initializeFoundation({ companyId: "waluyo", actorId: "owner-1" });
+    const period = await repo.createPeriod({
+      companyId: "waluyo",
+      actorId: "owner-1",
+      name: "Agustus 2026",
+      startDate: "2026-08-01",
+      endDate: "2026-08-31",
+      workingDays: 26,
+    });
+    if (period.outcome !== "created") throw new Error("seed periode gagal");
+    await repo.setPeriodStatus({
+      companyId: "waluyo",
+      actorId: "owner-1",
+      periodId: period.periodId,
+      nextStatus: "ACTIVE",
+    });
+    await repo.setTarget({
+      companyId: "waluyo",
+      actorId: "owner-1",
+      periodId: period.periodId,
+      salespersonId: "sales-1",
+      kpiCode: "CALL",
+      targetValue: 10,
+      changeReason: "target awal periode",
+    });
+    await repo.recordCall({
+      companyId: "waluyo",
+      actorId: "sales-1",
+      salespersonId: "sales-1",
+      customerId: "cust-1",
+      callDate: "2026-08-10",
+      outcomeNotes: "Kunjungan pagi",
+      idempotencyKey: "call-1",
+    });
+
+    const content = await composeMorningBriefForSalesman(
+      { salesKpiRepository: repo },
+      "waluyo",
+      "owner-1",
+      { userId: "sales-1", fullName: "Budi", coverageAreas: ["Utara"] },
+      "Waluyo Distributor",
+      "2026-08-10",
+    );
+    expect(content.structured.status).toBe("ACTIVE_PERIOD");
+    expect(content.text).toContain("1/10");
   });
 });
 

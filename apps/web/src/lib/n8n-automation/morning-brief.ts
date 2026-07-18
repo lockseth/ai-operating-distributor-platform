@@ -10,6 +10,7 @@ import type {
   SalesKpiAchievementProjection,
   SalesKpiCalibrationBaseline,
 } from "@/lib/sales-kpi/types";
+import type { SalesKpiRepository } from "@/lib/sales-kpi/repository";
 
 export interface MorningBriefContext {
   tenantName: string;
@@ -28,7 +29,7 @@ export interface MorningBriefContent {
   structured: Record<string, unknown>;
 }
 
-function formatLine(target: number | null, actual: number, percentage: number | null): string {
+export function formatLine(target: number | null, actual: number, percentage: number | null): string {
   if (target === null) return `${actual} (Data belum cukup -- target belum ditetapkan)`;
   return `${actual}/${target} (${percentage ?? 0}%)`;
 }
@@ -100,4 +101,51 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
 
 export function morningBriefIdempotencyKey(salespersonId: string, businessDate: string): string {
   return `morning_brief:${salespersonId}:${businessDate}`;
+}
+
+/**
+ * Komposisi Morning Brief satu salesman -- dipakai baik oleh cron proaktif
+ * (api/internal/automation/morning-brief/route.ts) MAUPUN jalur on-demand
+ * Telegram (/start). Satu-satunya tempat yang memanggil sales-kpi projection/
+ * baseline untuk Morning Brief -- mencegah drift antara kedua jalur.
+ */
+export async function composeMorningBriefForSalesman(
+  deps: { salesKpiRepository: SalesKpiRepository },
+  companyId: string,
+  actorId: string,
+  salesman: { userId: string; fullName: string; coverageAreas: string[] },
+  tenantName: string,
+  businessDate: string,
+): Promise<MorningBriefContent> {
+  const activePeriod = await deps.salesKpiRepository.findActivePeriod(companyId);
+
+  let projection: SalesKpiAchievementProjection | null = null;
+  let baseline: SalesKpiCalibrationBaseline | null = null;
+  if (activePeriod) {
+    const projectionResult = await deps.salesKpiRepository.getAchievementProjection({
+      companyId,
+      actorId,
+      periodId: activePeriod.id,
+      salespersonId: salesman.userId,
+    });
+    projection = projectionResult.outcome === "ok" ? projectionResult.projection : null;
+
+    const baselineResult = await deps.salesKpiRepository.getCalibrationBaseline({
+      companyId,
+      actorId,
+      periodId: activePeriod.id,
+      salespersonId: salesman.userId,
+    });
+    baseline = baselineResult.outcome === "ok" ? baselineResult.baseline : null;
+  }
+
+  return buildMorningBrief({
+    tenantName,
+    salesmanFullName: salesman.fullName,
+    coverageAreas: salesman.coverageAreas,
+    businessDate,
+    activePeriod,
+    projection,
+    baseline,
+  });
 }

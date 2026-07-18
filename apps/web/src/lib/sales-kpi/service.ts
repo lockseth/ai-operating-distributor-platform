@@ -9,6 +9,7 @@ import {
   type SalesKpiPeriodStatus,
   type SetSalesKpiTargetInput,
 } from "./types";
+import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 
 export const WALUYO_SALES_KPI_DEFINITIONS: ReadonlyArray<
   Omit<SalesKpiDefinition, "id" | "companyId">
@@ -137,15 +138,17 @@ export function validateRecordSalesCallInput(input: {
 }
 
 /**
- * Codebase tidak memiliki authoritative tenant timezone/business-date helper
- * (diverifikasi eksplisit sebelum implementasi). Kalender UTC dipakai di
- * sini murni sebagai "hari ini" untuk perbandingan pacing -- konsisten
- * dengan sales_kpi_periods.start_date/end_date yang SUDAH diperlakukan
- * sebagai string tanggal telanjang tanpa konversi TZ di seluruh modul ini.
- * Bukan aturan timezone baru; hanya melanjutkan konvensi yang sudah ada.
+ * "Hari ini" untuk perbandingan pacing -- SEKARANG business date Asia/Jakarta
+ * (businessDateJakarta(), lib/n8n-automation/timezone.ts, helper authoritative
+ * yang sudah dipakai Morning Brief). Sebelumnya memakai kalender UTC
+ * (new Date().toISOString().slice(0,10)) -- limitation lama yang membuat
+ * pacingStatus bisa "loncat hari" hingga 7 jam lebih awal/lambat dibanding
+ * salesman sungguhan di Asia/Jakarta. sales_kpi_periods.start_date/end_date
+ * sendiri TETAP string tanggal telanjang tanpa konversi TZ (tidak berubah)
+ * -- yang berubah hanya titik referensi "hari ini" dipakai membandingkannya.
  */
 export function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+  return businessDateJakarta();
 }
 
 function daysBetween(startDate: string, endDate: string): number {
