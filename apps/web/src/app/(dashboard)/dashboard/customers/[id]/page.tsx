@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { DeactivateButton } from "@/components/customers/deactivate-button";
+import { PicPanel, type PicView, type PicHistoryView, type RelationshipEventView } from "@/components/customer-pic/pic-panel";
+import { AddPicForm } from "@/components/customer-pic/add-pic-form";
+import type { PicRole, PicValidationStatus } from "@/lib/customer-pic/types";
 import {
   ChevronLeft, Edit2, Users, Phone, Mail, MapPin,
   Calendar, Clock, User, Info,
@@ -83,6 +86,57 @@ export default async function CustomerDetailPage({
   const daysSinceOrder = customer.last_order_at
     ? Math.floor((new Date().getTime() - new Date(customer.last_order_at).getTime()) / 86_400_000)
     : null;
+
+  // --- Tambah Toko & PIC (purely additive) ---
+  const canVerifyPic = hasPermission(user.permissions, "customers.pic_verify");
+  const canAddPic = hasPermission(user.permissions, "customers.create") || hasPermission(user.permissions, "customers.update");
+
+  const { data: picRows } = await supabase
+    .from("customer_pics")
+    .select("id, name, phone, email, roles, validation_status, created_at, verified_at, created_by_user:users!created_by(id, full_name), verified_by_user:users!verified_by(full_name)")
+    .eq("company_id", user.company_id)
+    .eq("customer_id", customer.id)
+    .order("created_at", { ascending: true });
+
+  const pics: PicView[] = ((picRows ?? []) as unknown as {
+    id: string; name: string; phone: string; email: string | null; roles: PicRole[]; validation_status: PicValidationStatus;
+    created_at: string; verified_at: string | null;
+    created_by_user: { id: string; full_name: string } | null;
+    verified_by_user: { full_name: string } | null;
+  }[]).map((r) => ({
+    id: r.id, name: r.name, phone: r.phone, email: r.email, roles: r.roles, validationStatus: r.validation_status,
+    createdByName: r.created_by_user?.full_name ?? "—", createdById: r.created_by_user?.id ?? "",
+    createdAt: r.created_at, verifiedByName: r.verified_by_user?.full_name ?? null, verifiedAt: r.verified_at,
+  }));
+
+  const picIds = pics.map((p) => p.id);
+  const { data: historyRows } = picIds.length
+    ? await supabase
+        .from("customer_pic_history")
+        .select("id, customer_pic_id, change_type, field_name, old_value, new_value, reason, source, created_at, actor:users!actor_id(full_name)")
+        .in("customer_pic_id", picIds)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+
+  const history: PicHistoryView[] = ((historyRows ?? []) as unknown as {
+    id: string; customer_pic_id: string; change_type: string; field_name: string | null; old_value: string | null;
+    new_value: string | null; reason: string | null; source: string; created_at: string; actor: { full_name: string } | null;
+  }[]).map((r) => ({
+    id: r.id, customerPicId: r.customer_pic_id, changeType: r.change_type, fieldName: r.field_name,
+    oldValue: r.old_value, newValue: r.new_value, reason: r.reason, source: r.source,
+    actorName: r.actor?.full_name ?? "—", createdAt: r.created_at,
+  }));
+
+  const { data: eventRows } = await supabase
+    .from("customer_relationship_events")
+    .select("id, event_type, severity, payload, created_at")
+    .eq("company_id", user.company_id)
+    .eq("customer_id", customer.id)
+    .order("created_at", { ascending: false });
+
+  const relationshipEvents: RelationshipEventView[] = ((eventRows ?? []) as unknown as {
+    id: string; event_type: string; severity: string; payload: Record<string, unknown>; created_at: string;
+  }[]).map((r) => ({ id: r.id, eventType: r.event_type, severity: r.severity, payload: r.payload, createdAt: r.created_at }));
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
@@ -227,6 +281,23 @@ export default async function CustomerDetailPage({
               <p className="text-xs text-gray-500 mb-0.5">Catatan Internal</p>
               <p className="text-sm text-gray-700 whitespace-pre-line">{customer.notes}</p>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* PIC (Contact Person) */}
+      <div className="space-y-2">
+        <PicPanel
+          customerId={customer.id}
+          pics={pics}
+          history={history}
+          relationshipEvents={relationshipEvents}
+          canVerify={canVerifyPic}
+          currentUserId={user.id}
+        />
+        {canAddPic && (
+          <div className="px-1">
+            <AddPicForm customerId={customer.id} />
           </div>
         )}
       </div>

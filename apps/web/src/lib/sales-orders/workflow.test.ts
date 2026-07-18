@@ -388,4 +388,56 @@ describe("Telegram Sales Order workflow", () => {
     expect(record?.rawPayload).toBeNull();
     expect(JSON.stringify(record)).not.toContain(token);
   });
+
+  it("15. order source terdeteksi dari teks dan tersimpan pada draft (WA)", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    const text = [
+      "Order Toko Melati, dari WA toko:",
+      "Sabun Cuci 5 dus harga 60 ribu",
+    ].join("\n");
+
+    const result = await processTelegramUpdate(textUpdate(15, text), deps);
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.orderSource).toBe("CUSTOMER_WHATSAPP");
+  });
+
+  it("16. order source default OTHER ketika tidak ada penanda, order tetap dibuat (tidak ditolak)", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    const text = "Order Toko Abadi:\nGula 10 dus harga 250 ribu";
+
+    const result = await processTelegramUpdate(textUpdate(16, text), deps);
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.orderSource).toBe("OTHER");
+    expect(order?.status).toBe("draft");
+  });
+
+  it("17. UBAH lalu koreksi -> order source ikut diperbarui sesuai teks koreksi terbaru", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+
+    const first = await processTelegramUpdate(
+      textUpdate(17, "Order Toko Baru:\nSapu 3 pcs harga 20 ribu"),
+      deps,
+    );
+    if (first.outcome !== "draft_created") throw new Error("unexpected outcome");
+    let order = await deps.repository.getOrder(first.orderId);
+    expect(order?.orderSource).toBe("OTHER");
+
+    await processTelegramUpdate(textUpdate(18, "UBAH"), deps);
+    await processTelegramUpdate(
+      textUpdate(19, "Order Toko Baru, repeat order:\nSapu 3 pcs harga 20 ribu"),
+      deps,
+    );
+
+    order = await deps.repository.getOrder(first.orderId);
+    expect(order?.orderSource).toBe("REPEAT_ORDER");
+  });
 });

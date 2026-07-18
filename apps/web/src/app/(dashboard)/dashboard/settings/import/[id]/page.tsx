@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
 import { ChevronLeft, Edit2, ArrowRight, FileSpreadsheet, CheckCircle2, Circle, PlayCircle } from "lucide-react";
 import type { ColumnMapping } from "@/lib/settings/import-actions";
+import { LegacyImportDeprecationBanner } from "@/components/settings/legacy-import-deprecation-banner";
 
 export const metadata = { title: "Detail Template Import — AODP" };
 
@@ -54,6 +55,7 @@ export default async function ImportTemplateDetailPage({
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
+      <LegacyImportDeprecationBanner />
       {/* Breadcrumb + Actions */}
       <div className="flex items-center justify-between">
         <Link href="/dashboard/settings/import"

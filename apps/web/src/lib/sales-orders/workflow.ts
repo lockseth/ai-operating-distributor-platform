@@ -16,6 +16,7 @@ import type { KnowledgeProvider } from "./knowledge-provider";
 import type { PricedOrder } from "./types";
 import { extractSalesOrder, isLikelyOrderMessage } from "./extraction";
 import { buildPricedOrder } from "./pricing";
+import { detectOrderSource } from "./order-source";
 import {
   buildConfirmationSummary,
   buildUnrecognizedMessageReply,
@@ -319,6 +320,7 @@ async function handleNewOrderText(
     extractionConfidence: extracted.confidence,
     missingFields: extracted.missingFields,
     telegramEventId: eventId,
+    orderSource: detectOrderSource(text),
   });
 
   await deps.repository.updateEventStatus(eventId, "processed", created.id);
@@ -370,6 +372,7 @@ async function handleCorrection(
     knowledgeVersion: knowledge.knowledgeVersion,
     extractionConfidence: extracted.confidence,
     missingFields: extracted.missingFields,
+    orderSource: detectOrderSource(text),
   });
 
   await deps.repository.updateEventStatus(eventId, "processed", pendingOrderId);

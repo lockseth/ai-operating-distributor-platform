@@ -1,9 +1,12 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { UserPlus } from "lucide-react";
 import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollment-control";
+import { resolveSalesmanTelegramStatus } from "@/lib/salesman/status";
+import { SalesmanCoverageControl } from "@/components/users/salesman-coverage-control";
 
 export const metadata = { title: "Pengguna — AODP" };
 
@@ -43,6 +46,25 @@ type TelegramIdentityRow = {
   telegram_username: string | null;
   is_active: boolean;
 };
+
+type PendingTokenRow = {
+  user_id: string;
+  expires_at: string;
+  claimed_at: string | null;
+  revoked_at: string | null;
+};
+
+type CoverageAreaRow = {
+  user_id: string;
+  area: string;
+};
+
+function extractCoverageAreas(settings: unknown): string[] {
+  if (!settings || typeof settings !== "object") return [];
+  const raw = (settings as Record<string, unknown>).coverage_areas;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((a): a is string => typeof a === "string" && a.trim().length > 0);
+}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("id-ID", {
@@ -98,28 +120,74 @@ export default async function UsersPage() {
     ]),
   );
 
+  // Status Telegram lengkap (Pairing Aktif/Kedaluwarsa/Diputuskan) butuh dua
+  // sinyal tambahan di luar identity aktif: identity yang pernah ada lalu
+  // dinonaktifkan (revoke), dan token enrollment yang masih pending.
+  const { data: previousIdentityData } = canManageTelegram
+    ? await supabase
+        .from("telegram_identities")
+        .select("user_id")
+        .eq("company_id", user.company_id)
+        .eq("is_active", false)
+    : { data: [] };
+  const hadPreviousIdentitySet = new Set(
+    ((previousIdentityData ?? []) as { user_id: string }[]).map((r) => r.user_id),
+  );
+
+  const { data: pendingTokenData } = canManageTelegram
+    ? await supabase
+        .from("telegram_enrollment_tokens")
+        .select("user_id, expires_at, claimed_at, revoked_at")
+        .eq("company_id", user.company_id)
+        .is("claimed_at", null)
+        .is("revoked_at", null)
+    : { data: [] };
+  const pendingTokenByUser = new Map(
+    ((pendingTokenData ?? []) as PendingTokenRow[]).map((t) => [t.user_id, t]),
+  );
+
+  const { data: companyRow } = await supabase
+    .from("companies")
+    .select("settings")
+    .eq("id", user.company_id)
+    .maybeSingle();
+  const availableAreas = extractCoverageAreas((companyRow as { settings?: unknown } | null)?.settings);
+
+  const { data: coverageData } = canManageTelegram
+    ? await supabase
+        .from("salesman_coverage_areas")
+        .select("user_id, area")
+        .eq("company_id", user.company_id)
+    : { data: [] };
+  const areasByUser = new Map<string, string[]>();
+  for (const row of (coverageData ?? []) as CoverageAreaRow[]) {
+    const list = areasByUser.get(row.user_id) ?? [];
+    list.push(row.area);
+    areasByUser.set(row.user_id, list);
+  }
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <PageHeader
         title="Pengguna"
         subtitle={`${users.length} pengguna terdaftar di perusahaan ini`}
       >
-        <button
-          disabled
-          title="Fitur tambah pengguna akan segera tersedia"
-          className="flex cursor-not-allowed items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white opacity-40"
-        >
-          <UserPlus className="h-4 w-4" />
-          Tambah Pengguna
-        </button>
+        {canManageTelegram ? (
+          <Link
+            href="/dashboard/users/new"
+            className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            <UserPlus className="h-4 w-4" />
+            Tambah Salesman
+          </Link>
+        ) : null}
       </PageHeader>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
         <p className="text-sm text-blue-800">
-          Manajemen pengguna lengkap sedang dalam pengembangan. Penambahan
-          pengguna baru untuk sementara dilakukan oleh super admin via Supabase.
-          Identitas Telegram Salesman dapat dihubungkan secara aman dari tabel
-          ini.
+          Manajemen pengguna lengkap untuk seluruh role sedang dalam pengembangan.
+          Admin/Owner/Manager dapat menambahkan Salesman dan menghubungkan
+          identitas Telegram-nya dari halaman ini.
         </p>
       </div>
 
@@ -143,6 +211,9 @@ export default async function UsersPage() {
                 Bergabung
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                Wilayah Kerja
+              </th>
+              <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Telegram Salesman
               </th>
             </tr>
@@ -151,7 +222,7 @@ export default async function UsersPage() {
             {users.length === 0 ? (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-10 text-center text-sm text-gray-400"
                 >
                   Belum ada pengguna. Setup pengguna awal dilakukan oleh super
@@ -167,6 +238,18 @@ export default async function UsersPage() {
                 const displayName = u.full_name || u.email;
                 const initials = displayName.charAt(0).toUpperCase();
                 const telegramIdentity = telegramByUser.get(u.id) ?? null;
+                const pendingToken = pendingTokenByUser.get(u.id) ?? null;
+                const telegramStatus = resolveSalesmanTelegramStatus({
+                  hasActiveIdentity: !!telegramIdentity,
+                  hadPreviousIdentity: hadPreviousIdentitySet.has(u.id),
+                  pendingToken: pendingToken
+                    ? {
+                        expiresAt: pendingToken.expires_at,
+                        claimedAt: pendingToken.claimed_at,
+                        revokedAt: pendingToken.revoked_at,
+                      }
+                    : null,
+                });
 
                 return (
                   <tr key={u.id} className="hover:bg-gray-50">
@@ -214,6 +297,21 @@ export default async function UsersPage() {
                       {formatDate(u.created_at)}
                     </td>
                     <td className="px-4 py-3 align-top">
+                      {roles.includes("sales") ? (
+                        canManageTelegram ? (
+                          <SalesmanCoverageControl
+                            salesmanId={u.id}
+                            availableAreas={availableAreas}
+                            assignedAreas={areasByUser.get(u.id) ?? []}
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-400">Akses diperlukan</span>
+                        )
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 align-top">
                       {canManageTelegram && roles.includes("sales") ? (
                         <TelegramEnrollmentControl
                           salesmanId={u.id}
@@ -222,6 +320,7 @@ export default async function UsersPage() {
                               ? { username: telegramIdentity.telegram_username }
                               : null
                           }
+                          status={telegramStatus}
                         />
                       ) : roles.includes("sales") ? (
                         <span className="text-xs text-gray-400">

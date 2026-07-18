@@ -47,6 +47,7 @@ const DEMO_AUTH_USER: AuthUser = {
     "settings.view", "settings.manage",
     "ai.view", "ai.manage",
     "automation.view", "automation.manage",
+    "imports.view", "imports.execute", "imports.commit", "imports.rollback",
   ],
   isDemo: true,
 };

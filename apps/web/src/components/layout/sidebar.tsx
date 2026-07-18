@@ -10,7 +10,7 @@ interface SidebarProps {
   user: AuthUser;
 }
 
-interface NavItem {
+export interface NavItem {
   label: string;
   href: string;
   icon: React.ReactNode;
@@ -125,12 +125,12 @@ function IconPlatform() {
   );
 }
 
-interface NavSection {
+export interface NavSection {
   title?: string;
   items: NavItem[];
 }
 
-const NAV_SECTIONS: NavSection[] = [
+export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Modul",
     items: [
@@ -155,7 +155,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Automation",  href: "/dashboard/automation",      icon: <IconAutomation />, permission: "settings.view" },
       { label: "Pengguna",    href: "/dashboard/users",           icon: <IconUserCog />,    permission: "users.view" },
-      { label: "Import Data", href: "/dashboard/settings/import", icon: <IconImport />,     permission: "settings.view" },
+      { label: "Import Data", href: "/dashboard/imports",         icon: <IconImport />,     permission: "imports.view" },
       { label: "Pengaturan",  href: "/dashboard/settings",        icon: <IconSettings />,   permission: "settings.view" },
       { label: "Platform",    href: "/dashboard/platform",        icon: <IconPlatform />,   roles: ["super_admin"] },
     ],

@@ -7,17 +7,32 @@ import {
   createTelegramEnrollmentAction,
   disconnectTelegramIdentityAction,
 } from "@/lib/telegram-enrollment/actions";
+import type { SalesmanTelegramStatus } from "@/lib/salesman/status";
 
 interface ActiveIdentity {
   username: string | null;
 }
 
+const PENDING_STATUS_LABEL: Partial<Record<SalesmanTelegramStatus, string>> = {
+  pairing_active: "Pairing Code Aktif",
+  pairing_expired: "Pairing Kedaluwarsa",
+  disconnected: "Diputuskan/Dicabut",
+};
+
+const PENDING_STATUS_COLOR: Partial<Record<SalesmanTelegramStatus, string>> = {
+  pairing_active: "bg-blue-50 text-blue-700",
+  pairing_expired: "bg-amber-50 text-amber-700",
+  disconnected: "bg-gray-100 text-gray-500",
+};
+
 export function TelegramEnrollmentControl({
   salesmanId,
   activeIdentity,
+  status,
 }: {
   salesmanId: string;
   activeIdentity: ActiveIdentity | null;
+  status: SalesmanTelegramStatus;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -106,8 +121,17 @@ export function TelegramEnrollmentControl({
     );
   }
 
+  const pendingLabel = PENDING_STATUS_LABEL[status];
+
   return (
     <div className="space-y-2">
+      {pendingLabel && (
+        <span
+          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${PENDING_STATUS_COLOR[status] ?? "bg-gray-100 text-gray-500"}`}
+        >
+          {pendingLabel}
+        </span>
+      )}
       <button
         type="button"
         onClick={createEnrollment}
@@ -119,7 +143,7 @@ export function TelegramEnrollmentControl({
         ) : (
           <Link2 className="h-3.5 w-3.5" />
         )}
-        Buat tautan Telegram
+        {status === "not_connected" ? "Buat tautan Telegram" : "Terbitkan ulang tautan"}
       </button>
 
       {command && (

@@ -12,6 +12,9 @@ import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
 import { computeInvoiceEligibility } from "@/lib/delivery/service";
 import { getAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/lib/orders/actions";
+import { ORDER_SOURCE_LABEL, type OrderSource } from "@/lib/sales-orders/order-source";
+import { DisputeReviewPanel, type DisputeRequestView } from "@/components/order-disputes/dispute-review-panel";
+import type { ContactSource, OrderStage, Resolution } from "@/lib/order-disputes/types";
 import {
   ChevronLeft, Edit2, Plus, ShoppingCart, User, Calendar,
   Package, FileText,
@@ -57,6 +60,7 @@ interface Order {
   created_at: string;
   updated_at: string;
   source_channel: string | null;
+  order_source: string | null;
   customer_name_raw: string | null;
   requires_discount_review: boolean | null;
   customer: { id: string; name: string; code: string; phone: string | null; area: string | null } | null;
@@ -127,6 +131,60 @@ export default async function OrderDetailPage({
       .maybeSingle();
     ownerAlertStatus = (alertRow as { status: "pending" | "sent" | "failed" } | null)?.status ?? null;
   }
+
+  // --- Order Cancellation & Dispute Human Review (purely additive) ---
+  const canReviewDisputes = hasPermission(user.permissions, "orders.cancellation_review");
+  const { data: disputeRows } = await supabase
+    .from("order_cancellation_disputes")
+    .select(`
+      id, request_type, reason_code, notes, reported_pic_name_snapshot, contact_source,
+      order_stage_at_request, ai_classification, status, resolution, resolution_notes,
+      actual_pic_name_snapshot, requested_by, requested_at, reviewed_by, reviewed_at,
+      requested_by_user:users!requested_by(full_name),
+      reviewed_by_user:users!reviewed_by(full_name)
+    `)
+    .eq("company_id", user.company_id)
+    .eq("sales_order_id", order.id)
+    .order("requested_at", { ascending: false });
+
+  const disputeRequests: DisputeRequestView[] = ((disputeRows ?? []) as unknown as {
+    id: string;
+    request_type: "CUSTOMER_CANCELLED" | "CUSTOMER_DENIES_ORDER";
+    reason_code: string;
+    notes: string | null;
+    reported_pic_name_snapshot: string | null;
+    contact_source: ContactSource;
+    order_stage_at_request: OrderStage;
+    ai_classification: string | null;
+    status: DisputeRequestView["status"];
+    resolution: Resolution | null;
+    resolution_notes: string | null;
+    actual_pic_name_snapshot: string | null;
+    requested_by: string;
+    requested_at: string;
+    reviewed_by: string | null;
+    reviewed_at: string | null;
+    requested_by_user: { full_name: string } | null;
+    reviewed_by_user: { full_name: string } | null;
+  }[]).map((r) => ({
+    id: r.id,
+    requestType: r.request_type,
+    reasonCode: r.reason_code,
+    notes: r.notes,
+    reportedPicName: r.reported_pic_name_snapshot,
+    contactSource: r.contact_source,
+    orderStageAtRequest: r.order_stage_at_request,
+    aiClassification: r.ai_classification,
+    status: r.status,
+    resolution: r.resolution,
+    resolutionNotes: r.resolution_notes,
+    actualPicName: r.actual_pic_name_snapshot,
+    requestedByName: r.requested_by_user?.full_name ?? "—",
+    requestedById: r.requested_by,
+    requestedAt: r.requested_at,
+    reviewedByName: r.reviewed_by_user?.full_name ?? null,
+    reviewedAt: r.reviewed_at,
+  }));
 
   let availableDrivers: { id: string; full_name: string }[] = [];
   if (!delivery && order.status === "confirmed" && canManageDelivery) {
@@ -200,6 +258,14 @@ export default async function OrderDetailPage({
                     <span>·</span>
                     <span className="rounded-full bg-sky-50 px-2 py-0.5 text-xs font-medium text-sky-700">
                       via Telegram
+                    </span>
+                  </>
+                )}
+                {order.order_source && (
+                  <>
+                    <span>·</span>
+                    <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                      {ORDER_SOURCE_LABEL[order.order_source as OrderSource] ?? order.order_source}
                     </span>
                   </>
                 )}
@@ -314,6 +380,14 @@ export default async function OrderDetailPage({
           <AssignDriverForm salesOrderId={order.id} drivers={availableDrivers} />
         )
       )}
+
+      {/* Order Cancellation & Dispute — Human Review */}
+      <DisputeReviewPanel
+        requests={disputeRequests}
+        salesOrderId={order.id}
+        canReview={canReviewDisputes}
+        currentUserId={user.id}
+      />
 
       {/* Notes */}
       {order.notes && (

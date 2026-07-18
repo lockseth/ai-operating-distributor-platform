@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { getImportTemplateAction } from "@/lib/settings/import-preview-actions";
 import { ImportPreviewClient } from "@/components/settings/import-preview-client";
+import { LegacyImportDeprecationBanner } from "@/components/settings/legacy-import-deprecation-banner";
 import { ChevronLeft, FileSpreadsheet } from "lucide-react";
 
 export const metadata = { title: "Preview Import — AODP" };
@@ -62,6 +63,7 @@ export default async function ImportPreviewPage({
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
+      <LegacyImportDeprecationBanner />
       {/* Breadcrumb */}
       <div className="flex items-center justify-between">
         <Link href={`/dashboard/settings/import/${id}`}

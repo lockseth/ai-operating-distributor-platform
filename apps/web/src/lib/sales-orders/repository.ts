@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PricedOrder } from "./types";
+import type { OrderSource } from "./order-source";
 
 export interface ResolvedIdentity {
   identityId: string;
@@ -37,6 +38,7 @@ export interface PersistedOrder {
   status: string;
   requiresDiscountReview: boolean;
   priced: PricedOrder;
+  orderSource: OrderSource;
 }
 
 export interface SalesOrderTelegramRepository {
@@ -88,6 +90,8 @@ export interface SalesOrderTelegramRepository {
     extractionConfidence: number;
     missingFields: string[];
     telegramEventId: string;
+    /** Bagaimana toko menyampaikan pesanan kepada Salesman — bukan channel input sistem. */
+    orderSource: OrderSource;
   }): Promise<PersistedOrder>;
 
   getOrder(orderId: string): Promise<PersistedOrder | null>;
@@ -100,6 +104,7 @@ export interface SalesOrderTelegramRepository {
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
+      orderSource: OrderSource;
     },
   ): Promise<PersistedOrder>;
 
@@ -274,6 +279,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     extractionConfidence: number;
     missingFields: string[];
     telegramEventId: string;
+    orderSource: OrderSource;
   }): Promise<PersistedOrder> {
     const orderNumber = await this.generateOrderNumber(input.companyId);
     const { priced } = input;
@@ -288,6 +294,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         sales_id: input.salesId,
         status: "draft",
         source_channel: "telegram",
+        order_source: input.orderSource,
         knowledge_version: input.knowledgeVersion,
         extraction_confidence: input.extractionConfidence,
         missing_fields: input.missingFields,
@@ -339,6 +346,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       status: "draft",
       requiresDiscountReview: priced.requiresDiscountReview,
       priced,
+      orderSource: input.orderSource,
     };
   }
 
@@ -349,6 +357,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
+      orderSource: OrderSource;
     },
   ): Promise<PersistedOrder> {
     const { priced } = input;
@@ -366,6 +375,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         total_amount: priced.subtotal,
         discount_amount: priced.totalDiscount,
         final_amount: priced.estimatedTotal,
+        order_source: input.orderSource,
       })
       .eq("id", orderId)
       .eq("status", "draft"); // guard: hanya order yang masih draft yang boleh dikoreksi
@@ -412,7 +422,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     const { data } = await this.supabase
       .from("sales_orders")
       .select(
-        "id, order_number, status, requires_discount_review, customer_name_raw, delivery_note, total_amount, discount_amount, final_amount, customer:customers!customer_id(id, name), items:sales_order_items(product_id, product_name_raw, quantity, unit, unit_price, discount_type, discount_value, amount_before_discount, discount_exception, total_amount)",
+        "id, order_number, status, requires_discount_review, customer_name_raw, delivery_note, total_amount, discount_amount, final_amount, order_source, customer:customers!customer_id(id, name), items:sales_order_items(product_id, product_name_raw, quantity, unit, unit_price, discount_type, discount_value, amount_before_discount, discount_exception, total_amount)",
       )
       .eq("id", orderId)
       .maybeSingle();
@@ -428,6 +438,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       total_amount: number;
       discount_amount: number;
       final_amount: number;
+      order_source: OrderSource;
       customer: { id: string; name: string } | null;
       items: {
         product_id: string | null;
@@ -474,6 +485,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       status: row.status,
       requiresDiscountReview: row.requires_discount_review,
       priced,
+      orderSource: row.order_source,
     };
   }
 
@@ -610,6 +622,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     extractionConfidence: number;
     missingFields: string[];
     telegramEventId: string;
+    orderSource: OrderSource;
   }): Promise<PersistedOrder> {
     const id = this.nextId("order");
     const orderNumber = `SO-TEST-${this.seq}`;
@@ -619,6 +632,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       status: "draft",
       requiresDiscountReview: input.priced.requiresDiscountReview,
       priced: input.priced,
+      orderSource: input.orderSource,
     };
     this.orders.set(id, order);
     return order;
@@ -635,6 +649,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       knowledgeVersion: string;
       extractionConfidence: number;
       missingFields: string[];
+      orderSource: OrderSource;
     },
   ): Promise<PersistedOrder> {
     const existing = this.orders.get(orderId);
@@ -645,6 +660,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       ...existing,
       requiresDiscountReview: input.priced.requiresDiscountReview,
       priced: input.priced,
+      orderSource: input.orderSource,
     };
     this.orders.set(orderId, updated);
     return updated;

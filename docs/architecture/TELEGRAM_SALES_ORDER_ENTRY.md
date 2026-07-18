@@ -21,6 +21,29 @@ dashboard Collection/Business Guard, warehouse deduction, GPS provider
 integration, ML fraud verdict — lihat scope resmi di
 `docs/product/delivery-verification/AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md`.
 
+## Channel Order (koreksi arsitektur)
+
+**Telegram adalah satu-satunya channel input order dan operasional Salesman
+ke sistem AODP.** Toko boleh menyampaikan pesanan kepada Salesman lewat
+WhatsApp/telepon — Salesman-lah yang kemudian memasukkan order tersebut ke
+AODP lewat Telegram. **Tidak ada** dan **tidak akan dibangun**: WhatsApp
+webhook/bot toko, provider WhatsApp inbound, integrasi telephony, atau
+channel pemesanan langsung dari customer ke sistem. WhatsApp owner
+(§Delivery Verification → Owner Alert) tetap ada, tapi khusus untuk
+executive alert/report ke owner — bukan channel order masuk.
+
+`sales_orders.source_channel` (`manual`/`telegram`) tetap merepresentasikan
+channel **input sistem** — selalu `telegram` untuk order dari modul ini.
+`sales_orders.order_source` (baru, migration
+`20260723000001_order_source_correction.sql`) merepresentasikan **bagaimana
+toko menyampaikan pesanan kepada Salesman**: `FIELD_VISIT`,
+`CUSTOMER_WHATSAPP`, `CUSTOMER_PHONE`, `REPEAT_ORDER`, `OTHER`. Dideteksi
+rule-based dari kata kunci pada teks order (`lib/sales-orders/order-source.ts`,
+konsisten dengan `extraction.ts` — bukan panggilan AI vendor), default
+`OTHER` bila tidak ada penanda. **Order tidak pernah ditolak** karena sumber
+tidak terdeteksi atau karena Salesman tidak berada secara fisik di lokasi
+toko.
+
 ## Status Production Readiness (per audit terakhir — Production Bootstrap Preflight)
 
 | Gate | Status |

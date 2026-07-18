@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { LegacyImportDeprecationBanner } from "@/components/settings/legacy-import-deprecation-banner";
 import { Plus, FileSpreadsheet, Users, Package, ShoppingCart } from "lucide-react";
 
 export const metadata = { title: "Import Template — AODP" };
@@ -46,6 +47,7 @@ export default async function ImportTemplatesPage() {
 
   return (
     <div className="p-6 space-y-5">
+      <LegacyImportDeprecationBanner />
       <PageHeader
         title="Template Import Data"
         subtitle="Konfigurasi mapping kolom Excel/CSV ke field sistem"

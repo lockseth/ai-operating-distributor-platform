@@ -180,6 +180,49 @@ tidak menambah allowlist environment baru, tidak melonggarkan middleware
 (`lib/supabase/middleware.ts`), dan tidak membuat jalur bypass baru yang bisa
 dipicu dari client/request.
 
+### Demo bypass TIDAK BISA melakukan DB write apa pun (berlaku untuk SEMUA modul)
+
+Dikonfirmasi ulang lewat audit reconciliation (2026-07-18): `DEMO_AUTH_USER`
+di `lib/auth/get-user.ts` memakai `id`/`company_id` sintetis
+(`00000000-0000-0000-0000-000000000000`) yang **sengaja tidak punya baris
+`companies`/`users`/`auth.users` penyokong** -- sesuai komentar aslinya
+("tidak pernah memanggil Supabase Auth, hanya menandai cookie lokal").
+Konsekuensinya: **operasi tulis DB apa pun** yang dijalankan di bawah sesi
+demo bypass akan gagal foreign-key constraint saat itu juga (dibuktikan
+lewat percobaan upload Import Data di bawah sesi demo -- error
+`import_batches_company_id_fkey`). Ini **bukan bug modul tertentu** --
+perilaku yang sama akan terjadi untuk modul MANA PUN yang menulis ke
+Postgres (buat customer, order, dsb) di bawah sesi demo bypass, karena
+akar masalahnya ada di identity sintetis tersebut, bukan di modul yang
+mencoba menulis.
+
+Konsekuensi praktis: **browser click-through untuk write-path** (upload →
+validate → commit → rollback, atau modul tulis lain manapun) **harus**
+memakai akun lokal nyata (login email/password Supabase Auth sungguhan
+terhadap Supabase lokal, atau Demo Access asli seperti didokumentasikan di
+atas) -- bukan tombol "🧪 Masuk Demo". Demo bypass tetap valid untuk
+verifikasi UI/rendering READ-ONLY (dashboard, daftar kosong, badge status,
+dsb).
+
+**Diketahui juga**: login otomatis lewat magic-link (Supabase Admin API
+`generateLink`, tanpa pernah menangani password) TIDAK berhasil membentuk
+sesi persisten pada codebase ini -- `createBrowserClient` (`@supabase/ssr`)
+yang dipakai `lib/supabase/client.ts` tidak mengonsumsi token hash-fragment
+implicit-flow secara otomatis, dan `login-form.tsx` hanya membuat instance
+client di dalam handler submit (bukan eager on-mount), sehingga tidak ada
+titik masuk otomatis untuk sesi hasil magic-link. Ini murni keterbatasan
+teknis yang ditemukan, BUKAN sesuatu yang diperbaiki di gate mana pun sejauh
+ini -- diperlukan login manual sungguhan (email/password) oleh Founder untuk
+verifikasi browser write-path.
+
+**Backlog terpisah (belum dikerjakan)**: **Interactive Demo Authentication**
+-- kebutuhan untuk sesi demo yang bisa benar-benar menulis ke DB (mis. lewat
+tenant Demo sungguhan yang di-seed penuh, atau mekanisme login otomatis yang
+sah tanpa password manual) supaya QA/browser click-through write-path bisa
+dilakukan tanpa bergantung pada kredensial manual Founder. Jangan klaim Demo
+Mode mendukung workflow tulis sampai backlog ini benar-benar dikerjakan dan
+diverifikasi.
+
 ## Belum deployed
 
 Belum ada deployment aplikasi ke environment Demo/staging manapun. Semua

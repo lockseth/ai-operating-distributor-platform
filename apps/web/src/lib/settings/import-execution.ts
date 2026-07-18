@@ -51,128 +51,14 @@ export async function executeImportAction(input: {
 
   if (!hasAccess) throw new Error("Akses ditolak");
 
-  const supabase  = await createClient();
-  const companyId = user.company_id;
-
-  // R-06: Server-side re-validation — do NOT trust isValid flag from client.
-  // Fetch template's column_mappings from DB to get authoritative required fields.
-  const { data: templateRow } = await supabase
-    .from("import_templates")
-    .select("column_mappings")
-    .eq("id", input.templateId)
-    .eq("company_id", companyId)
-    .single();
-
-  const serverMappings = (templateRow?.column_mappings ?? []) as ColumnMapping[];
-  const serverValidatedRows = serverValidateRows(input.rows, serverMappings);
-
-  const validRows   = serverValidatedRows.filter((r) => r.isValid);
-  const invalidRows = serverValidatedRows.filter((r) => !r.isValid);
-  const totalRows   = input.rows.length;
-
-  // Create import_jobs record
-  const { data: job, error: jobError } = await supabase
-    .from("import_jobs")
-    .insert({
-      company_id:      companyId,
-      template_id:     input.templateId,
-      entity_type:     input.entityType,
-      file_name:       input.fileName,
-      status:          "processing",
-      total_rows:      totalRows,
-      success_rows:    0,
-      error_rows:      invalidRows.length,
-      skipped_rows:    0,
-      errors:          [],
-      column_mappings: [],
-      started_at:      new Date().toISOString(),
-      created_by:      user.id,
-    })
-    .select("id")
-    .single();
-
-  if (jobError || !job) throw new Error("Gagal membuat record import job");
-
-  const jobId = job.id;
-  const rowErrors: ImportRowError[] = invalidRows.map((r) => ({
-    row:   r.rowIndex,
-    error: r.errors.join("; "),
-  }));
-
-  let importedRows = 0;
-  let skippedRows  = 0;
-
-  try {
-    // Execute entity-specific import
-    const result = await (async () => {
-      switch (input.entityType) {
-        case "customer":
-          return importCustomers(supabase, companyId, user.id, validRows, rowErrors);
-        case "product":
-          return importProducts(supabase, companyId, user.id, validRows, rowErrors);
-        case "sales_order":
-          return importSalesOrders(supabase, companyId, user.id, validRows, rowErrors);
-        default:
-          throw new Error(`Entity type tidak dikenal: ${input.entityType}`);
-      }
-    })();
-
-    importedRows = result.imported;
-    skippedRows  = result.skipped;
-
-    // Update job to completed
-    await supabase
-      .from("import_jobs")
-      .update({
-        status:       "completed",
-        success_rows: importedRows,
-        skipped_rows: skippedRows + invalidRows.length,
-        error_rows:   rowErrors.length,
-        errors:       rowErrors,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
-
-  } catch (err) {
-    // Update job to failed
-    const errMsg = err instanceof Error ? err.message : "Unknown error";
-    await supabase
-      .from("import_jobs")
-      .update({
-        status:       "failed",
-        errors:       [{ row: 0, error: errMsg }, ...rowErrors],
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", jobId);
-
-    throw err;
-  }
-
-  // Audit log
-  await logAuditEvent({
-    company_id:  companyId,
-    user_id:     user.id,
-    action:      "import.execute",
-    entity_type: "import_jobs",
-    entity_id:   jobId,
-    new_data: {
-      entity_type:   input.entityType,
-      file_name:     input.fileName,
-      total_rows:    totalRows,
-      imported_rows: importedRows,
-      skipped_rows:  skippedRows,
-      error_rows:    rowErrors.length,
-    },
-  }).catch(() => {});
-
-  return {
-    jobId,
-    totalRows,
-    importedRows,
-    skippedRows,
-    errorRows: rowErrors.length,
-    errors:    rowErrors,
-  };
+  // Modul lama ini digantikan oleh Universal Data Onboarding (/dashboard/imports)
+  // untuk domain customer/product/sales_order -- tidak boleh lagi membuat batch
+  // import baru lewat engine lama untuk domain yang sudah ditangani modul baru.
+  // Data/riwayat lama TETAP bisa dilihat (halaman list/jobs tidak diubah/dihapus).
+  void input;
+  throw new Error(
+    "Import lewat modul ini sudah tidak tersedia untuk data baru. Gunakan Import Data (/dashboard/imports) yang mendukung staging, validasi, reconciliation, dan rollback."
+  );
 }
 
 // ---------------------------------------------------------------------------

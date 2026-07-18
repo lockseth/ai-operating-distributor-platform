@@ -10,8 +10,8 @@ const SETTING_SECTIONS = [
   {
     href: "/dashboard/settings/import",
     icon: <FileSpreadsheet className="h-5 w-5 text-blue-500" />,
-    title: "Import Data",
-    description: "Kelola template import untuk pelanggan, produk, dan sales order.",
+    title: "Template Import (Lama)",
+    description: "Lihat riwayat & template import lama. Untuk import data baru, gunakan menu Import Data.",
     available: true,
   },
   {

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { createImportTemplateAction } from "@/lib/settings/import-actions";
 import { ImportTemplateForm } from "@/components/settings/import-template-form";
+import { LegacyImportDeprecationBanner } from "@/components/settings/legacy-import-deprecation-banner";
 import { ChevronLeft } from "lucide-react";
 
 export const metadata = { title: "Buat Template Import — AODP" };
@@ -17,7 +18,8 @@ export default async function NewImportTemplatePage() {
   if (!hasAccess) redirect("/dashboard/settings/import");
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-4xl mx-auto space-y-5">
+      <LegacyImportDeprecationBanner />
       <div className="flex items-center gap-2 text-sm text-gray-500 mb-5">
         <Link href="/dashboard/settings/import" className="flex items-center gap-1 hover:text-gray-700">
           <ChevronLeft className="h-4 w-4" />

@@ -212,7 +212,7 @@ export default async function ExecutiveIntelligencePage() {
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
                 <UserPlus className="h-3.5 w-3.5" /> Pelanggan Baru
               </Link>
-              <Link href="/dashboard/settings/import"
+              <Link href="/dashboard/imports"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
                 <Upload className="h-3.5 w-3.5" /> Import Data
               </Link>
