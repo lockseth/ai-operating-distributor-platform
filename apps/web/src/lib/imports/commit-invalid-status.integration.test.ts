@@ -12,9 +12,18 @@
 // lokal nyata.
 //
 // Skip graceful (bukan fail) kalau kredensial Supabase lokal tidak
-// tersedia -- menjaga `pnpm test` tetap hermetic untuk kontributor tanpa
-// Docker berjalan, sambil tetap menguji RPC sungguhan saat infra tersedia
-// (yang selalu tersedia dalam alur dev normal repo ini).
+// tersedia, ATAU kalau URL yang terbaca BUKAN loopback -- menjaga
+// `pnpm test` tetap hermetic untuk kontributor tanpa Docker berjalan,
+// sambil tetap menguji RPC sungguhan saat infra tersedia (yang selalu
+// tersedia dalam alur dev normal repo ini).
+//
+// SAFETY GUARD (wajib, secara teknis mustahil dilewati): URL final SELALU
+// divalidasi lewat isLoopbackSupabaseUrl() -- yang memakai new URL(value)
+// .hostname sungguhan, BUKAN string.includes() yang bisa ditipu URL
+// seperti "http://localhost@evil.example.com" -- SEBELUM createClient()
+// atau operasi jaringan/database apa pun dipanggil. Tidak ada jalur bypass
+// untuk target non-local; kalau URL bukan loopback, describeIfDb() SELALU
+// jadi describe.skip, titik.
 // =============================================================================
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
@@ -22,11 +31,9 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync, existsSync } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { isLoopbackSupabaseUrl } from "./is-loopback-supabase-url";
 
-function loadLocalSupabaseEnv(): { url: string; serviceRoleKey: string } | null {
-  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return { url: process.env.NEXT_PUBLIC_SUPABASE_URL, serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY };
-  }
+function readDotEnvLocal(): { url: string; serviceRoleKey: string } | null {
   const envPath = path.resolve(__dirname, "../../../.env.local");
   if (!existsSync(envPath)) return null;
   const text = readFileSync(envPath, "utf-8");
@@ -38,14 +45,28 @@ function loadLocalSupabaseEnv(): { url: string; serviceRoleKey: string } | null 
   return { url: vars.NEXT_PUBLIC_SUPABASE_URL, serviceRoleKey: vars.SUPABASE_SERVICE_ROLE_KEY };
 }
 
+function loadLocalSupabaseEnv(): { url: string; serviceRoleKey: string } | null {
+  const raw = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? { url: process.env.NEXT_PUBLIC_SUPABASE_URL, serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY }
+    : readDotEnvLocal();
+
+  if (!raw) return null;
+
+  // SAFETY GUARD -- dievaluasi di sini, SEBELUM nilai apa pun (termasuk
+  // raw.url) pernah dipakai untuk createClient() di mana pun dalam file
+  // ini. Kalau host bukan loopback, seluruh suite di-skip -- tidak ada
+  // fallback/opsi bypass ke target remote.
+  if (!isLoopbackSupabaseUrl(raw.url)) return null;
+
+  return raw;
+}
+
 const env = loadLocalSupabaseEnv();
 const describeIfDb = env ? describe : describe.skip;
 
 if (!env) {
-  console.warn(
-    "[commit-invalid-status.integration.test] SKIPPED -- kredensial Supabase lokal (.env.local) tidak ditemukan. " +
-    "Test ini butuh Postgres nyata untuk membuktikan kompatibilitas tipe RETURN QUERY, tidak bisa digantikan mock."
-  );
+  // Tidak pernah mencetak service-role key -- hanya alasan skip yang aman.
+  console.warn("DB integration test skipped: Supabase URL is not loopback/local (or credentials unavailable).");
 }
 
 describeIfDb("commit_import_batch RPC -- invalid_status path (DB-backed, Postgres nyata)", () => {
