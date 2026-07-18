@@ -1,8 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   WALUYO_SALES_KPI_DEFINITIONS,
+  calibrationBaselineWindow,
   canTransitionSalesKpiPeriod,
   computeAchievementLine,
+  computeCalibrationSufficiency,
+  computeEcRate,
+  validateCalibratedTargetsInput,
   validateCreateSalesCallTaskInput,
   validateRecordSalesCallInput,
   validateSalesKpiPeriodInput,
@@ -13,6 +17,8 @@ import type {
   CreateSalesCallTaskResult,
   CreateSalesKpiPeriodInput,
   CreateSalesKpiPeriodResult,
+  GetKpiCalibrationBaselineInput,
+  GetKpiCalibrationBaselineResult,
   GetSalesKpiAchievementProjectionInput,
   GetSalesKpiAchievementProjectionResult,
   InitializeSalesKpiInput,
@@ -36,6 +42,8 @@ import type {
   SetSalesKpiPeriodStatusResult,
   SetSalesKpiTargetInput,
   SetSalesKpiTargetResult,
+  SetSalesKpiTargetsCalibratedInput,
+  SetSalesKpiTargetsCalibratedResult,
 } from "./types";
 
 export interface SalesKpiRepository {
@@ -60,6 +68,12 @@ export interface SalesKpiRepository {
   getAchievementProjection(
     input: GetSalesKpiAchievementProjectionInput,
   ): Promise<GetSalesKpiAchievementProjectionResult>;
+  getCalibrationBaseline(
+    input: GetKpiCalibrationBaselineInput,
+  ): Promise<GetKpiCalibrationBaselineResult>;
+  setTargetsCalibrated(
+    input: SetSalesKpiTargetsCalibratedInput,
+  ): Promise<SetSalesKpiTargetsCalibratedResult>;
 }
 
 function firstRow<T>(data: unknown): T | null {
@@ -465,6 +479,132 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       },
     };
   }
+
+  async getCalibrationBaseline(
+    input: GetKpiCalibrationBaselineInput,
+  ): Promise<GetKpiCalibrationBaselineResult> {
+    const { data: periodData, error: periodError } = await this.client
+      .from("sales_kpi_periods")
+      .select("id, start_date")
+      .eq("id", input.periodId)
+      .eq("company_id", input.companyId)
+      .maybeSingle();
+    if (periodError) {
+      return { outcome: "unexpected_error", error: periodError.message };
+    }
+    if (!periodData) return { outcome: "period_not_found" };
+    const period = periodData as { id: string; start_date: string };
+
+    const { windowStartDate, windowEndDate } = calibrationBaselineWindow(
+      period.start_date,
+    );
+
+    const { data: eventRows, error: eventError } = await this.client
+      .from("sales_kpi_achievement_events")
+      .select("kpi_code, event_type, business_date")
+      .eq("company_id", input.companyId)
+      .eq("salesperson_id", input.salespersonId)
+      .gte("business_date", windowStartDate)
+      .lte("business_date", windowEndDate);
+    if (eventError) {
+      return { outcome: "unexpected_error", error: eventError.message };
+    }
+
+    const rows = (eventRows ?? []) as {
+      kpi_code: SalesKpiCode;
+      event_type: "CREDITED" | "REVERSED";
+      business_date: string;
+    }[];
+
+    let historicalCall = 0;
+    let historicalEffectiveCall = 0;
+    const callDays = new Set<string>();
+    for (const row of rows) {
+      const delta = row.event_type === "CREDITED" ? 1 : -1;
+      if (row.kpi_code === "CALL") {
+        historicalCall += delta;
+        if (row.event_type === "CREDITED") callDays.add(row.business_date);
+      } else {
+        historicalEffectiveCall += delta;
+      }
+    }
+
+    const observedDays = callDays.size;
+
+    return {
+      outcome: "ok",
+      baseline: {
+        salespersonId: input.salespersonId,
+        windowStartDate,
+        windowEndDate,
+        observedDays,
+        historicalCall,
+        historicalEffectiveCall,
+        ecRate: computeEcRate(historicalCall, historicalEffectiveCall),
+        sufficiency: computeCalibrationSufficiency(observedDays),
+      },
+    };
+  }
+
+  async setTargetsCalibrated(
+    input: SetSalesKpiTargetsCalibratedInput,
+  ): Promise<SetSalesKpiTargetsCalibratedResult> {
+    const { data, error } = await this.client.rpc(
+      "set_sales_kpi_targets_calibrated",
+      {
+        p_company_id: input.companyId,
+        p_actor_id: input.actorId,
+        p_period_id: input.periodId,
+        p_salesperson_id: input.salespersonId,
+        p_call_target: input.callTarget,
+        p_ec_target: input.ecTarget,
+        p_change_reason: input.changeReason,
+      },
+    );
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = firstRow<{
+      result_outcome: string;
+      call_target_id: string | null;
+      call_version: number | null;
+      ec_target_id: string | null;
+      ec_version: number | null;
+    }>(data);
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+
+    if (
+      row.result_outcome === "saved" &&
+      row.call_target_id &&
+      row.call_version &&
+      row.ec_target_id &&
+      row.ec_version
+    ) {
+      return {
+        outcome: "saved",
+        callTargetId: row.call_target_id,
+        callVersion: row.call_version,
+        ecTargetId: row.ec_target_id,
+        ecVersion: row.ec_version,
+      };
+    }
+    if (
+      row.result_outcome === "forbidden" ||
+      row.result_outcome === "invalid_call_target" ||
+      row.result_outcome === "invalid_ec_target" ||
+      row.result_outcome === "ec_exceeds_call" ||
+      row.result_outcome === "reason_required" ||
+      row.result_outcome === "period_not_found" ||
+      row.result_outcome === "period_locked" ||
+      row.result_outcome === "salesperson_not_eligible" ||
+      row.result_outcome === "foundation_not_initialized"
+    ) {
+      return { outcome: row.result_outcome };
+    }
+    return {
+      outcome: "unexpected_error",
+      error: `unknown outcome: ${row.result_outcome}`,
+    };
+  }
 }
 
 interface ActorSeed {
@@ -589,6 +729,27 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
     return this.achievementEvents
       .filter((event) => event.companyId === companyId)
       .map((row) => ({ ...row }));
+  }
+
+  /** Test-only: seed baris ledger historis langsung (mis. untuk uji baseline kalibrasi pra-periode). */
+  seedAchievementEvent(
+    companyId: string,
+    salespersonId: string,
+    kpiCode: SalesKpiCode,
+    eventType: "CREDITED" | "REVERSED",
+    businessDate: string,
+  ): void {
+    this.achievementEvents.push({
+      id: this.nextId("event"),
+      companyId,
+      salespersonId,
+      kpiCode,
+      eventType,
+      businessDate,
+      callId: null,
+      orderId: null,
+      reversalOfEventId: null,
+    });
   }
 
   seedSalesperson(
@@ -1138,6 +1299,131 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
             ? "DATA_INSUFFICIENT"
             : "COMPLETE",
       },
+    };
+  }
+
+  async getCalibrationBaseline(
+    input: GetKpiCalibrationBaselineInput,
+  ): Promise<GetKpiCalibrationBaselineResult> {
+    const period = this.periods.find(
+      (candidate) =>
+        candidate.id === input.periodId && candidate.companyId === input.companyId,
+    );
+    if (!period) return { outcome: "period_not_found" };
+
+    const { windowStartDate, windowEndDate } = calibrationBaselineWindow(
+      period.startDate,
+    );
+
+    const relevantEvents = this.achievementEvents.filter(
+      (event) =>
+        event.companyId === input.companyId &&
+        event.salespersonId === input.salespersonId &&
+        event.businessDate >= windowStartDate &&
+        event.businessDate <= windowEndDate,
+    );
+
+    let historicalCall = 0;
+    let historicalEffectiveCall = 0;
+    const callDays = new Set<string>();
+    for (const event of relevantEvents) {
+      const delta = event.eventType === "CREDITED" ? 1 : -1;
+      if (event.kpiCode === "CALL") {
+        historicalCall += delta;
+        if (event.eventType === "CREDITED") callDays.add(event.businessDate);
+      } else {
+        historicalEffectiveCall += delta;
+      }
+    }
+
+    const observedDays = callDays.size;
+
+    return {
+      outcome: "ok",
+      baseline: {
+        salespersonId: input.salespersonId,
+        windowStartDate,
+        windowEndDate,
+        observedDays,
+        historicalCall,
+        historicalEffectiveCall,
+        ecRate: computeEcRate(historicalCall, historicalEffectiveCall),
+        sufficiency: computeCalibrationSufficiency(observedDays),
+      },
+    };
+  }
+
+  async setTargetsCalibrated(
+    input: SetSalesKpiTargetsCalibratedInput,
+  ): Promise<SetSalesKpiTargetsCalibratedResult> {
+    if (!this.canManage(input.actorId, input.companyId)) {
+      return { outcome: "forbidden" };
+    }
+
+    const validation = validateCalibratedTargetsInput(input);
+    if (validation) return { outcome: validation };
+
+    const callResult = await this.setTarget({
+      companyId: input.companyId,
+      actorId: input.actorId,
+      periodId: input.periodId,
+      salespersonId: input.salespersonId,
+      kpiCode: "CALL",
+      targetValue: input.callTarget,
+      changeReason: input.changeReason,
+    });
+    if (
+      callResult.outcome !== "created" &&
+      callResult.outcome !== "updated" &&
+      callResult.outcome !== "unchanged"
+    ) {
+      // unsupported_kpi/invalid_target/unexpected_error tidak pernah terjadi
+      // di sini -- kpiCode literal "CALL" selalu didukung dan targetValue
+      // sudah divalidasi validateCalibratedTargetsInput di atas.
+      if (
+        callResult.outcome === "forbidden" ||
+        callResult.outcome === "period_not_found" ||
+        callResult.outcome === "period_locked" ||
+        callResult.outcome === "salesperson_not_eligible" ||
+        callResult.outcome === "foundation_not_initialized"
+      ) {
+        return { outcome: callResult.outcome };
+      }
+      return { outcome: "invalid_call_target" };
+    }
+
+    const ecResult = await this.setTarget({
+      companyId: input.companyId,
+      actorId: input.actorId,
+      periodId: input.periodId,
+      salespersonId: input.salespersonId,
+      kpiCode: "EFFECTIVE_CALL",
+      targetValue: input.ecTarget,
+      changeReason: input.changeReason,
+    });
+    if (
+      ecResult.outcome !== "created" &&
+      ecResult.outcome !== "updated" &&
+      ecResult.outcome !== "unchanged"
+    ) {
+      if (
+        ecResult.outcome === "forbidden" ||
+        ecResult.outcome === "period_not_found" ||
+        ecResult.outcome === "period_locked" ||
+        ecResult.outcome === "salesperson_not_eligible" ||
+        ecResult.outcome === "foundation_not_initialized"
+      ) {
+        return { outcome: ecResult.outcome };
+      }
+      return { outcome: "invalid_ec_target" };
+    }
+
+    return {
+      outcome: "saved",
+      callTargetId: callResult.targetId,
+      callVersion: callResult.version,
+      ecTargetId: ecResult.targetId,
+      ecVersion: ecResult.version,
     };
   }
 }

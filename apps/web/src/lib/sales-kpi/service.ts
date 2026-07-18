@@ -86,7 +86,9 @@ export function validateSalesKpiTargetInput(
   >,
 ): "unsupported_kpi" | "invalid_target" | "reason_required" | null {
   if (!isSalesKpiCode(input.kpiCode)) return "unsupported_kpi";
-  if (!Number.isInteger(input.targetValue) || input.targetValue <= 0)
+  // Non-negatif (>=0) sejak 20260806000001 -- EC=0 sah untuk salesman
+  // baru/toko yang belum pernah menghasilkan order confirmed.
+  if (!Number.isInteger(input.targetValue) || input.targetValue < 0)
     return "invalid_target";
   if (input.changeReason.trim().length < 3) return "reason_required";
   return null;
@@ -190,4 +192,76 @@ export function computeAchievementLine(
   }
 
   return { kpiCode, target, actual, remaining, achievementPercentage, pacingStatus };
+}
+
+// =============================================================================
+// Owner KPI Setup & Target Calibration.
+// =============================================================================
+
+/**
+ * Jendela observasi baseline historis (hari kalender SEBELUM period.startDate).
+ * Tidak ada aturan produk yang sudah ditetapkan untuk nilai ini (diverifikasi
+ * eksplisit -- tidak ada dokumen "baseline"/"kalibrasi" untuk sales-kpi di
+ * repo ini). Nilai default 90 hari dipilih sebagai perkiraan wajar (~1
+ * kuartal) dan WAJIB dikonfirmasi eksplisit oleh Founder sebelum Production
+ * Readiness -- lihat limitation di laporan akhir.
+ */
+export const KPI_BASELINE_LOOKBACK_DAYS = 90;
+
+/**
+ * Ambang minimal hari observasi (dengan Call valid tercatat) supaya baseline
+ * dianggap layak dipakai kalibrasi. Sama seperti lookback window, ini adalah
+ * default yang perlu konfirmasi Founder, bukan aturan produk yang sudah ada.
+ */
+export const KPI_BASELINE_MIN_OBSERVED_DAYS = 7;
+
+export function computeCalibrationSufficiency(
+  observedDays: number,
+): "SUFFICIENT" | "INSUFFICIENT" {
+  return observedDays >= KPI_BASELINE_MIN_OBSERVED_DAYS ? "SUFFICIENT" : "INSUFFICIENT";
+}
+
+export function computeEcRate(
+  historicalCall: number,
+  historicalEffectiveCall: number,
+): number | null {
+  if (historicalCall <= 0) return null;
+  return Math.round((historicalEffectiveCall / historicalCall) * 100);
+}
+
+function addDaysIso(isoDate: string, deltaDays: number): string {
+  const ms = Date.parse(`${isoDate}T00:00:00Z`) + deltaDays * 86_400_000;
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** Jendela baseline: [periodStartDate - lookbackDays, periodStartDate - 1 hari]. */
+export function calibrationBaselineWindow(
+  periodStartDate: string,
+  lookbackDays: number = KPI_BASELINE_LOOKBACK_DAYS,
+): { windowStartDate: string; windowEndDate: string } {
+  return {
+    windowStartDate: addDaysIso(periodStartDate, -lookbackDays),
+    windowEndDate: addDaysIso(periodStartDate, -1),
+  };
+}
+
+export function validateCalibratedTargetsInput(input: {
+  callTarget: number;
+  ecTarget: number;
+  changeReason: string;
+}):
+  | "invalid_call_target"
+  | "invalid_ec_target"
+  | "ec_exceeds_call"
+  | "reason_required"
+  | null {
+  if (!Number.isInteger(input.callTarget) || input.callTarget < 0) {
+    return "invalid_call_target";
+  }
+  if (!Number.isInteger(input.ecTarget) || input.ecTarget < 0) {
+    return "invalid_ec_target";
+  }
+  if (input.ecTarget > input.callTarget) return "ec_exceeds_call";
+  if (input.changeReason.trim().length < 3) return "reason_required";
+  return null;
 }

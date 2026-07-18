@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission, hasRole } from "@/lib/auth/permissions";
@@ -63,12 +64,31 @@ export default async function SalesKpiPage() {
       <PageHeader
         title="KPI Salesman"
         subtitle="Achievement Call & Effective Call -- selalu dihitung otomatis dari kunjungan dan Sales Order confirmed. Tidak dapat diinput atau di-override manual."
-      />
+      >
+        {canManage && (
+          <Link
+            href="/dashboard/kpi/setup"
+            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            Setup & Kalibrasi Target
+          </Link>
+        )}
+      </PageHeader>
 
       {periods.length === 0 ? (
         <EmptyState
           title="Belum ada periode KPI"
           description="Owner/Manager perlu membuat periode dan target KPI terlebih dahulu sebelum achievement dapat ditampilkan."
+          action={
+            canManage ? (
+              <Link
+                href="/dashboard/kpi/setup"
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Buat Periode KPI
+              </Link>
+            ) : undefined
+          }
         />
       ) : (
         <KpiAchievementView

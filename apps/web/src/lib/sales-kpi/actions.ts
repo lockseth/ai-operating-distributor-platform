@@ -6,12 +6,14 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { SupabaseSalesKpiRepository } from "./repository";
 import {
   isSalesKpiCode,
+  validateCalibratedTargetsInput,
   validateSalesKpiPeriodInput,
   validateSalesKpiTargetInput,
 } from "./service";
 import type {
   SalesCallTaskType,
   SalesKpiAchievementProjection,
+  SalesKpiCalibrationBaseline,
   SalesKpiPeriodStatus,
 } from "./types";
 
@@ -463,4 +465,113 @@ export async function getSalesKpiAchievementProjectionAction(
         ? "Periode KPI tidak ditemukan."
         : "Gagal memuat achievement KPI.",
   };
+}
+
+// =============================================================================
+// Owner KPI Setup & Target Calibration.
+// =============================================================================
+
+export interface KpiCalibrationBaselineActionResult {
+  ok: boolean;
+  baseline?: SalesKpiCalibrationBaseline;
+  error?: string;
+}
+
+export async function getKpiCalibrationBaselineAction(
+  periodId: string,
+  salespersonId: string,
+): Promise<KpiCalibrationBaselineActionResult> {
+  const user = await getAuthUser();
+  if (user.isDemo) {
+    return { ok: false, error: "Kalibrasi KPI tidak tersedia pada sesi demo." };
+  }
+  if (!UUID_PATTERN.test(periodId) || !UUID_PATTERN.test(salespersonId)) {
+    return { ok: false, error: "Input tidak valid." };
+  }
+  if (user.id !== salespersonId && !canManageSalesKpi(user)) {
+    return { ok: false, error: "Tidak berwenang melihat baseline KPI Salesman ini." };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.getCalibrationBaseline({
+    companyId: user.company_id,
+    actorId: user.id,
+    periodId,
+    salespersonId,
+  });
+
+  if (result.outcome === "ok") {
+    return { ok: true, baseline: result.baseline };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] get calibration baseline failed", result.error);
+  }
+  return {
+    ok: false,
+    error:
+      result.outcome === "period_not_found"
+        ? "Periode KPI tidak ditemukan."
+        : "Gagal memuat baseline kalibrasi.",
+  };
+}
+
+export interface SetSalesKpiTargetsCalibratedFormInput {
+  periodId: string;
+  salespersonId: string;
+  callTarget: number;
+  ecTarget: number;
+  changeReason: string;
+}
+
+export async function setSalesKpiTargetsCalibratedAction(
+  input: SetSalesKpiTargetsCalibratedFormInput,
+): Promise<SalesKpiActionResult> {
+  const context = await getAuthorizedContext();
+  if (!context.ok) return context.result;
+  if (
+    !UUID_PATTERN.test(input.periodId) ||
+    !UUID_PATTERN.test(input.salespersonId)
+  ) {
+    return { ok: false, outcome: "invalid_input", error: "Input tidak valid." };
+  }
+
+  const validation = validateCalibratedTargetsInput(input);
+  if (validation) {
+    const error =
+      validation === "ec_exceeds_call"
+        ? "Target Effective Call tidak boleh melebihi target Call."
+        : validation === "reason_required"
+          ? "Alasan perubahan wajib diisi (minimal 3 karakter)."
+          : "Target tidak valid.";
+    return { ok: false, outcome: validation, error };
+  }
+
+  const repository = new SupabaseSalesKpiRepository(getAdminClient());
+  const result = await repository.setTargetsCalibrated({
+    companyId: context.user.company_id,
+    actorId: context.user.id,
+    periodId: input.periodId,
+    salespersonId: input.salespersonId,
+    callTarget: input.callTarget,
+    ecTarget: input.ecTarget,
+    changeReason: input.changeReason.trim(),
+  });
+
+  if (result.outcome === "saved") {
+    return { ok: true, outcome: result.outcome, entityId: result.callTargetId };
+  }
+  if (result.outcome === "unexpected_error") {
+    console.error("[SalesKpi] set calibrated targets failed", result.error);
+  }
+  const error =
+    result.outcome === "ec_exceeds_call"
+      ? "Target Effective Call tidak boleh melebihi target Call."
+      : result.outcome === "period_locked"
+        ? "Periode sudah dikunci; target tidak dapat diubah."
+        : result.outcome === "salesperson_not_eligible"
+          ? "Salesman tidak aktif atau bukan anggota tenant ini."
+          : result.outcome === "reason_required"
+            ? "Alasan perubahan wajib diisi."
+            : "Gagal menyimpan target KPI.";
+  return { ok: false, outcome: result.outcome, error };
 }

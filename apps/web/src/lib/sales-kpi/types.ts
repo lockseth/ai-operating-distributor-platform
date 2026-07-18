@@ -266,3 +266,68 @@ export type GetSalesKpiAchievementProjectionResult =
   | { outcome: "ok"; projection: SalesKpiAchievementProjection }
   | { outcome: "forbidden" | "period_not_found" }
   | { outcome: "unexpected_error"; error: string };
+
+// =============================================================================
+// Owner KPI Setup & Target Calibration -- evidence historis (BUKAN prediksi
+// AI/ML) untuk membantu Owner menetapkan target, plus setter gabungan
+// Call+EC dengan aturan silang EC<=Call. Owner tetap pengambil keputusan
+// final; sistem hanya menyajikan baseline.
+// =============================================================================
+
+export interface SalesKpiCalibrationBaseline {
+  salespersonId: string;
+  /** Rentang data historis yang dipakai sebagai evidence (SEBELUM period.startDate). */
+  windowStartDate: string;
+  windowEndDate: string;
+  /** Jumlah hari kalender BERBEDA dengan Call valid tercatat dalam window -- dasar kecukupan data. */
+  observedDays: number;
+  historicalCall: number;
+  historicalEffectiveCall: number;
+  /** null jika historicalCall = 0 (hindari pembagian nol) -- EC Rate murni insight, bukan KPI. */
+  ecRate: number | null;
+  sufficiency: "SUFFICIENT" | "INSUFFICIENT";
+}
+
+export interface GetKpiCalibrationBaselineInput {
+  companyId: string;
+  actorId: string;
+  periodId: string;
+  salespersonId: string;
+}
+
+export type GetKpiCalibrationBaselineResult =
+  | { outcome: "ok"; baseline: SalesKpiCalibrationBaseline }
+  | { outcome: "forbidden" | "period_not_found" }
+  | { outcome: "unexpected_error"; error: string };
+
+export interface SetSalesKpiTargetsCalibratedInput {
+  companyId: string;
+  actorId: string;
+  periodId: string;
+  salespersonId: string;
+  callTarget: number;
+  ecTarget: number;
+  changeReason: string;
+}
+
+export type SetSalesKpiTargetsCalibratedResult =
+  | {
+      outcome: "saved";
+      callTargetId: string;
+      callVersion: number;
+      ecTargetId: string;
+      ecVersion: number;
+    }
+  | {
+      outcome:
+        | "forbidden"
+        | "invalid_call_target"
+        | "invalid_ec_target"
+        | "ec_exceeds_call"
+        | "reason_required"
+        | "period_not_found"
+        | "period_locked"
+        | "salesperson_not_eligible"
+        | "foundation_not_initialized";
+    }
+  | { outcome: "unexpected_error"; error: string };

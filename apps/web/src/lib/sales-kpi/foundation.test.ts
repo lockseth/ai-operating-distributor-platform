@@ -123,7 +123,7 @@ describe("Sales KPI input validation", () => {
     ).toBe("invalid_working_days");
   });
 
-  it("menolak target non-integer/non-positive dan alasan perubahan kosong", () => {
+  it("menolak target non-integer/negatif dan alasan perubahan kosong; target 0 sah (non-negatif, sejak 20260806000001)", () => {
     expect(
       validateSalesKpiTargetInput({
         kpiCode: "CALL",
@@ -134,10 +134,17 @@ describe("Sales KPI input validation", () => {
     expect(
       validateSalesKpiTargetInput({
         kpiCode: "CALL",
-        targetValue: 0,
+        targetValue: -1,
         changeReason: "Target awal",
       }),
     ).toBe("invalid_target");
+    expect(
+      validateSalesKpiTargetInput({
+        kpiCode: "CALL",
+        targetValue: 0,
+        changeReason: "Target awal",
+      }),
+    ).toBeNull();
     expect(
       validateSalesKpiTargetInput({
         kpiCode: "CALL",
