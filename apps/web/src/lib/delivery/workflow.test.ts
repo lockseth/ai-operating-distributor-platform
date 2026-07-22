@@ -407,6 +407,8 @@ describe("Delivery Verification workflow", () => {
       exceptions: [],
       evidence: [],
       recipient: null,
+      deliveryNumber: null,
+      deliveryDate: null,
     };
     const eligibility = computeInvoiceEligibility(fakeDelivery);
     expect(eligibility.items[0]!.eligibleQuantity).toBe(40);

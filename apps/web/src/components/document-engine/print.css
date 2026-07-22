@@ -1,0 +1,162 @@
+/* ============================================================================
+   AODP Document Engine -- print stylesheet.
+   Continuous Form 4 Ply, fisik 9.5in x 11in, dibagi 2 panel horizontal
+   masing-masing 9.5in x 5.5in (BUKAN A4, BUKAN dibagi 3). Empat ply adalah
+   rangkap fisik/carbon copy printer dot matrix -- HANYA 2 panel HTML per
+   halaman, bukan 4.
+   ============================================================================ */
+
+@page {
+  size: 9.5in 11in;
+  margin: 0;
+}
+
+/* Dokumen cetak SELALU putih/hitam, tidak boleh mengikuti dark mode browser/
+   OS/preview tool apa pun (mis. forced-colors, prefers-color-scheme, ekstensi
+   "dark reader") -- color-scheme membatalkan auto-inversion, background/color
+   eksplisit di html/body adalah lapis kedua untuk viewer yang mengabaikan
+   color-scheme. Berlaku di seluruh media (bukan hanya @media print) karena
+   HTML yang sama juga dipakai untuk preview di layar sebelum dicetak. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  color-scheme: light only;
+  background: #fff;
+  color: #000;
+}
+
+.doc-engine-page {
+  width: 9.5in;
+  height: 11in;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  page-break-after: always;
+  break-after: page;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 9pt;
+  background: #fff;
+  color: #000;
+}
+
+/* Satu panel = satu salinan dokumen, 9.5in x 5.5in persis (dua panel = 11in). */
+.doc-engine-panel {
+  width: 9.5in;
+  height: 5.5in;
+  box-sizing: border-box;
+  /* Safe padding -- teks tidak menempel ke perforasi/tepi tractor-feed printer dot matrix. */
+  padding: 0.28in 0.4in;
+  overflow: hidden;
+  page-break-inside: avoid;
+  break-inside: avoid;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-engine-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #000;
+  padding-bottom: 0.06in;
+  margin-bottom: 0.06in;
+}
+
+.doc-engine-logo {
+  max-height: 0.5in;
+  max-width: 1.2in;
+  object-fit: contain;
+  margin-right: 0.1in;
+}
+
+.doc-engine-company-block {
+  display: flex;
+  align-items: flex-start;
+}
+
+.doc-engine-company-name {
+  font-weight: bold;
+  font-size: 10pt;
+}
+
+.doc-engine-doc-meta {
+  text-align: right;
+}
+
+.doc-engine-doc-title {
+  font-weight: bold;
+  font-size: 11pt;
+}
+
+.doc-engine-customer {
+  margin-bottom: 0.06in;
+  line-height: 1.35;
+}
+
+.doc-engine-items {
+  width: 100%;
+  border-collapse: collapse;
+  flex-grow: 1;
+}
+
+.doc-engine-items th,
+.doc-engine-items td {
+  border: 1px solid #000;
+  padding: 0.02in 0.05in;
+  font-size: 8pt;
+  text-align: left;
+}
+
+.doc-engine-items th {
+  font-weight: bold;
+}
+
+.doc-engine-totals {
+  text-align: right;
+  margin-top: 0.05in;
+  line-height: 1.35;
+}
+
+.doc-engine-grand-total {
+  font-weight: bold;
+  font-size: 10pt;
+}
+
+/* Terbilang -- satu-satunya baris tambahan Totals selain Subtotal/Potongan/
+   Total (LOCKED, tanpa DPP/PPN). Kiri, italic, di bawah Grand Total. */
+.doc-engine-terbilang {
+  text-align: left;
+  font-style: italic;
+  margin-top: 0.03in;
+}
+
+.doc-engine-signatures {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 0.12in;
+}
+
+.doc-engine-signature-block {
+  width: 30%;
+  text-align: center;
+}
+
+.doc-engine-signature-line {
+  height: 0.35in;
+  border-bottom: 1px solid #000;
+  margin-bottom: 0.03in;
+}
+
+.doc-engine-signature-role {
+  font-weight: bold;
+}
+
+@media screen {
+  .doc-engine-page {
+    margin: 0 auto 0.2in auto;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+  }
+}

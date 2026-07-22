@@ -28,6 +28,14 @@ export interface ConfirmedOrderItemSnapshot {
   unit: string | null;
   unitPrice: number;
   quantity: number;
+  /**
+   * sales_order_items.discount_amount — kolom NOT NULL DEFAULT 0, jadi
+   * selalu angka nyata dari SupabaseDeliveryRepository (0 = memang tidak ada
+   * diskon, bukan "tidak diketahui"). Optional di sini hanya supaya fixture
+   * test lama (tanpa field ini) tetap type-check -- lihat catatan additive
+   * di getConfirmedOrder di bawah.
+   */
+  discountAmount?: number;
 }
 
 export interface ConfirmedOrderSnapshot {
@@ -37,6 +45,20 @@ export interface ConfirmedOrderSnapshot {
   customerName: string | null;
   status: string;
   items: ConfirmedOrderItemSnapshot[];
+  /**
+   * sales_orders.confirmed_at -- authoritative "order date" (immutable
+   * setelah transisi pertama ke status=confirmed). Null untuk historical
+   * import lama yang tidak pernah lewat transisi confirmed ini -- Document
+   * Engine WAJIB gagal eksplisit untuk kasus tsb, bukan fallback ke
+   * created_at. Optional di sini untuk kompatibilitas fixture test lama.
+   */
+  orderDate?: string | null;
+  /** sales_orders.customer_id -- FK asli (bukan hasil join nama saja). */
+  customerId?: string | null;
+  /** sales_orders.sales_id. Null bila order belum diberi salesman ATAU (defense-in-depth) join users ternyata bukan milik company yang sama -- lihat getConfirmedOrder. */
+  salesmanId?: string | null;
+  /** users.full_name milik salesmanId di atas -- selalu null/isi bersamaan dengan salesmanId. */
+  salesmanName?: string | null;
 }
 
 export type DeliveryConversationAwaiting =
@@ -190,7 +212,7 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
     const { data } = await this.supabase
       .from("sales_orders")
       .select(
-        "id, company_id, order_number, status, customer:customers!customer_id(name), customer_name_raw, items:sales_order_items(id, quantity, unit, unit_price, product_name_raw, product:products!product_id(name))"
+        "id, company_id, order_number, status, confirmed_at, customer_id, customer:customers!customer_id(name), customer_name_raw, sales_id, salesman:users!sales_id(full_name, company_id), items:sales_order_items(id, quantity, unit, unit_price, discount_amount, product_name_raw, product:products!product_id(name))"
       )
       .eq("id", salesOrderId)
       .eq("company_id", companyId)
@@ -202,13 +224,18 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       company_id: string;
       order_number: string;
       status: string;
+      confirmed_at: string | null;
+      customer_id: string | null;
       customer: { name: string } | null;
       customer_name_raw: string | null;
+      sales_id: string | null;
+      salesman: { full_name: string; company_id: string } | null;
       items: {
         id: string;
         quantity: number;
         unit: string | null;
         unit_price: number;
+        discount_amount: number;
         product_name_raw: string | null;
         product: { name: string } | null;
       }[];
@@ -226,8 +253,18 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
         unit: i.unit,
         unitPrice: i.unit_price,
         quantity: await this.getOutstandingQuantity(i.id, null),
+        discountAmount: i.discount_amount,
       }))
     );
+
+    // Defense-in-depth: sales_id -> users FK tidak menegakkan users.company_id
+    // sama dengan sales_orders.company_id di level database. Query ini sudah
+    // tenant-scoped lewat .eq("company_id", companyId) di atas, tapi kalau
+    // suatu saat ada baris salesman lintas tenant (mis. bug di alur lain),
+    // JANGAN pernah membocorkan nama salesman company lain lewat dokumen --
+    // treat sebagai "salesman belum tersedia" (null), bukan throw, karena ini
+    // bukan kesalahan pemanggil dokumen.
+    const salesmanTenantSafe = row.salesman && row.salesman.company_id === row.company_id ? row.salesman : null;
 
     return {
       id: row.id,
@@ -236,6 +273,10 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       customerName: row.customer?.name ?? row.customer_name_raw,
       status: row.status,
       items: itemsWithOutstanding,
+      orderDate: row.confirmed_at,
+      customerId: row.customer_id,
+      salesmanId: salesmanTenantSafe ? row.sales_id : null,
+      salesmanName: salesmanTenantSafe?.full_name ?? null,
     };
   }
 
@@ -340,7 +381,7 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
     const { data } = await this.supabase
       .from("deliveries")
       .select(
-        "id, company_id, sales_order_id, attempt_number, assigned_driver_id, status, " +
+        "id, company_id, sales_order_id, attempt_number, assigned_driver_id, status, delivery_number, delivery_date, " +
           "items:delivery_items(id, sales_order_item_id, ordered_quantity, dispatched_quantity, received_quantity, rejected_quantity, returned_quantity, unresolved_quantity, sales_order_item:sales_order_items!sales_order_item_id(unit_price, unit, product_name_raw, product:products!product_id(name))), " +
           "exceptions:delivery_exceptions(id, reason_code, note, severity, resolution_status, actor_id, created_at, delivery_item_id), " +
           "evidence:delivery_evidence(id, evidence_type, storage_ref, captured_at, latitude, longitude, actor_id, metadata, delivery_item_id), " +
@@ -672,6 +713,8 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
     attempt_number: number;
     assigned_driver_id: string | null;
     status: DeliveryStatus;
+    delivery_number: string | null;
+    delivery_date: string | null;
     items: {
       id: string;
       sales_order_item_id: string;
@@ -730,6 +773,8 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
     attemptNumber: row.attempt_number,
     assignedDriverId: row.assigned_driver_id,
     status: row.status,
+    deliveryNumber: row.delivery_number,
+    deliveryDate: row.delivery_date,
     items,
     exceptions: row.exceptions.map((e) => ({
       id: e.id,
@@ -873,6 +918,8 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
       attemptNumber,
       assignedDriverId: null,
       status: "planned",
+      deliveryNumber: null,
+      deliveryDate: null,
       items: input.items.map((item) => ({
         id: this.nextId("ditem"),
         salesOrderItemId: item.salesOrderItemId,

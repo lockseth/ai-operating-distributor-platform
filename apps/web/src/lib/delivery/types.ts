@@ -125,6 +125,14 @@ export interface DeliveryRecord {
   exceptions: DeliveryExceptionRecord[];
   evidence: DeliveryEvidenceRecord[];
   recipient: RecipientInput | null;
+  /**
+   * Nomor Surat Jalan -- dialokasikan HANYA lewat issue_delivery_note() RPC
+   * (Target 2, migration 20260812000001), sebelum dispatch. NULL untuk
+   * delivery yang belum diterbitkan/historis. Immutable setelah terisi.
+   */
+  deliveryNumber: string | null;
+  /** Tanggal bisnis Asia/Jakarta saat Surat Jalan diterbitkan -- lihat deliveryNumber. NULL bila belum diterbitkan. */
+  deliveryDate: string | null;
 }
 
 /** Per-item outcome yang dicatat driver saat outcome bukan "full". */
