@@ -18,7 +18,7 @@ function baseInput(overrides: Partial<CreateSalesmanInput> = {}): CreateSalesman
     email: "budi.santoso@waluyo.test",
     phone: "0812-3456-7890",
     tempPassword: "Passw0rd123",
-    areas: ["Cirebon Timur"],
+    areaIds: ["Cirebon Timur"],
     ...overrides,
   };
 }
@@ -87,7 +87,7 @@ describe("createSalesman — tenant isolation", () => {
         companyId: COMPANY_B,
         actorId: ACTOR_B,
         email: "b@waluyo.test",
-        areas: ["Bandung Utara"],
+        areaIds: ["Bandung Utara"],
       })
     );
     expect(resultA.outcome).toBe("created");
@@ -167,7 +167,7 @@ describe("createSalesman — kegagalan parsial tidak meninggalkan data yatim", (
 
   it("area tidak valid saat create -> seluruh salesman di-rollback, tidak ada assignment yatim", async () => {
     const repo = repoWithAreas();
-    const result = await createSalesman(repo, baseInput({ areas: ["Wilayah Tidak Terdaftar"] }));
+    const result = await createSalesman(repo, baseInput({ areaIds: ["Wilayah Tidak Terdaftar"] }));
     expect(result.outcome).toBe("invalid_area");
     expect(repo.totalUsers()).toBe(0);
     expect(repo.hasAnyOrphanRole()).toBe(false);
@@ -185,7 +185,7 @@ describe("createSalesman — kegagalan parsial tidak meninggalkan data yatim", (
 describe("createSalesman — coverage area saat pembuatan", () => {
   it("assign satu area", async () => {
     const repo = repoWithAreas();
-    const result = await createSalesman(repo, baseInput({ areas: ["Cirebon Kota"] }));
+    const result = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Kota"] }));
     expect(result.outcome).toBe("created");
     if (result.outcome === "created") {
       expect(repo.getCoverageAreasFor(COMPANY_A, result.userId)).toEqual(["Cirebon Kota"]);
@@ -196,7 +196,7 @@ describe("createSalesman — coverage area saat pembuatan", () => {
     const repo = repoWithAreas();
     const result = await createSalesman(
       repo,
-      baseInput({ areas: ["Cirebon Kota", "Cirebon Barat"] })
+      baseInput({ areaIds: ["Cirebon Kota", "Cirebon Barat"] })
     );
     expect(result.outcome).toBe("created");
     if (result.outcome === "created") {
@@ -208,7 +208,7 @@ describe("createSalesman — coverage area saat pembuatan", () => {
 
   it("tidak ada area dipilih -> ditolak eksplisit (no_areas_provided)", async () => {
     const repo = repoWithAreas();
-    const result = await createSalesman(repo, baseInput({ areas: [] }));
+    const result = await createSalesman(repo, baseInput({ areaIds: [] }));
     expect(result.outcome).toBe("no_areas_provided");
     expect(repo.totalUsers()).toBe(0);
   });
@@ -224,7 +224,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_B, // actor B mencoba lewat company_id miliknya sendiri
       userId: created.userId, // tapi target adalah salesman company A
-      areas: ["Cirebon Kota"],
+      areaIds: ["Cirebon Kota"],
       actorId: ACTOR_B,
     });
     expect(result.outcome).toBe("not_eligible");
@@ -239,7 +239,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Cirebon Kota"],
+      areaIds: ["Cirebon Kota"],
       actorId: "random-unauthorized-id",
     });
     expect(result.outcome).toBe("forbidden");
@@ -248,13 +248,13 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
   describe("Owner Control Plane (corrective closure): hanya role 'owner' yang berwenang mengubah wilayah", () => {
     it("owner tenant sendiri berhasil mengubah wilayah Salesman-nya", async () => {
       const repo = repoWithAreas();
-      const created = await createSalesman(repo, baseInput({ areas: ["Cirebon Timur"] }));
+      const created = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Timur"] }));
       if (created.outcome !== "created") throw new Error("setup failed");
 
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: ACTOR_A, // seeded sebagai "owner" oleh repoWithAreas()
       });
       expect(result.outcome).toBe("assigned");
@@ -270,7 +270,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: "actor-sales",
       });
       expect(result.outcome).toBe("forbidden");
@@ -285,7 +285,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: "actor-manager",
       });
       expect(result.outcome).toBe("forbidden");
@@ -301,7 +301,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: "actor-admin",
       });
       expect(result.outcome).toBe("forbidden");
@@ -316,7 +316,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: "actor-super-admin",
       });
       expect(result.outcome).toBe("forbidden");
@@ -331,7 +331,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       const result = await repo.assignCoverageAreas({
         companyId: COMPANY_A,
         userId: created.userId,
-        areas: ["Cirebon Kota"],
+        areaIds: ["Cirebon Kota"],
         actorId: "owner-tenant-b",
       });
       expect(result.outcome).toBe("forbidden");
@@ -345,7 +345,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: ACTOR_A, // target adalah owner, bukan salesman
-      areas: ["Cirebon Kota"],
+      areaIds: ["Cirebon Kota"],
       actorId: ACTOR_A,
     });
     expect(result.outcome).toBe("not_eligible");
@@ -359,7 +359,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Jakarta Pusat"],
+      areaIds: ["Jakarta Pusat"],
       actorId: ACTOR_A,
     });
     expect(result.outcome).toBe("invalid_area");
@@ -375,7 +375,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Cirebon Kota", "Cirebon Kota", "Cirebon Barat"],
+      areaIds: ["Cirebon Kota", "Cirebon Kota", "Cirebon Barat"],
       actorId: ACTOR_A,
     });
     expect(result.outcome).toBe("assigned");
@@ -387,19 +387,19 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
 
   it("memanggil ulang dengan wilayah yang sama bersifat idempotent (replace, bukan tambah)", async () => {
     const repo = repoWithAreas();
-    const created = await createSalesman(repo, baseInput({ areas: ["Cirebon Timur"] }));
+    const created = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Timur"] }));
     if (created.outcome !== "created") throw new Error("setup failed");
 
     await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Cirebon Timur"],
+      areaIds: ["Cirebon Timur"],
       actorId: ACTOR_A,
     });
     await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Cirebon Timur"],
+      areaIds: ["Cirebon Timur"],
       actorId: ACTOR_A,
     });
     expect(repo.getCoverageAreasFor(COMPANY_A, created.userId)).toEqual(["Cirebon Timur"]);
@@ -407,13 +407,13 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
 
   it("audit tercatat untuk perubahan assignment", async () => {
     const repo = repoWithAreas();
-    const created = await createSalesman(repo, baseInput({ areas: ["Cirebon Timur"] }));
+    const created = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Timur"] }));
     if (created.outcome !== "created") throw new Error("setup failed");
 
     await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: created.userId,
-      areas: ["Cirebon Kota"],
+      areaIds: ["Cirebon Kota"],
       actorId: ACTOR_A,
     });
 
@@ -459,7 +459,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     const result = await repo.assignCoverageAreas({
       companyId: COMPANY_A,
       userId: authResult.userId,
-      areas: ["Cirebon Timur"],
+      areaIds: ["Cirebon Timur"],
       actorId: ACTOR_A,
     });
     expect(result.outcome).toBe("no_coverage_configured");

@@ -64,7 +64,7 @@ export async function createSalesman(
   const areaResult = await repo.assignCoverageAreas({
     companyId: input.companyId,
     userId: authResult.userId,
-    areas: input.areas,
+    areaIds: input.areaIds,
     actorId: input.actorId,
   });
   if (areaResult.outcome !== "assigned") {

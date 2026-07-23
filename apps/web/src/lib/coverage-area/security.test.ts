@@ -43,4 +43,38 @@ describe("Coverage area creation security contracts (Owner Control Gate 1A)", ()
     expect(signature).not.toMatch(/actor_?id/i);
     expect(signature).not.toMatch(/\brole\b/i);
   });
+
+  it("updateCoverageAreaAction (edit nama/keterangan) diproteksi owner-only, actor/company dari sesi", () => {
+    const start = actions.indexOf("export async function updateCoverageAreaAction");
+    const body = actions.slice(start, start + 1200);
+    expect(body).toContain("getAuthUser()");
+    expect(body).toContain("isOwnerActor(user)");
+    expect(body).toContain("user.isDemo");
+    expect(body.indexOf("getAuthUser()")).toBeLessThan(body.indexOf("getAdminClient()"));
+    expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
+
+    const callStart = actions.indexOf("repo.updateArea({", start);
+    const callBody = actions.slice(callStart, callStart + 300);
+    expect(callBody).toContain("companyId: user.company_id");
+    expect(callBody).toContain("actorId: user.id");
+  });
+
+  it("setCoverageAreaActiveStatusAction (aktifkan/nonaktifkan) diproteksi owner-only, actor/company dari sesi", () => {
+    const start = actions.indexOf("export async function setCoverageAreaActiveStatusAction");
+    const body = actions.slice(start, start + 1200);
+    expect(body).toContain("getAuthUser()");
+    expect(body).toContain("isOwnerActor(user)");
+    expect(body).toContain("user.isDemo");
+    expect(body.indexOf("getAuthUser()")).toBeLessThan(body.indexOf("getAdminClient()"));
+    expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
+
+    const callStart = actions.indexOf("repo.setActiveStatus({", start);
+    const callBody = actions.slice(callStart, callStart + 300);
+    expect(callBody).toContain("companyId: user.company_id");
+    expect(callBody).toContain("actorId: user.id");
+  });
+
+  it("tidak ada RPC/kode yang melakukan hard-delete wilayah (hanya aktif/nonaktif)", () => {
+    expect(actions).not.toMatch(/delete_coverage_area|deleteCoverageArea|DELETE FROM.*coverage_areas/i);
+  });
 });

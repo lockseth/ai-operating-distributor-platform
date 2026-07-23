@@ -6,7 +6,12 @@ import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Plus } from "lucide-re
 import { createSalesmanAction } from "@/lib/salesman/actions";
 import { createCoverageAreaAction } from "@/lib/coverage-area/actions";
 
-export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAreas: string[] }) {
+export interface CoverageAreaOption {
+  id: string;
+  name: string;
+}
+
+export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAreas: CoverageAreaOption[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -17,9 +22,9 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [tempPassword, setTempPassword] = useState("");
-  const [areas, setAreas] = useState<string[]>([]);
+  const [areaIds, setAreaIds] = useState<string[]>([]);
 
-  const [availableAreas, setAvailableAreas] = useState<string[]>(initialAreas);
+  const [availableAreas, setAvailableAreas] = useState<CoverageAreaOption[]>(initialAreas);
   const [showAreaForm, setShowAreaForm] = useState(false);
   const [newAreaName, setNewAreaName] = useState("");
   const [newAreaDescription, setNewAreaDescription] = useState("");
@@ -27,8 +32,8 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
   const [areaFeedback, setAreaFeedback] = useState<string | null>(null);
   const [isAreaPending, startAreaTransition] = useTransition();
 
-  function toggleArea(area: string) {
-    setAreas((prev) => (prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]));
+  function toggleArea(areaId: string) {
+    setAreaIds((prev) => (prev.includes(areaId) ? prev.filter((a) => a !== areaId) : [...prev, areaId]));
   }
 
   function handleAddArea() {
@@ -41,18 +46,17 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
 
     startAreaTransition(async () => {
       const result = await createCoverageAreaAction(trimmedName, newAreaDescription);
-      if (!result.ok) {
+      if (!result.ok || !result.area) {
         setAreaError(result.error ?? "Gagal menambahkan wilayah.");
         return;
       }
-      setAvailableAreas(result.areas ?? availableAreas);
-      if (result.createdArea) {
-        setAreas((prev) => (prev.includes(result.createdArea!) ? prev : [...prev, result.createdArea!]));
-      }
+      const created = result.area;
+      setAvailableAreas((prev) => [...prev, { id: created.id, name: created.name }]);
+      setAreaIds((prev) => (prev.includes(created.id) ? prev : [...prev, created.id]));
       setNewAreaName("");
       setNewAreaDescription("");
       setShowAreaForm(false);
-      setAreaFeedback(`Wilayah "${result.createdArea}" berhasil ditambahkan dan otomatis dipilih.`);
+      setAreaFeedback(`Wilayah "${created.name}" berhasil ditambahkan dan otomatis dipilih.`);
     });
   }
 
@@ -68,7 +72,7 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
       setError("Password sementara minimal 8 karakter.");
       return;
     }
-    if (areas.length === 0) {
+    if (areaIds.length === 0) {
       setError("Pilih minimal satu wilayah kerja.");
       return;
     }
@@ -79,7 +83,7 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
         email: email.trim(),
         phone: phone.trim(),
         tempPassword,
-        areas,
+        areaIds,
       });
       if (!result.ok) {
         setError(result.error ?? "Gagal membuat Salesman.");
@@ -204,12 +208,12 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
         ) : (
           <div className="flex flex-wrap gap-2">
             {availableAreas.map((area) => {
-              const active = areas.includes(area);
+              const active = areaIds.includes(area.id);
               return (
                 <button
-                  key={area}
+                  key={area.id}
                   type="button"
-                  onClick={() => toggleArea(area)}
+                  onClick={() => toggleArea(area.id)}
                   aria-pressed={active}
                   className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     active
@@ -217,7 +221,7 @@ export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAre
                       : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
                   }`}
                 >
-                  {area}
+                  {area.name}
                 </button>
               );
             })}

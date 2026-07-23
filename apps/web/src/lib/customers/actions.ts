@@ -15,7 +15,8 @@ export interface CustomerFormData {
   email: string | null;
   address: string | null;
   city: string | null;
-  area: string | null;
+  /** Wilayah Penjualan resmi (FK coverage_areas.id) — bukan customers.area (free text lama). */
+  coverage_area_id: string | null;
   assigned_sales_id: string | null;
   notes: string | null;
   is_active: boolean;
@@ -40,7 +41,7 @@ export async function createCustomerAction(data: CustomerFormData): Promise<void
       email:             data.email || null,
       address:           data.address || null,
       city:              data.city || null,
-      area:              data.area || null,
+      coverage_area_id:  data.coverage_area_id || null,
       assigned_sales_id: data.assigned_sales_id || null,
       notes:             data.notes || null,
       is_active:         true,
@@ -58,7 +59,7 @@ export async function createCustomerAction(data: CustomerFormData): Promise<void
     action:      "customer.create",
     entity_type: "customers",
     entity_id:   inserted.id,
-    new_data:    { name: data.name, code: data.code, type: data.type },
+    new_data:    { name: data.name, code: data.code, type: data.type, coverage_area_id: data.coverage_area_id },
   }).catch(() => {});
 
   revalidatePath("/dashboard/customers");
@@ -86,7 +87,7 @@ export async function updateCustomerAction(
       email:             data.email || null,
       address:           data.address || null,
       city:              data.city || null,
-      area:              data.area || null,
+      coverage_area_id:  data.coverage_area_id || null,
       assigned_sales_id: data.assigned_sales_id || null,
       notes:             data.notes || null,
       is_active:         data.is_active,
@@ -104,7 +105,7 @@ export async function updateCustomerAction(
     entity_type: "customers",
     entity_id:   customerId,
     old_data:    oldData as Record<string, unknown>,
-    new_data:    { name: data.name, code: data.code, is_active: data.is_active },
+    new_data:    { name: data.name, code: data.code, is_active: data.is_active, coverage_area_id: data.coverage_area_id },
   }).catch(() => {});
 
   revalidatePath("/dashboard/customers");

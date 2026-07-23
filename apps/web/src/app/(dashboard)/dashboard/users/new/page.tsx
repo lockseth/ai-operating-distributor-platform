@@ -10,13 +10,6 @@ export const metadata = { title: "Tambah Salesman — AODP" };
 
 const MANAGE_ROLES = ["owner", "manager", "admin", "super_admin"];
 
-function extractCoverageAreas(settings: unknown): string[] {
-  if (!settings || typeof settings !== "object") return [];
-  const raw = (settings as Record<string, unknown>).coverage_areas;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((a): a is string => typeof a === "string" && a.trim().length > 0);
-}
-
 export default async function NewSalesmanPage() {
   const user = await getAuthUser();
 
@@ -32,12 +25,16 @@ export default async function NewSalesmanPage() {
   if (!canManage || !isOwner) redirect("/dashboard/users");
 
   const supabase = await createClient();
-  const { data: companyRow } = await supabase
-    .from("companies")
-    .select("settings")
-    .eq("id", user.company_id)
-    .maybeSingle();
-  const availableAreas = extractCoverageAreas((companyRow as { settings?: unknown } | null)?.settings);
+  // Hanya wilayah AKTIF yang boleh dipilih untuk assignment baru (master
+  // coverage_areas, migration 20260816000001) -- salesman baru belum punya
+  // assignment existing yang perlu dipertahankan.
+  const { data: areaRows } = await supabase
+    .from("coverage_areas")
+    .select("id, name")
+    .eq("company_id", user.company_id)
+    .eq("is_active", true)
+    .order("name");
+  const availableAreas = (areaRows ?? []) as { id: string; name: string }[];
 
   return (
     <div className="mx-auto max-w-lg p-6">

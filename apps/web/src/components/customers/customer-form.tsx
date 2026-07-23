@@ -5,10 +5,12 @@ import { Loader2, AlertCircle } from "lucide-react";
 import type { CustomerFormData } from "@/lib/customers/actions";
 
 interface SalesUser { id: string; full_name: string; }
+interface CoverageAreaOption { id: string; name: string; isActive: boolean; }
 
 interface CustomerFormProps {
   initialData?: CustomerFormData;
   salesUsers: SalesUser[];
+  coverageAreas: CoverageAreaOption[];
   action: (data: CustomerFormData) => Promise<void>;
   submitLabel?: string;
   cancelHref?: string;
@@ -24,6 +26,7 @@ const CUSTOMER_TYPES = [
 export function CustomerForm({
   initialData,
   salesUsers,
+  coverageAreas,
   action,
   submitLabel = "Simpan",
   cancelHref,
@@ -39,7 +42,7 @@ export function CustomerForm({
   const [email,           setEmail]           = useState(initialData?.email ?? "");
   const [address,         setAddress]         = useState(initialData?.address ?? "");
   const [city,            setCity]            = useState(initialData?.city ?? "");
-  const [area,            setArea]            = useState(initialData?.area ?? "");
+  const [coverageAreaId,  setCoverageAreaId]  = useState(initialData?.coverage_area_id ?? "");
   const [assignedSalesId, setAssignedSalesId] = useState(initialData?.assigned_sales_id ?? "");
   const [notes,           setNotes]           = useState(initialData?.notes ?? "");
   const [isActive,        setIsActive]        = useState(initialData?.is_active ?? true);
@@ -59,7 +62,7 @@ export function CustomerForm({
       email:             email.trim() || null,
       address:           address.trim() || null,
       city:              city.trim() || null,
-      area:              area.trim() || null,
+      coverage_area_id:  coverageAreaId || null,
       assigned_sales_id: assignedSalesId || null,
       notes:             notes.trim() || null,
       is_active:         isActive,
@@ -152,14 +155,22 @@ export function CustomerForm({
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={labelCls}>Kota</label>
+            <label className={labelCls}>Kota / Kabupaten</label>
             <input type="text" value={city} onChange={(e) => setCity(e.target.value)}
               placeholder="Surabaya" className={inputCls} />
+            <p className="mt-1 text-xs text-gray-400">Data alamat — terpisah dari Wilayah Penjualan.</p>
           </div>
           <div>
-            <label className={labelCls}>Area / Wilayah</label>
-            <input type="text" value={area} onChange={(e) => setArea(e.target.value)}
-              placeholder="Surabaya Barat" className={inputCls} />
+            <label className={labelCls}>Wilayah Penjualan</label>
+            <select value={coverageAreaId} onChange={(e) => setCoverageAreaId(e.target.value)} className={inputCls}>
+              <option value="">— Belum ditetapkan —</option>
+              {coverageAreas.map((a) => (
+                <option key={a.id} value={a.id} disabled={!a.isActive && a.id !== initialData?.coverage_area_id}>
+                  {a.name}{!a.isActive ? " (nonaktif)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">Master resmi dari Owner Control → Wilayah Penjualan.</p>
           </div>
         </div>
       </div>

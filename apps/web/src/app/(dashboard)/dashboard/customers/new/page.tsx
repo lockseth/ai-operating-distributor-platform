@@ -19,15 +19,28 @@ export default async function NewCustomerPage() {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("users")
-    .select("id, full_name")
-    .eq("company_id", user.company_id)
-    .eq("is_active", true)
-    .contains("roles", ["sales"])
-    .order("full_name");
+  const [{ data }, { data: areaRows }] = await Promise.all([
+    supabase
+      .from("users")
+      .select("id, full_name")
+      .eq("company_id", user.company_id)
+      .eq("is_active", true)
+      .contains("roles", ["sales"])
+      .order("full_name"),
+    supabase
+      .from("coverage_areas")
+      .select("id, name, is_active")
+      .eq("company_id", user.company_id)
+      .eq("is_active", true)
+      .order("name"),
+  ]);
 
   const salesUsers = (data ?? []) as unknown as SalesUser[];
+  const coverageAreas = ((areaRows ?? []) as { id: string; name: string; is_active: boolean }[]).map((a) => ({
+    id: a.id,
+    name: a.name,
+    isActive: a.is_active,
+  }));
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -45,6 +58,7 @@ export default async function NewCustomerPage() {
 
       <CustomerForm
         salesUsers={salesUsers}
+        coverageAreas={coverageAreas}
         action={createCustomerAction}
         submitLabel="Simpan Pelanggan"
         cancelHref="/dashboard/customers"

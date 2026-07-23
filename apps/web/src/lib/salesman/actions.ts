@@ -30,7 +30,7 @@ export interface CreateSalesmanFormInput {
   email: string;
   phone: string;
   tempPassword: string;
-  areas: string[];
+  areaIds: string[];
 }
 
 export interface CreateSalesmanActionResult {
@@ -66,7 +66,7 @@ export async function createSalesmanAction(
     email: input.email.trim().toLowerCase(),
     phone: input.phone?.trim() || null,
     tempPassword: input.tempPassword,
-    areas: input.areas ?? [],
+    areaIds: input.areaIds ?? [],
   });
 
   if (result.outcome === "created") {
@@ -105,7 +105,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 /** Mengubah (replace penuh) wilayah kerja satu Salesman existing. Idempotent — memanggil ulang dengan wilayah yang sama tidak menghasilkan efek tambahan. */
 export async function updateSalesmanCoverageAreasAction(
   salesmanId: string,
-  areas: string[]
+  areaIds: string[]
 ): Promise<UpdateCoverageAreasActionResult> {
   const user = await getAuthUser();
 
@@ -123,7 +123,7 @@ export async function updateSalesmanCoverageAreasAction(
   const result = await repo.assignCoverageAreas({
     companyId: user.company_id,
     userId: salesmanId,
-    areas,
+    areaIds,
     actorId: user.id,
   });
 

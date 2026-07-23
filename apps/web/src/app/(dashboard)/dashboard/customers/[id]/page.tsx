@@ -42,7 +42,6 @@ interface Customer {
   email: string | null;
   address: string | null;
   city: string | null;
-  area: string | null;
   is_active: boolean;
   last_order_at: string | null;
   avg_order_interval_days: number | null;
@@ -52,6 +51,7 @@ interface Customer {
   updated_at: string;
   assigned_sales: { full_name: string } | null;
   creator: { full_name: string } | null;
+  coverage_area: { name: string; is_active: boolean } | null;
 }
 
 export default async function CustomerDetailPage({
@@ -67,7 +67,9 @@ export default async function CustomerDetailPage({
   const supabase = await createClient();
   const { data } = await supabase
     .from("customers")
-    .select("*, assigned_sales:users!assigned_sales_id(full_name), creator:users!created_by(full_name)")
+    .select(
+      "*, assigned_sales:users!assigned_sales_id(full_name), creator:users!created_by(full_name), coverage_area:coverage_areas(name, is_active)"
+    )
     .eq("id", id)
     .eq("company_id", user.company_id)
     .single();
@@ -261,13 +263,33 @@ export default async function CustomerDetailPage({
             </div>
           </div>
 
-          {/* Kota & Area */}
+          {/* Kota */}
           <div className="flex items-start gap-2">
             <MapPin className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">Kota / Area</p>
+              <p className="text-xs text-gray-500 mb-0.5">Kota / Kabupaten</p>
               <p className="text-sm text-gray-900">
-                {[customer.city, customer.area].filter(Boolean).join(" · ") || <span className="text-gray-400">—</span>}
+                {customer.city ?? <span className="text-gray-400">—</span>}
+              </p>
+            </div>
+          </div>
+
+          {/* Wilayah Penjualan (master coverage_areas — terpisah dari Kota) */}
+          <div className="flex items-start gap-2">
+            <MapPin className="h-4 w-4 text-gray-400 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs text-gray-500 mb-0.5">Wilayah Penjualan</p>
+              <p className="text-sm text-gray-900">
+                {customer.coverage_area ? (
+                  <>
+                    {customer.coverage_area.name}
+                    {!customer.coverage_area.is_active && (
+                      <span className="ml-1 text-xs text-gray-400">(nonaktif)</span>
+                    )}
+                  </>
+                ) : (
+                  <span className="text-gray-400">Belum ditetapkan</span>
+                )}
               </p>
             </div>
           </div>

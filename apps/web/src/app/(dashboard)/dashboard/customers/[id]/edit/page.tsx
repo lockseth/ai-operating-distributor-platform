@@ -21,7 +21,7 @@ interface Customer {
   email: string | null;
   address: string | null;
   city: string | null;
-  area: string | null;
+  coverage_area_id: string | null;
   assigned_sales_id: string | null;
   notes: string | null;
   is_active: boolean;
@@ -42,10 +42,10 @@ export default async function EditCustomerPage({
 
   const supabase = await createClient();
 
-  const [customerResult, salesResult] = await Promise.all([
+  const [customerResult, salesResult, areaResult] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, code, name, type, phone, email, address, city, area, assigned_sales_id, notes, is_active, custom_fields")
+      .select("id, code, name, type, phone, email, address, city, coverage_area_id, assigned_sales_id, notes, is_active, custom_fields")
       .eq("id", id)
       .eq("company_id", user.company_id)
       .single(),
@@ -57,12 +57,27 @@ export default async function EditCustomerPage({
       .eq("is_active", true)
       .contains("roles", ["sales"])
       .order("full_name"),
+
+    // Aktif + wilayah yang sedang di-assign (walau sudah nonaktif) supaya
+    // histori tetap terlihat -- tidak boleh dipilih ulang bila bukan yang
+    // sedang aktif dipakai (lihat disabled di CustomerForm).
+    supabase
+      .from("coverage_areas")
+      .select("id, name, is_active")
+      .eq("company_id", user.company_id)
+      .order("name"),
   ]);
 
   if (!customerResult.data) notFound();
 
   const customer   = customerResult.data as unknown as Customer;
   const salesUsers = (salesResult.data ?? []) as unknown as SalesUser[];
+  const allAreas = ((areaResult.data ?? []) as { id: string; name: string; is_active: boolean }[]).map((a) => ({
+    id: a.id,
+    name: a.name,
+    isActive: a.is_active,
+  }));
+  const coverageAreas = allAreas.filter((a) => a.isActive || a.id === customer.coverage_area_id);
 
   const initialData: CustomerFormData = {
     name:              customer.name,
@@ -72,7 +87,7 @@ export default async function EditCustomerPage({
     email:             customer.email,
     address:           customer.address,
     city:              customer.city,
-    area:              customer.area,
+    coverage_area_id:  customer.coverage_area_id,
     assigned_sales_id: customer.assigned_sales_id,
     notes:             customer.notes,
     is_active:         customer.is_active,
@@ -81,6 +96,7 @@ export default async function EditCustomerPage({
 
   const oldData: Partial<CustomerFormData> = {
     name: customer.name, code: customer.code, is_active: customer.is_active,
+    coverage_area_id: customer.coverage_area_id,
   };
   const boundAction = updateCustomerAction.bind(null, id, oldData);
 
@@ -104,6 +120,7 @@ export default async function EditCustomerPage({
       <CustomerForm
         initialData={initialData}
         salesUsers={salesUsers}
+        coverageAreas={coverageAreas}
         action={boundAction}
         submitLabel="Simpan Perubahan"
         cancelHref={`/dashboard/customers/${id}`}

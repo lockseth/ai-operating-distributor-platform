@@ -40,8 +40,6 @@ export interface CustomerPicRepository {
 
   /** Wilayah yang DITUGASKAN ke seorang Salesman (bukan seluruh daftar tenant). */
   getSalesmanCoverageAreas(companyId: string, userId: string): Promise<string[]>;
-  /** Seluruh wilayah valid milik tenant (companies.settings.coverage_areas). */
-  getTenantCoverageAreas(companyId: string): Promise<string[]>;
   /** Role utama actor pada company (untuk keputusan area mana yang boleh dipilih di percakapan). */
   getActorRole(companyId: string, userId: string): Promise<string | null>;
   /**
@@ -234,13 +232,6 @@ export class SupabaseCustomerPicRepository implements CustomerPicRepository {
       .eq("company_id", companyId)
       .eq("user_id", userId);
     return ((data ?? []) as { area: string }[]).map((r) => r.area);
-  }
-
-  async getTenantCoverageAreas(companyId: string): Promise<string[]> {
-    const { data } = await this.supabase.from("companies").select("settings").eq("id", companyId).maybeSingle();
-    const settings = (data as { settings?: Record<string, unknown> } | null)?.settings;
-    const areas = settings?.coverage_areas;
-    return Array.isArray(areas) ? areas.filter((a): a is string => typeof a === "string") : [];
   }
 
   async getActorRole(companyId: string, userId: string): Promise<string | null> {
@@ -682,10 +673,6 @@ export class InMemoryCustomerPicRepository implements CustomerPicRepository {
 
   async getSalesmanCoverageAreas(companyId: string, userId: string): Promise<string[]> {
     return [...(this.salesmenCoverage.get(`${companyId}:${userId}`) ?? [])];
-  }
-
-  async getTenantCoverageAreas(companyId: string): Promise<string[]> {
-    return this.tenantAreas.get(companyId) ?? [];
   }
 
   async getActorRole(companyId: string, userId: string): Promise<string | null> {

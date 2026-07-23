@@ -16,8 +16,8 @@ export interface CreateSalesmanInput {
   email: string;
   phone: string | null;
   tempPassword: string;
-  /** Wilayah kerja — wajib anggota companies.settings.coverage_areas tenant. Minimal satu. */
-  areas: string[];
+  /** Wilayah kerja — wajib coverage_area_id anggota master coverage_areas tenant. Minimal satu. */
+  areaIds: string[];
 }
 
 export type CreateSalesmanResult =

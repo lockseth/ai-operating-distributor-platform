@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
-import { UserPlus } from "lucide-react";
+import { UserPlus, MapPin } from "lucide-react";
 import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollment-control";
 import { resolveSalesmanTelegramStatus } from "@/lib/salesman/status";
 import { SalesmanCoverageControl } from "@/components/users/salesman-coverage-control";
@@ -54,17 +54,10 @@ type PendingTokenRow = {
   revoked_at: string | null;
 };
 
-type CoverageAreaRow = {
+type SalesmanCoverageRow = {
   user_id: string;
-  area: string;
+  coverage_area_id: string | null;
 };
-
-function extractCoverageAreas(settings: unknown): string[] {
-  if (!settings || typeof settings !== "object") return [];
-  const raw = (settings as Record<string, unknown>).coverage_areas;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((a): a is string => typeof a === "string" && a.trim().length > 0);
-}
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("id-ID", {
@@ -151,24 +144,25 @@ export default async function UsersPage() {
     ((pendingTokenData ?? []) as PendingTokenRow[]).map((t) => [t.user_id, t]),
   );
 
-  const { data: companyRow } = await supabase
-    .from("companies")
-    .select("settings")
-    .eq("id", user.company_id)
-    .maybeSingle();
-  const availableAreas = extractCoverageAreas((companyRow as { settings?: unknown } | null)?.settings);
+  const { data: areaRows } = await supabase
+    .from("coverage_areas")
+    .select("id, name, is_active")
+    .eq("company_id", user.company_id)
+    .order("name");
+  const allAreas = (areaRows ?? []) as { id: string; name: string; is_active: boolean }[];
 
   const { data: coverageData } = canManageTelegram
     ? await supabase
         .from("salesman_coverage_areas")
-        .select("user_id, area")
+        .select("user_id, coverage_area_id")
         .eq("company_id", user.company_id)
     : { data: [] };
-  const areasByUser = new Map<string, string[]>();
-  for (const row of (coverageData ?? []) as CoverageAreaRow[]) {
-    const list = areasByUser.get(row.user_id) ?? [];
-    list.push(row.area);
-    areasByUser.set(row.user_id, list);
+  const areaIdsByUser = new Map<string, string[]>();
+  for (const row of (coverageData ?? []) as SalesmanCoverageRow[]) {
+    if (!row.coverage_area_id) continue;
+    const list = areaIdsByUser.get(row.user_id) ?? [];
+    list.push(row.coverage_area_id);
+    areaIdsByUser.set(row.user_id, list);
   }
 
   return (
@@ -177,6 +171,15 @@ export default async function UsersPage() {
         title="Pengguna"
         subtitle={`${users.length} pengguna terdaftar di perusahaan ini`}
       >
+        {isOwner ? (
+          <Link
+            href="/dashboard/owner/coverage-areas"
+            className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            <MapPin className="h-4 w-4" />
+            Kelola Wilayah
+          </Link>
+        ) : null}
         {canManageTelegram ? (
           <Link
             href="/dashboard/users/new"
@@ -306,8 +309,8 @@ export default async function UsersPage() {
                         isOwner ? (
                           <SalesmanCoverageControl
                             salesmanId={u.id}
-                            availableAreas={availableAreas}
-                            assignedAreas={areasByUser.get(u.id) ?? []}
+                            allAreas={allAreas.map((a) => ({ id: a.id, name: a.name, isActive: a.is_active }))}
+                            assignedAreaIds={areaIdsByUser.get(u.id) ?? []}
                           />
                         ) : (
                           <span className="text-xs text-gray-400">Akses diperlukan</span>

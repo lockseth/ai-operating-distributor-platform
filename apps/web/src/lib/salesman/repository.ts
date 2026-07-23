@@ -37,7 +37,7 @@ export interface SalesmanRepository {
   assignCoverageAreas(input: {
     companyId: string;
     userId: string;
-    areas: string[];
+    areaIds: string[];
     actorId: string;
   }): Promise<AssignCoverageAreasResult>;
 }
@@ -119,13 +119,13 @@ export class SupabaseSalesmanRepository implements SalesmanRepository {
   async assignCoverageAreas(input: {
     companyId: string;
     userId: string;
-    areas: string[];
+    areaIds: string[];
     actorId: string;
   }): Promise<AssignCoverageAreasResult> {
     const { data, error } = await this.supabase.rpc("assign_salesman_coverage_areas", {
       p_company_id: input.companyId,
       p_user_id: input.userId,
-      p_areas: input.areas,
+      p_area_ids: input.areaIds,
       p_actor_id: input.actorId,
     });
 
@@ -217,9 +217,9 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
     this.actorRoles.push({ userId, companyId, roleName });
   }
 
-  /** Simulasi companies.settings.coverage_areas milik satu tenant. */
-  setTenantCoverageAreas(companyId: string, areas: string[]): void {
-    this.tenantCoverageAreas.set(companyId, areas);
+  /** Simulasi daftar coverage_area_id valid (master coverage_areas) milik satu tenant. */
+  setTenantCoverageAreas(companyId: string, areaIds: string[]): void {
+    this.tenantCoverageAreas.set(companyId, areaIds);
   }
 
   getCoverageAreasFor(companyId: string, userId: string): string[] {
@@ -294,7 +294,7 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
   async assignCoverageAreas(input: {
     companyId: string;
     userId: string;
-    areas: string[];
+    areaIds: string[];
     actorId: string;
   }): Promise<AssignCoverageAreasResult> {
     const actorAllowed = this.actorRoles.some(
@@ -310,7 +310,7 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
       return { outcome: "not_eligible" };
     }
 
-    const distinct = [...new Set(input.areas.map((a) => a.trim()).filter((a) => a.length > 0))];
+    const distinct = [...new Set(input.areaIds.map((a) => a.trim()).filter((a) => a.length > 0))];
     if (distinct.length === 0) return { outcome: "no_areas_provided" };
 
     const available = this.tenantCoverageAreas.get(input.companyId) ?? [];
