@@ -465,3 +465,168 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     expect(result.outcome).toBe("no_coverage_configured");
   });
 });
+
+describe("setActiveStatus — Gate 1B (aktivasi/deaktivasi Salesman)", () => {
+  it("owner tenant sendiri berhasil menonaktifkan Salesman aktif", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_A,
+      userId: created.userId,
+      active: false,
+      actorId: ACTOR_A,
+    });
+    expect(result.outcome).toBe("deactivated");
+    expect(repo.getUser(created.userId)?.isActive).toBe(false);
+  });
+
+  it("owner tenant sendiri berhasil mengaktifkan kembali Salesman nonaktif", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_A,
+      userId: created.userId,
+      active: true,
+      actorId: ACTOR_A,
+    });
+    expect(result.outcome).toBe("activated");
+    expect(repo.getUser(created.userId)?.isActive).toBe(true);
+  });
+
+  it("request berulang terhadap status yang sama bersifat idempotent (unchanged), tidak menghasilkan audit ganda", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+
+    const first = await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+    const second = await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+    expect(first.outcome).toBe("deactivated");
+    expect(second.outcome).toBe("unchanged");
+
+    const audit = repo.getAuditTrail().filter((e) => e.entityId === created.userId && e.action === "salesman.deactivated");
+    expect(audit.length).toBe(1);
+  });
+
+  it("sales tidak dapat mengubah status dirinya sendiri (bukan owner)", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+    repo.seedActorRole(created.userId, COMPANY_A, "sales");
+
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_A,
+      userId: created.userId,
+      active: false,
+      actorId: created.userId,
+    });
+    expect(result.outcome).toBe("forbidden");
+    expect(repo.getUser(created.userId)?.isActive).toBe(true);
+  });
+
+  it("manager/admin/super_admin legacy ditolak (bukan owner)", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+    for (const legacyRole of ["manager", "admin", "super_admin"]) {
+      const actorId = `actor-${legacyRole}`;
+      repo.seedActorRole(actorId, COMPANY_A, legacyRole);
+      const result = await repo.setActiveStatus({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        active: false,
+        actorId,
+      });
+      expect(result.outcome).toBe("forbidden");
+    }
+    expect(repo.getUser(created.userId)?.isActive).toBe(true);
+  });
+
+  it("owner tenant lain (tenant B) ditolak mengubah status Salesman tenant A", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+    repo.seedActorRole("owner-tenant-b", COMPANY_B, "owner");
+
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_B,
+      userId: created.userId,
+      active: false,
+      actorId: "owner-tenant-b",
+    });
+    expect(result.outcome).toBe("not_found");
+    expect(repo.getUser(created.userId)?.isActive).toBe(true);
+  });
+
+  it("target non-Salesman (mis. owner) ditolak", async () => {
+    const repo = repoWithAreas();
+    repo.seedActorRole(ACTOR_A, COMPANY_A, "owner");
+
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_A,
+      userId: ACTOR_A, // ACTOR_A tidak punya baris `users`, hanya actorRoles
+      active: false,
+      actorId: ACTOR_A,
+    });
+    expect(result.outcome).toBe("not_found");
+  });
+
+  it("target tidak ditemukan ditolak", async () => {
+    const repo = repoWithAreas();
+    const result = await repo.setActiveStatus({
+      companyId: COMPANY_A,
+      userId: "does-not-exist",
+      active: false,
+      actorId: ACTOR_A,
+    });
+    expect(result.outcome).toBe("not_found");
+  });
+
+  it("deaktivasi tidak menghapus coverage, role, atau data profil lain", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Timur", "Cirebon Kota"] }));
+    if (created.outcome !== "created") throw new Error("setup failed");
+
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+
+    expect(repo.getCoverageAreasFor(COMPANY_A, created.userId).sort()).toEqual(["Cirebon Kota", "Cirebon Timur"]);
+    expect(repo.getRolesFor(created.userId)).toHaveLength(1);
+    expect(repo.getUser(created.userId)?.email).toBe("budi.santoso@waluyo.test");
+  });
+
+  it("aktivasi kembali tidak membuat user baru dan tidak mengubah coverage existing", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput({ areaIds: ["Cirebon Barat"] }));
+    if (created.outcome !== "created") throw new Error("setup failed");
+
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+    const totalBefore = repo.totalUsers();
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: true, actorId: ACTOR_A });
+
+    expect(repo.totalUsers()).toBe(totalBefore);
+    expect(repo.getCoverageAreasFor(COMPANY_A, created.userId)).toEqual(["Cirebon Barat"]);
+  });
+
+  it("audit mencatat transisi aktif->nonaktif dan nonaktif->aktif dengan actor dan old/new data", async () => {
+    const repo = repoWithAreas();
+    const created = await createSalesman(repo, baseInput());
+    if (created.outcome !== "created") throw new Error("setup failed");
+
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: false, actorId: ACTOR_A });
+    await repo.setActiveStatus({ companyId: COMPANY_A, userId: created.userId, active: true, actorId: ACTOR_A });
+
+    const audit = repo.getAuditTrail().filter((e) => e.entityId === created.userId);
+    const deactivated = audit.find((e) => e.action === "salesman.deactivated");
+    const activated = audit.find((e) => e.action === "salesman.activated");
+    expect(deactivated?.actorId).toBe(ACTOR_A);
+    expect(deactivated?.companyId).toBe(COMPANY_A);
+    expect((deactivated?.oldData as { is_active: boolean }).is_active).toBe(true);
+    expect((deactivated?.newData as { is_active: boolean }).is_active).toBe(false);
+    expect((activated?.oldData as { is_active: boolean }).is_active).toBe(false);
+    expect((activated?.newData as { is_active: boolean }).is_active).toBe(true);
+  });
+});

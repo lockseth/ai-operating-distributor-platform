@@ -7,6 +7,7 @@ import { UserPlus, MapPin } from "lucide-react";
 import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollment-control";
 import { resolveSalesmanTelegramStatus } from "@/lib/salesman/status";
 import { SalesmanCoverageControl } from "@/components/users/salesman-coverage-control";
+import { SalesmanStatusControl } from "@/components/users/salesman-status-control";
 
 export const metadata = { title: "Pengguna — AODP" };
 
@@ -290,16 +291,21 @@ export default async function UsersPage() {
                         <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3">
-                      {u.is_active ? (
-                        <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
-                          Aktif
-                        </span>
-                      ) : (
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
-                          Nonaktif
-                        </span>
-                      )}
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex flex-col items-start gap-1.5">
+                        {u.is_active ? (
+                          <span className="rounded-full bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700">
+                            Aktif
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-500">
+                            Nonaktif
+                          </span>
+                        )}
+                        {roles.includes("sales") && isOwner ? (
+                          <SalesmanStatusControl salesmanId={u.id} isActive={u.is_active} />
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-500">
                       {formatDate(u.created_at)}

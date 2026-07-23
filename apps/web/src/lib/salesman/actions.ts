@@ -141,3 +141,56 @@ export async function updateSalesmanCoverageAreasAction(
 
   return { ok: false, error: OUTCOME_MESSAGE[result.outcome] ?? "Gagal memperbarui wilayah kerja." };
 }
+
+export interface SetSalesmanActiveStatusActionResult {
+  ok: boolean;
+  error?: string;
+  active?: boolean;
+}
+
+/**
+ * Gate 1B — Owner Control Plane. Satu domain otorisasi yang sama dengan
+ * createSalesmanAction/updateSalesmanCoverageAreasAction (owner-only, bukan
+ * MANAGE_ROLES lama). Nonaktif bukan penghapusan: tidak mengubah role,
+ * coverage, atau histori -- hanya flag users.is_active via RPC yang juga
+ * memeriksa ulang otorisasi & tenant di database.
+ */
+export async function setSalesmanActiveStatusAction(
+  salesmanId: string,
+  active: boolean
+): Promise<SetSalesmanActiveStatusActionResult> {
+  const user = await getAuthUser();
+
+  if (user.isDemo) {
+    return { ok: false, error: "Perubahan status tidak tersedia pada sesi demo." };
+  }
+  if (!canManageSalesman(user) || !isOwnerActor(user)) {
+    return { ok: false, error: "Hanya Owner tenant yang dapat mengubah status Salesman." };
+  }
+  if (!UUID_PATTERN.test(salesmanId)) {
+    return { ok: false, error: "Salesman tidak valid." };
+  }
+
+  const repo = new SupabaseSalesmanRepository(getAdminClient());
+  const result = await repo.setActiveStatus({
+    companyId: user.company_id,
+    userId: salesmanId,
+    active,
+    actorId: user.id,
+  });
+
+  if (result.outcome === "activated" || result.outcome === "deactivated") {
+    revalidatePath("/dashboard/users");
+    return { ok: true, active: result.outcome === "activated" };
+  }
+  if (result.outcome === "unchanged") {
+    revalidatePath("/dashboard/users");
+    return { ok: true, active };
+  }
+  if (result.outcome === "forbidden" || result.outcome === "not_eligible" || result.outcome === "not_found") {
+    return { ok: false, error: "Salesman tidak ditemukan pada tenant Anda atau bukan role Salesman." };
+  }
+
+  console.error("[Salesman] set active status failed", result.error);
+  return { ok: false, error: "Gagal mengubah status Salesman. Coba lagi atau hubungi administrator." };
+}

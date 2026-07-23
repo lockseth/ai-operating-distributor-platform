@@ -74,6 +74,23 @@ describe("Salesman creation security contracts", () => {
     expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
   });
 
+  it("setSalesmanActiveStatusAction (Gate 1B) diproteksi owner-only, actor/company dari sesi, bukan input client", () => {
+    const start = actions.indexOf("export async function setSalesmanActiveStatusAction");
+    const body = actions.slice(start, start + 1000);
+    expect(body).toContain("getAuthUser()");
+    expect(body).toContain("isOwnerActor(user)");
+    expect(body).toContain("user.isDemo");
+    expect(body.indexOf("getAuthUser()")).toBeLessThan(body.indexOf("getAdminClient()"));
+    expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
+
+    const callStart = actions.indexOf("repo.setActiveStatus({", start);
+    const callBody = actions.slice(callStart, callStart + 300);
+    expect(callBody).toContain("companyId: user.company_id");
+    expect(callBody).toContain("actorId: user.id");
+    expect(callBody).not.toContain("companyId: input.");
+    expect(callBody).not.toContain("actorId: input.");
+  });
+
   it("tidak ada kode KTP/selfie/face/liveness/biometric pada modul Salesman (non-biometric by design)", () => {
     // Strip komentar '//' -- dokumentasi yang MENJELASKAN ketiadaan biometrik
     // boleh menyebut kata tsb; yang dilarang adalah kode (identifier/field)

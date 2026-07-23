@@ -39,3 +39,17 @@ export type AssignCoverageAreasResult =
   | { outcome: "no_coverage_configured" }
   | { outcome: "invalid_area" }
   | { outcome: "unexpected_error"; error: string };
+
+/**
+ * Gate 1B — hasil set_salesman_active_status. "unchanged" adalah outcome
+ * eksplisit untuk repeated request terhadap status yang sama (idempotent,
+ * bukan error, tidak menulis audit baru).
+ */
+export type SetSalesmanActiveStatusResult =
+  | { outcome: "activated" }
+  | { outcome: "deactivated" }
+  | { outcome: "unchanged" }
+  | { outcome: "forbidden" }
+  | { outcome: "not_eligible" }
+  | { outcome: "not_found" }
+  | { outcome: "unexpected_error"; error: string };

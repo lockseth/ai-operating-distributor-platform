@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AssignCoverageAreasResult } from "./types";
+import type { AssignCoverageAreasResult, SetSalesmanActiveStatusResult } from "./types";
 
 export type CreateAuthUserResult =
   | { ok: true; userId: string }
@@ -40,6 +40,14 @@ export interface SalesmanRepository {
     areaIds: string[];
     actorId: string;
   }): Promise<AssignCoverageAreasResult>;
+
+  /** Gate 1B — aktifkan/nonaktifkan Salesman existing. Idempotent terhadap status yang sama. */
+  setActiveStatus(input: {
+    companyId: string;
+    userId: string;
+    active: boolean;
+    actorId: string;
+  }): Promise<SetSalesmanActiveStatusResult>;
 }
 
 export class SupabaseSalesmanRepository implements SalesmanRepository {
@@ -154,6 +162,42 @@ export class SupabaseSalesmanRepository implements SalesmanRepository {
         return { outcome: "unexpected_error", error: `unknown outcome: ${row.result_outcome}` };
     }
   }
+
+  async setActiveStatus(input: {
+    companyId: string;
+    userId: string;
+    active: boolean;
+    actorId: string;
+  }): Promise<SetSalesmanActiveStatusResult> {
+    const { data, error } = await this.supabase.rpc("set_salesman_active_status", {
+      p_company_id: input.companyId,
+      p_user_id: input.userId,
+      p_active: input.active,
+      p_actor_id: input.actorId,
+    });
+
+    if (error) return { outcome: "unexpected_error", error: error.message };
+
+    const row = ((data ?? []) as { result_outcome: string }[])[0];
+    if (!row) return { outcome: "unexpected_error", error: "empty RPC result" };
+
+    switch (row.result_outcome) {
+      case "activated":
+        return { outcome: "activated" };
+      case "deactivated":
+        return { outcome: "deactivated" };
+      case "unchanged":
+        return { outcome: "unchanged" };
+      case "forbidden":
+        return { outcome: "forbidden" };
+      case "not_eligible":
+        return { outcome: "not_eligible" };
+      case "not_found":
+        return { outcome: "not_found" };
+      default:
+        return { outcome: "unexpected_error", error: `unknown outcome: ${row.result_outcome}` };
+    }
+  }
 }
 
 // -----------------------------------------------------------------------
@@ -168,6 +212,7 @@ interface InMemoryUserRow {
   email: string;
   fullName: string;
   phone: string | null;
+  isActive: boolean;
 }
 
 // Owner Control Plane (corrective closure 2026-07-23): Tambah Salesman,
@@ -269,6 +314,7 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
       email: input.email,
       fullName: input.fullName,
       phone: input.phone,
+      isActive: true,
     });
     return { ok: true };
   }
@@ -334,6 +380,44 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
     });
 
     return { outcome: "assigned", assignedCount: distinct.length };
+  }
+
+  async setActiveStatus(input: {
+    companyId: string;
+    userId: string;
+    active: boolean;
+    actorId: string;
+  }): Promise<SetSalesmanActiveStatusResult> {
+    const actorAllowed = this.actorRoles.some(
+      (r) => r.userId === input.actorId && r.companyId === input.companyId && OWNER_ONLY_ROLES.includes(r.roleName)
+    );
+    if (!actorAllowed) return { outcome: "forbidden" };
+
+    const targetUser = this.users.get(input.userId);
+    if (!targetUser || targetUser.companyId !== input.companyId) {
+      return { outcome: "not_found" };
+    }
+
+    const targetIsSales = this.userRoles.some(
+      (r) => r.userId === input.userId && r.companyId === input.companyId && r.roleName === "sales"
+    );
+    if (!targetIsSales) return { outcome: "not_eligible" };
+
+    if (targetUser.isActive === input.active) return { outcome: "unchanged" };
+
+    const previousActive = targetUser.isActive;
+    targetUser.isActive = input.active;
+
+    this.auditTrail.push({
+      action: input.active ? "salesman.activated" : "salesman.deactivated",
+      companyId: input.companyId,
+      actorId: input.actorId,
+      entityId: input.userId,
+      oldData: { is_active: previousActive },
+      newData: { is_active: input.active },
+    });
+
+    return { outcome: input.active ? "activated" : "deactivated" };
   }
 
   // -- test helpers --

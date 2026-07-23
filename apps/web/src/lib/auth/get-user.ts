@@ -72,7 +72,7 @@ export async function getAuthUser(): Promise<AuthUser> {
   // User profile
   const { data: profileData } = await supabase
     .from("users")
-    .select("id, company_id, email, full_name")
+    .select("id, company_id, email, full_name, is_active")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -81,9 +81,17 @@ export async function getAuthUser(): Promise<AuthUser> {
     company_id: string;
     email: string;
     full_name: string;
+    is_active: boolean;
   } | null;
 
   if (!profile) redirect("/login");
+  // Gate 1B — shared boundary: sesi/token lama milik user yang sudah
+  // dinonaktifkan (mis. Salesman non-aktif) tidak boleh melewati halaman
+  // atau server action manapun yang bergantung pada getAuthUser().
+  if (!profile.is_active) {
+    await supabase.auth.signOut();
+    redirect("/login");
+  }
 
   // Company
   const { data: companyData } = await supabase
