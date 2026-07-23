@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { DocumentSourceError } from "./errors";
 import { InMemoryDocumentIssuanceRepository, type CompanyProfile } from "./issuance-repository";
 import { issueInvoiceDocument, issuePurchaseOrderDocument, jakartaBusinessDate } from "./issuance";
+import { MAX_DOCUMENT_LINE_ITEMS } from "./source-validation";
 import type { DeliveryReader, OrderReader, OrderReaderRecord, DeliveryReaderRecord } from "./repository-adapter";
 
 const COMPLETE_PROFILE: CompanyProfile = {
@@ -186,10 +187,10 @@ describe("issuePurchaseOrderDocument", () => {
     ).rejects.toMatchObject({ code: "ORDER_NOT_FOUND" });
   });
 
-  it("31 baris item -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
+  it("satu baris melebihi batas maksimum -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
     const repo = new InMemoryDocumentIssuanceRepository();
     repo.companies.set("company-swa", COMPLETE_PROFILE);
-    const tooManyLines = Array.from({ length: 31 }, (_, i) => ({
+    const tooManyLines = Array.from({ length: MAX_DOCUMENT_LINE_ITEMS + 1 }, (_, i) => ({
       orderLineId: `soi-${i + 1}`,
       productCode: `SKU-${i + 1}`,
       productName: "Indomie Goreng",
@@ -213,6 +214,44 @@ describe("issuePurchaseOrderDocument", () => {
       { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW },
     );
     expect(result.record.documentNumber).toMatch(/-000001$/);
+  });
+});
+
+describe("issuePurchaseOrderDocument -- F. batas domain vs kapasitas panel (LOCK 'AODP WALUYO -- CONTINUATION PANEL PRINT GATE')", () => {
+  function linesOfCount(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      orderLineId: `soi-${i + 1}`,
+      productCode: `SKU-${i + 1}`,
+      productName: "Indomie Goreng",
+      productType: "Mie Instan",
+      unit: "dus",
+      quantity: 1,
+      unitPrice: 85000,
+      discountAmount: 0,
+    }));
+  }
+
+  it.each([10, 11, 25, 30])("%i baris item -- ISSUED (kapasitas panel TIDAK dipakai untuk menolak issuance dokumen valid)", async (count) => {
+    const repo = new InMemoryDocumentIssuanceRepository();
+    repo.companies.set("company-swa", COMPLETE_PROFILE);
+    const orderReader = makeOrderReader([orderReaderRecord({ lines: linesOfCount(count) })]);
+
+    const result = await issuePurchaseOrderDocument(
+      { issuance: repo, orderReader },
+      { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW },
+    );
+    expect(result.record.version).toBe(1);
+    expect(result.snapshot.lines).toHaveLength(count);
+  });
+
+  it("31 baris item -- REJECT (melewati batas domain 30), bukan karena melebihi satu panel (10)", async () => {
+    const repo = new InMemoryDocumentIssuanceRepository();
+    repo.companies.set("company-swa", COMPLETE_PROFILE);
+    const orderReader = makeOrderReader([orderReaderRecord({ lines: linesOfCount(31) })]);
+
+    await expect(
+      issuePurchaseOrderDocument({ issuance: repo, orderReader }, { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW }),
+    ).rejects.toMatchObject({ code: "DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED" });
   });
 });
 
@@ -264,10 +303,10 @@ describe("issueInvoiceDocument", () => {
     ).rejects.toMatchObject({ code: "DELIVERY_NOT_BILLABLE" });
   });
 
-  it("31 baris item tertagih -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
+  it("satu baris melebihi batas maksimum tertagih -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
     const repo = new InMemoryDocumentIssuanceRepository();
     repo.companies.set("company-swa", COMPLETE_PROFILE);
-    const tooManyOrderLines = Array.from({ length: 31 }, (_, i) => ({
+    const tooManyOrderLines = Array.from({ length: MAX_DOCUMENT_LINE_ITEMS + 1 }, (_, i) => ({
       orderLineId: `soi-${i + 1}`,
       productCode: `SKU-${i + 1}`,
       productName: "Indomie Goreng",
@@ -277,7 +316,7 @@ describe("issueInvoiceDocument", () => {
       unitPrice: 85000,
       discountAmount: 0,
     }));
-    const tooManyDeliveryLines = Array.from({ length: 31 }, (_, i) => ({
+    const tooManyDeliveryLines = Array.from({ length: MAX_DOCUMENT_LINE_ITEMS + 1 }, (_, i) => ({
       deliveryLineId: `dline-${i + 1}`,
       orderLineId: `soi-${i + 1}`,
       productCode: `SKU-${i + 1}`,

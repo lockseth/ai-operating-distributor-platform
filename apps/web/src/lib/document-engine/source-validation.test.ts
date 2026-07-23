@@ -145,24 +145,37 @@ describe("validateInvoiceSource -- 3, 4, 5, 6", () => {
   });
 });
 
-describe("assertLineItemLimit -- kapasitas cetak LOCKED maksimum 30 baris per dokumen", () => {
-  it("MAX_DOCUMENT_LINE_ITEMS terkunci pada 30", () => {
+describe("assertLineItemLimit -- batas DOMAIN dokumen, TERPISAH dari kapasitas panel cetak (LOCK 'AODP WALUYO -- CONTINUATION PANEL PRINT GATE')", () => {
+  it("MAX_DOCUMENT_LINE_ITEMS terkunci pada 30 -- dipulihkan, TIDAK lagi disatukan dengan MAX_ITEM_ROWS_PER_PANEL (10, lihat print-capacity.ts)", () => {
     expect(MAX_DOCUMENT_LINE_ITEMS).toBe(30);
   });
 
-  it("tepat 30 baris -- PASS (tidak throw)", () => {
-    expect(() => assertLineItemLimit(30)).not.toThrow();
+  it("10 baris (tepat kapasitas satu panel) -- PASS, TIDAK ditolak", () => {
+    expect(() => assertLineItemLimit(10)).not.toThrow();
   });
 
-  it("31 baris -- REJECT eksplisit dengan kode dan metadata actualCount/maxCount", () => {
+  it("11 baris (melebihi kapasitas satu panel, TAPI di bawah batas domain) -- PASS, TIDAK ditolak (akan dicetak lewat continuation panel)", () => {
+    expect(() => assertLineItemLimit(11)).not.toThrow();
+  });
+
+  it("25 baris -- PASS, TIDAK ditolak (dicetak lewat 3 continuation panel: 10+10+5)", () => {
+    expect(() => assertLineItemLimit(25)).not.toThrow();
+  });
+
+  it("tepat 30 baris (batas domain) -- PASS", () => {
+    expect(() => assertLineItemLimit(MAX_DOCUMENT_LINE_ITEMS)).not.toThrow();
+  });
+
+  it("31 baris (melebihi batas DOMAIN) -- REJECT eksplisit dengan kode dan metadata actualCount/maxCount", () => {
+    const overLimit = MAX_DOCUMENT_LINE_ITEMS + 1;
     try {
-      assertLineItemLimit(31);
+      assertLineItemLimit(overLimit);
       expect.fail("seharusnya throw");
     } catch (err) {
       expect(err).toBeInstanceOf(DocumentSourceError);
       const docErr = err as DocumentSourceError;
       expect(docErr.code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
-      expect(docErr.metadata).toEqual({ actualCount: 31, maxCount: 30 });
+      expect(docErr.metadata).toEqual({ actualCount: overLimit, maxCount: MAX_DOCUMENT_LINE_ITEMS });
     }
   });
 

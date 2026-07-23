@@ -6,8 +6,8 @@
 //   (repository ASLI) -> ConfirmedOrderReader/DeliveryVerificationReader (adapter
 //   ASLI) -> issuePurchaseOrderDocument/issueInvoiceDocument (orkestrasi ASLI)
 //   -> issued_documents.snapshot DIBACA ULANG dari DB (bukan nilai in-process)
-//   -> buildPrintViewModel + PrintDocumentPage (renderer ASLI, sudah teruji
-//   terpisah di PrintDocumentPage.test.ts/print-css.test.ts).
+//   -> buildPrintViewModel + PrintDocumentPanel (renderer ASLI, sudah teruji
+//   terpisah di PrintDocumentPanel.test.ts/print-css.test.ts).
 //
 // Juga membuktikan Target 2 (issue_delivery_note, SEBELUM dispatch) dan Target
 // 3 (COMPANY_PROFILE_INCOMPLETE gate) terjalin benar dengan alur delivery
@@ -40,7 +40,8 @@ import { SupabaseDocumentIssuanceRepository } from "./issuance-repository";
 import { ConfirmedOrderReader, DeliveryVerificationReader } from "./repository-adapter";
 import { issueInvoiceDocument, issuePurchaseOrderDocument } from "./issuance";
 import { buildPrintViewModel } from "./print-view-model";
-import { PrintDocumentPage } from "@/components/document-engine/PrintDocumentPage";
+import { paginatePrintDocument } from "./print-pagination";
+import { PrintDocumentPanel } from "@/components/document-engine/PrintDocumentPanel";
 import type { DocumentSnapshot } from "./types";
 
 function readDotEnvLocal(): { url: string; serviceRoleKey: string } | null {
@@ -259,7 +260,7 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     expect(viewModel.tenant.logoUrl).toMatch(/^data:image\/png;base64,/);
     expect(viewModel.tenant.logoUrl).toBe(logoDataUri);
 
-    const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel }));
+    const html = renderToStaticMarkup(createElement(PrintDocumentPanel, { panel: paginatePrintDocument(viewModel)[0]! }));
     // Base64 logo (~1.3 juta karakter acak) bisa secara kebetulan memuat
     // substring seperti "DPP"/"PPN" -- redaksi payload base64 SEBELUM
     // memeriksa larangan teks bisnis, supaya pemeriksaan itu tetap berarti
@@ -269,11 +270,13 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     expect(htmlTextCheck).not.toContain("CATATAN");
     expect(htmlTextCheck).not.toContain("DPP");
     expect(htmlTextCheck).not.toContain("PPN");
-    // LOCKED 2026-07-23: SATU halaman = SATU dokumen, tidak ada lagi duplikasi 2 panel.
+    // LOCKED 23 Juli 2026 (final): SATU panel = SATU dokumen, tanda tangan Salesman/Pengirim/Penerima.
     expect(html.match(/doc-engine-signature-role">SALESMAN</g)).toHaveLength(1);
     expect(html.match(/doc-engine-signature-role">PENGIRIM</g)).toHaveLength(1);
-    expect(html.match(/doc-engine-signature-role">DITERIMA OLEH</g)).toHaveLength(1);
-    expect(html.match(/class="doc-engine-page"/g)).toHaveLength(1);
+    expect(html.match(/doc-engine-signature-role">PENERIMA</g)).toHaveLength(1);
+    expect(html).not.toContain("DITERIMA OLEH");
+    expect(html.match(/class="doc-engine-panel"/g)).toHaveLength(1);
+    expect(html).not.toContain("doc-engine-perforation");
     expect(html).toContain(issued.record.documentNumber);
     expect(html).toContain("Toko Sari Rasa (Pak Waluyo)");
     // Logo BENAR-BENAR tertanam pada markup yang dirender (data: URI utuh di
@@ -361,7 +364,7 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     expect(viewModel.tenant.logoUrl).toMatch(/^data:image\/png;base64,/);
     expect(viewModel.tenant.logoUrl).toBe(logoDataUri);
 
-    const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel }));
+    const html = renderToStaticMarkup(createElement(PrintDocumentPanel, { panel: paginatePrintDocument(viewModel)[0]! }));
     // Lihat catatan di test 1 -- redaksi payload base64 logo sebelum memeriksa larangan teks bisnis.
     const htmlTextCheck = html.split(logoDataUri).join("[LOGO_DATA_URI]");
     expect(htmlTextCheck).not.toContain("CATATAN");

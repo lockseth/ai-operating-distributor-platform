@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DocumentSourceError } from "./errors";
 import { buildPurchaseOrderSnapshot } from "./po-builder";
+import { MAX_DOCUMENT_LINE_ITEMS } from "./source-validation";
 import type { OrderLineSource, OrderSource, TenantIdentity } from "./types";
 
 const TENANT: TenantIdentity = {
@@ -95,7 +96,7 @@ describe("buildPurchaseOrderSnapshot -- 1", () => {
   });
 });
 
-describe("buildPurchaseOrderSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () => {
+describe("buildPurchaseOrderSnapshot -- kapasitas cetak LOCKED, disatukan dengan MAX_ITEM_ROWS_PER_PANEL (print-capacity.ts)", () => {
   function ordersWithLineCount(count: number): OrderSource {
     return order({
       lines: Array.from({ length: count }, (_, i) =>
@@ -104,20 +105,21 @@ describe("buildPurchaseOrderSnapshot -- kapasitas cetak LOCKED maksimum 30 baris
     });
   }
 
-  it("30 baris item -- PASS, snapshot berhasil dibangun", () => {
+  it("tepat batas maksimum baris item -- PASS, snapshot berhasil dibangun", () => {
     const snapshot = buildPurchaseOrderSnapshot({
-      order: ordersWithLineCount(30),
+      order: ordersWithLineCount(MAX_DOCUMENT_LINE_ITEMS),
       tenant: TENANT,
       documentNumber: "PO-20260810-000004",
       documentDate: "2026-08-10",
     });
-    expect(snapshot.lines).toHaveLength(30);
+    expect(snapshot.lines).toHaveLength(MAX_DOCUMENT_LINE_ITEMS);
   });
 
-  it("31 baris item -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
+  it("satu baris melebihi batas maksimum -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
+    const overLimit = MAX_DOCUMENT_LINE_ITEMS + 1;
     try {
       buildPurchaseOrderSnapshot({
-        order: ordersWithLineCount(31),
+        order: ordersWithLineCount(overLimit),
         tenant: TENANT,
         documentNumber: "PO-20260810-000005",
         documentDate: "2026-08-10",
@@ -126,7 +128,7 @@ describe("buildPurchaseOrderSnapshot -- kapasitas cetak LOCKED maksimum 30 baris
     } catch (err) {
       expect(err).toBeInstanceOf(DocumentSourceError);
       expect((err as DocumentSourceError).code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
-      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: 31, maxCount: 30 });
+      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: overLimit, maxCount: MAX_DOCUMENT_LINE_ITEMS });
     }
   });
 });

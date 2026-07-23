@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DocumentSourceError } from "./errors";
 import { buildInvoiceSnapshot } from "./invoice-builder";
+import { MAX_DOCUMENT_LINE_ITEMS } from "./source-validation";
 import type { DeliverySource, OrderLineSource, OrderSource, TenantIdentity } from "./types";
 
 const TENANT: TenantIdentity = {
@@ -210,7 +211,7 @@ describe("buildInvoiceSnapshot -- 7, 8, 9 (partial delivery & quantity invariant
   });
 });
 
-describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () => {
+describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED, disatukan dengan MAX_ITEM_ROWS_PER_PANEL (print-capacity.ts)", () => {
   function sourcesWithLineCount(count: number): { order: OrderSource; delivery: DeliverySource } {
     const orderLines = Array.from({ length: count }, (_, i) =>
       orderLine({ orderLineId: `line-${i + 1}`, productCode: `SKU-${i + 1}` }),
@@ -221,8 +222,8 @@ describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () 
     return { order: order({ lines: orderLines }), delivery: delivery({ lines: deliveryLines }) };
   }
 
-  it("30 baris item tertagih -- PASS, snapshot berhasil dibangun", () => {
-    const { order: o, delivery: d } = sourcesWithLineCount(30);
+  it("tepat batas maksimum baris item tertagih -- PASS, snapshot berhasil dibangun", () => {
+    const { order: o, delivery: d } = sourcesWithLineCount(MAX_DOCUMENT_LINE_ITEMS);
     const snapshot = buildInvoiceSnapshot({
       order: o,
       delivery: d,
@@ -230,11 +231,12 @@ describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () 
       documentNumber: "INV-20260811-000010",
       documentDate: "2026-08-11",
     });
-    expect(snapshot.lines).toHaveLength(30);
+    expect(snapshot.lines).toHaveLength(MAX_DOCUMENT_LINE_ITEMS);
   });
 
-  it("31 baris item tertagih -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
-    const { order: o, delivery: d } = sourcesWithLineCount(31);
+  it("satu baris melebihi batas maksimum tertagih -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
+    const overLimit = MAX_DOCUMENT_LINE_ITEMS + 1;
+    const { order: o, delivery: d } = sourcesWithLineCount(overLimit);
     try {
       buildInvoiceSnapshot({
         order: o,
@@ -247,13 +249,14 @@ describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () 
     } catch (err) {
       expect(err).toBeInstanceOf(DocumentSourceError);
       expect((err as DocumentSourceError).code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
-      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: 31, maxCount: 30 });
+      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: overLimit, maxCount: MAX_DOCUMENT_LINE_ITEMS });
     }
   });
 
-  it("31 baris sumber tapi 1 verifiedQuantity=0 -> hanya 30 baris tertagih -- PASS (limit dihitung dari baris AKHIR, bukan baris sumber mentah)", () => {
-    const { order: o, delivery: d } = sourcesWithLineCount(31);
-    d.lines[30] = { ...d.lines[30]!, verifiedQuantity: 0 };
+  it("baris sumber melebihi batas tapi 1 verifiedQuantity=0 -> tertagih tepat pada batas -- PASS (limit dihitung dari baris AKHIR, bukan baris sumber mentah)", () => {
+    const overLimit = MAX_DOCUMENT_LINE_ITEMS + 1;
+    const { order: o, delivery: d } = sourcesWithLineCount(overLimit);
+    d.lines[overLimit - 1] = { ...d.lines[overLimit - 1]!, verifiedQuantity: 0 };
     const snapshot = buildInvoiceSnapshot({
       order: o,
       delivery: d,
@@ -261,6 +264,6 @@ describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () 
       documentNumber: "INV-20260811-000012",
       documentDate: "2026-08-11",
     });
-    expect(snapshot.lines).toHaveLength(30);
+    expect(snapshot.lines).toHaveLength(MAX_DOCUMENT_LINE_ITEMS);
   });
 });

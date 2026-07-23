@@ -9,14 +9,36 @@
 import { DocumentSourceError } from "./errors";
 import type { DeliverySource, OrderLineSource, OrderSource } from "./types";
 
-/** Kapasitas cetak LOCKED Founder 2026-07-23 -- maksimum baris item per dokumen fisik (PO/Invoice), 1 dokumen = 1 halaman 9.5x11in. */
+/**
+ * Batas baris item pada level BUILD/ISSUANCE dokumen -- batas DOMAIN (berapa
+ * banyak baris yang boleh dimiliki SATU dokumen sebelum issuance ditolak),
+ * SENGAJA TERPISAH dari kapasitas cetak per panel
+ * (MAX_ITEM_ROWS_PER_PANEL di lib/document-engine/print-capacity.ts).
+ *
+ * LOCK Founder "AODP WALUYO -- CONTINUATION PANEL PRINT GATE" (23 Juli 2026,
+ * corrective pass kedua): penyatuan sebelumnya (menurunkan angka ini menjadi
+ * 10, sama dengan kapasitas satu panel) TIDAK DISETUJUI sebagai aturan
+ * bisnis final -- dibatalkan. Dokumen dengan 11-30 baris SAH diterbitkan;
+ * dokumen tersebut dicetak lewat CONTINUATION PANEL (lib/document-engine/
+ * print-pagination.ts), bukan ditolak hanya karena melebihi satu panel.
+ * Nilai 30 dipulihkan sebagai batas domain (authority tertinggi yang
+ * ditemukan sebelum LOCK ini -- lihat laporan corrective pass kedua bagian
+ * "Audit Perubahan Sebelumnya" untuk kronologi lengkap).
+ *
+ * assertPanelCapacity/PanelCapacityExceededError (yang sebelumnya menolak
+ * transaksi HANYA karena melebihi satu panel) sudah DIHAPUS dari
+ * print-capacity.ts -- kapasitas panel sekarang murni parameter pagination,
+ * BUKAN alasan penolakan.
+ */
 export const MAX_DOCUMENT_LINE_ITEMS = 30;
 
 /**
- * Menegakkan kapasitas cetak LOCKED: dokumen dengan lebih dari
- * MAX_DOCUMENT_LINE_ITEMS baris ditolak eksplisit -- TIDAK ADA halaman
- * lanjutan, TIDAK mengecilkan font/row-height, TIDAK memakai overflow:hidden
- * sebagai solusi (lihat AODP_DOCUMENT_LAYOUT_GUIDE.md). Dipanggil dari
+ * Menegakkan batas DOMAIN baris item level build/issuance: dokumen dengan
+ * lebih dari MAX_DOCUMENT_LINE_ITEMS (30) baris ditolak eksplisit -- ini
+ * SATU-SATUNYA alasan penolakan issuance terkait jumlah baris. Dokumen yang
+ * lolos batas ini (termasuk 11-30 baris, melebihi kapasitas SATU panel
+ * cetak) TETAP diterbitkan secara normal; pencetakannya memakai continuation
+ * panel (print-pagination.ts), bukan ditolak. Dipanggil dari
  * po-builder.ts/invoice-builder.ts terhadap JUMLAH BARIS AKHIR dokumen
  * (setelah resolusi/filter, bukan jumlah baris sumber mentah).
  */

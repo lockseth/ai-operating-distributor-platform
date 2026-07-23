@@ -1,10 +1,12 @@
 // =============================================================================
 // Document Engine -- print view model. Mengubah SATU DocumentSnapshot menjadi
-// SATU tampilan siap-render (1 dokumen = 1 halaman fisik 9.5x11in, LOCKED
-// Founder 2026-07-23 -- Continuous Form 4 Ply berarti kertas rangkap FISIK/
-// carbonless printer, bukan duplikasi konten oleh renderer. Sebelumnya modul
-// ini menghasilkan panels:[A,B] identik; itu supersede -- lihat
-// AODP_DOCUMENT_LAYOUT_GUIDE.md revision history).
+// SATU tampilan siap-render (1 dokumen = 1 panel transaksi 9.5x5.5in, LOCKED
+// Founder 2026-07-23 -- Continuous Form 3 Ply berarti kertas rangkap FISIK/
+// carbonless printer, bukan duplikasi konten oleh renderer. Dua panel
+// (dari dua view model independen) disusun ke dalam satu physical sheet
+// 9.5x11in oleh lib/document-engine/print-batch.ts +
+// components/document-engine/PhysicalPrintSheet.tsx -- lihat
+// AODP_DOCUMENT_LAYOUT_GUIDE.md revision history untuk kronologi lengkap).
 //
 // formatRupiah()/terbilang() dipanggil DI SINI (view model), bukan di
 // renderer -- supaya renderer (components/document-engine) tidak pernah
@@ -73,7 +75,7 @@ export interface PrintDocumentViewModel {
   terbilangLabel: string;
   signatures: DocumentSignatures;
   /**
-   * Nama PIC/penerima toko untuk panel tanda tangan "DITERIMA OLEH" -- null
+   * Nama PIC/penerima toko untuk panel tanda tangan "PENERIMA" -- null
    * bila belum ditentukan (garis tanda tangan tetap ditampilkan kosong untuk
    * tanda tangan manual, TIDAK diisi nama karangan).
    */
@@ -115,7 +117,7 @@ function computeDueDateLabel(documentDate: string, paymentTermsDays: number | nu
   return `${formatIndonesianDate(dueIso)} (${paymentTermsDays} Hari)`;
 }
 
-/** SATU snapshot -> SATU view model (1 dokumen = 1 halaman, tidak ada duplikasi panel). */
+/** SATU snapshot -> SATU view model (1 dokumen = 1 panel transaksi, tidak ada duplikasi isi). */
 export function buildPrintViewModel(snapshot: DocumentSnapshot): PrintDocumentViewModel {
   return {
     documentTypeLabel: documentTypeLabel(snapshot),
