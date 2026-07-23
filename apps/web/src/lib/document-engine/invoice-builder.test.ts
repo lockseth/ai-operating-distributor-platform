@@ -32,7 +32,7 @@ function order(overrides: Partial<OrderSource> = {}): OrderSource {
     companyId: "company-1",
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
-    store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+    store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
     salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
     lines: [orderLine()],
     paymentTermsDays: 14,
@@ -207,5 +207,60 @@ describe("buildInvoiceSnapshot -- 7, 8, 9 (partial delivery & quantity invariant
       expect(err).toBeInstanceOf(DocumentSourceError);
       expect((err as DocumentSourceError).code).toBe("DELIVERY_NOT_BILLABLE");
     }
+  });
+});
+
+describe("buildInvoiceSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () => {
+  function sourcesWithLineCount(count: number): { order: OrderSource; delivery: DeliverySource } {
+    const orderLines = Array.from({ length: count }, (_, i) =>
+      orderLine({ orderLineId: `line-${i + 1}`, productCode: `SKU-${i + 1}` }),
+    );
+    const deliveryLines = Array.from({ length: count }, (_, i) =>
+      deliveryLine({ deliveryLineId: `dline-${i + 1}`, orderLineId: `line-${i + 1}`, productCode: `SKU-${i + 1}` }),
+    );
+    return { order: order({ lines: orderLines }), delivery: delivery({ lines: deliveryLines }) };
+  }
+
+  it("30 baris item tertagih -- PASS, snapshot berhasil dibangun", () => {
+    const { order: o, delivery: d } = sourcesWithLineCount(30);
+    const snapshot = buildInvoiceSnapshot({
+      order: o,
+      delivery: d,
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000010",
+      documentDate: "2026-08-11",
+    });
+    expect(snapshot.lines).toHaveLength(30);
+  });
+
+  it("31 baris item tertagih -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
+    const { order: o, delivery: d } = sourcesWithLineCount(31);
+    try {
+      buildInvoiceSnapshot({
+        order: o,
+        delivery: d,
+        tenant: TENANT,
+        documentNumber: "INV-20260811-000011",
+        documentDate: "2026-08-11",
+      });
+      expect.fail("seharusnya throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DocumentSourceError);
+      expect((err as DocumentSourceError).code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
+      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: 31, maxCount: 30 });
+    }
+  });
+
+  it("31 baris sumber tapi 1 verifiedQuantity=0 -> hanya 30 baris tertagih -- PASS (limit dihitung dari baris AKHIR, bukan baris sumber mentah)", () => {
+    const { order: o, delivery: d } = sourcesWithLineCount(31);
+    d.lines[30] = { ...d.lines[30]!, verifiedQuantity: 0 };
+    const snapshot = buildInvoiceSnapshot({
+      order: o,
+      delivery: d,
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000012",
+      documentDate: "2026-08-11",
+    });
+    expect(snapshot.lines).toHaveLength(30);
   });
 });

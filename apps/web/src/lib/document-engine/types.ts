@@ -30,8 +30,12 @@ export interface TenantIdentity {
 
 export interface StoreIdentity {
   customerId: string;
+  /** customers.code -- null bila tidak tersedia (jangan dikarang). */
+  storeCode: string | null;
   storeName: string;
   storeAddress: string | null;
+  /** customers.phone -- null bila tidak tersedia (jangan dikarang). */
+  storePhone: string | null;
   /** PIC/penerima toko -- null bila belum tersedia (jangan dikarang). */
   picName: string | null;
 }

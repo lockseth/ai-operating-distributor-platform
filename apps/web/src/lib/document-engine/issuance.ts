@@ -28,6 +28,7 @@ import type { DeliveryReader, OrderReader } from "./repository-adapter";
 import { loadInvoiceSource, loadPurchaseOrderSource } from "./repository-adapter";
 import { buildPurchaseOrderSnapshot } from "./po-builder";
 import { DocumentSourceError } from "./errors";
+import { assertLineItemLimit } from "./source-validation";
 import type { CompanyProfile, DocumentIssuanceRepositoryInterface, IssuedDocumentRecord } from "./issuance-repository";
 import { assertCompanyProfileComplete } from "./issuance-repository";
 import type { DocumentSnapshot, TenantIdentity } from "./types";
@@ -85,6 +86,12 @@ export async function issuePurchaseOrderDocument(
 ): Promise<IssuedDocumentResult> {
   const tenant = await loadTenantIdentity(repos.issuance, params.companyId);
   const order = await loadPurchaseOrderSource(repos.orderReader, { companyId: params.companyId, orderId: params.orderId });
+  // Ditegakkan SEBELUM allocateDocumentNumber -- bila dicek setelah nomor
+  // dialokasikan, penolakan DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED akan
+  // meninggalkan nomor dokumen "terbakar" tanpa issued_document yang
+  // menyertainya (LARANGAN Founder 2026-07-23: tidak boleh ada nomor
+  // tertinggal setelah rejection).
+  assertLineItemLimit(order.lines.length);
 
   const businessDate = jakartaBusinessDate(params.now);
   const documentNumber = await repos.issuance.allocateDocumentNumber(params.companyId, "PURCHASE_ORDER", businessDate);
@@ -131,6 +138,12 @@ export async function issueInvoiceDocument(
     { orderReader: repos.orderReader, deliveryReader: repos.deliveryReader },
     { companyId: params.companyId, orderId: params.orderId, deliveryId: params.deliveryId },
   );
+  // Ditegakkan SEBELUM allocateDocumentNumber -- lihat catatan yang sama pada
+  // issuePurchaseOrderDocument. Jumlah baris tagih akhir Invoice = baris
+  // delivery dengan verifiedQuantity > 0 (persis logika buildInvoiceSnapshot
+  // TANPA quantityOverrides -- issueInvoiceDocument tidak mengekspos parameter
+  // itu), supaya pre-check ini selalu sama dengan hasil builder yang sebenarnya.
+  assertLineItemLimit(delivery.lines.filter((line) => line.verifiedQuantity > 0).length);
 
   const businessDate = jakartaBusinessDate(params.now);
   const documentNumber = await repos.issuance.allocateDocumentNumber(params.companyId, "INVOICE", businessDate);

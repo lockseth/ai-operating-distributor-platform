@@ -5,7 +5,7 @@
 // =============================================================================
 
 import { computeLineTotal, computeTotals } from "./monetary";
-import { resolvePurchaseOrderLines } from "./source-validation";
+import { assertLineItemLimit, resolvePurchaseOrderLines } from "./source-validation";
 import type { DocumentLineSnapshot, DocumentSnapshot, OrderLineSource, OrderSource, TenantIdentity } from "./types";
 
 export interface BuildPurchaseOrderInput {
@@ -22,6 +22,7 @@ export interface BuildPurchaseOrderInput {
 
 export function buildPurchaseOrderSnapshot(input: BuildPurchaseOrderInput): DocumentSnapshot {
   const resolvedLines = resolvePurchaseOrderLines(input.order, input.lines ?? input.order.lines);
+  assertLineItemLimit(resolvedLines.length);
 
   const lines: DocumentLineSnapshot[] = resolvedLines.map((line, index) => ({
     no: index + 1,

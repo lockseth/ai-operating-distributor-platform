@@ -1,14 +1,18 @@
 // =============================================================================
 // Document Engine -- print view model. Mengubah SATU DocumentSnapshot menjadi
-// struktur dua panel siap-render. Kedua panel SELALU berasal dari objek
-// snapshot yang SAMA (satu kali transform, bukan dua query/dua panggilan
-// builder terpisah) -- lihat buildPrintViewModel di bawah: panels[0] dan
-// panels[1] sengaja hasil pemanggilan toPanelViewModel yang SAMA sehingga
-// nomor dokumen dan nilai keduanya identik by construction.
+// SATU tampilan siap-render (1 dokumen = 1 halaman fisik 9.5x11in, LOCKED
+// Founder 2026-07-23 -- Continuous Form 4 Ply berarti kertas rangkap FISIK/
+// carbonless printer, bukan duplikasi konten oleh renderer. Sebelumnya modul
+// ini menghasilkan panels:[A,B] identik; itu supersede -- lihat
+// AODP_DOCUMENT_LAYOUT_GUIDE.md revision history).
 //
-// formatRupiah() dipanggil DI SINI (view model), bukan di renderer -- supaya
-// renderer (components/document-engine) tidak pernah menyentuh angka mentah
-// atau melakukan kalkulasi apa pun (lihat komentar monetary.ts).
+// formatRupiah()/terbilang() dipanggil DI SINI (view model), bukan di
+// renderer -- supaya renderer (components/document-engine) tidak pernah
+// menyentuh angka mentah atau melakukan kalkulasi apa pun (lihat komentar
+// monetary.ts). Formatting tanggal Indonesia (formatIndonesianDate) dan
+// perhitungan tanggal jatuh tempo (computeDueDateLabel) JUGA presentasi
+// murni -- input (documentDate, paymentTermsDays) sudah final dari snapshot,
+// fungsi di sini tidak pernah menghasilkan nilai bisnis baru.
 // =============================================================================
 
 import { formatRupiah, terbilang } from "./monetary";
@@ -26,54 +30,107 @@ export interface PrintLineViewModel {
   lineTotalLabel: string;
 }
 
-export interface PrintPanelViewModel {
+export interface PrintDocumentViewModel {
   documentTypeLabel: string;
   documentNumber: string;
+  /** "15 Juli 2026" -- format tanggal Indonesia, bukan ISO mentah. */
   documentDateLabel: string;
+  /**
+   * "29 Juli 2026 (14 Hari)" -- dihitung dari documentDate + paymentTermsDays.
+   * Null HANYA bila snapshot.paymentTermsDays null (seharusnya tidak pernah
+   * terjadi untuk dokumen yang berhasil diterbitkan sejak PAYMENT_TERMS_INCOMPLETE
+   * ditegakkan di issuance -- null-safe di sini murni jaga-jaga, renderer
+   * menyembunyikan baris ini bila null, TIDAK menampilkan placeholder.
+   */
+  dueDateLabel: string | null;
   tenant: TenantIdentity;
+  /** "-" bila customers.code belum tersedia (konvensi sama dengan storeAddress). */
+  storeCode: string;
   storeName: string;
   storeAddress: string;
-  picLabel: string;
+  storePhone: string;
   salesmanName: string;
   orderReference: string;
   deliveryReference: string | null;
-  paymentTermsLabel: string;
+  /**
+   * "14 Hari" -- null bila paymentTermsDays belum tersedia. Renderer
+   * menyembunyikan baris ini sepenuhnya saat null (TIDAK menampilkan "-"
+   * atau placeholder lain) -- keputusan Founder 2026-07-23: baris kosong
+   * disembunyikan, bukan diisi karangan.
+   */
+  paymentTermsLabel: string | null;
   lines: PrintLineViewModel[];
   subtotalLabel: string;
   totalDiscountLabel: string;
   grandTotalLabel: string;
   /**
-   * LOCKED (Repository & Persistence Closure Gate): Subtotal/Potongan/Total/
-   * Terbilang adalah template Totals kontrak aktif Pak Waluyo -- TIDAK ADA
-   * DPP/PPN/Other Charges. Jangan menambahkan field pajak di sini tanpa
-   * kontrak bisnis baru yang eksplisit.
+   * LOCKED (Repository & Persistence Closure Gate, dipertegas Founder
+   * 2026-07-23): Subtotal/Potongan/Grand Total/Terbilang adalah SATU-SATUNYA
+   * baris Totals kontrak aktif Pak Waluyo -- TIDAK ADA DPP/PPN/Biaya Lain.
+   * Jangan menambahkan field pajak di sini tanpa kontrak bisnis baru yang
+   * eksplisit.
    */
   terbilangLabel: string;
   signatures: DocumentSignatures;
-}
-
-export interface PrintDocumentViewModel {
-  documentNumber: string;
-  panels: [PrintPanelViewModel, PrintPanelViewModel];
+  /**
+   * Nama PIC/penerima toko untuk panel tanda tangan "DITERIMA OLEH" -- null
+   * bila belum ditentukan (garis tanda tangan tetap ditampilkan kosong untuk
+   * tanda tangan manual, TIDAK diisi nama karangan).
+   */
+  receiverName: string | null;
 }
 
 function documentTypeLabel(snapshot: DocumentSnapshot): string {
   return snapshot.documentType === "PURCHASE_ORDER" ? "PURCHASE ORDER" : "INVOICE / FAKTUR";
 }
 
-function toPanelViewModel(snapshot: DocumentSnapshot): PrintPanelViewModel {
+const INDONESIAN_MONTHS = [
+  "Januari",
+  "Februari",
+  "Maret",
+  "April",
+  "Mei",
+  "Juni",
+  "Juli",
+  "Agustus",
+  "September",
+  "Oktober",
+  "November",
+  "Desember",
+];
+
+/** Presentasi STRING murni ("2026-07-15" -> "15 Juli 2026") -- tidak mengubah nilai tanggal. */
+function formatIndonesianDate(isoDate: string): string {
+  const [year, month, day] = isoDate.slice(0, 10).split("-").map(Number);
+  return `${day} ${INDONESIAN_MONTHS[month - 1]} ${year}`;
+}
+
+/** "29 Juli 2026 (14 Hari)" -- null bila paymentTermsDays null (lihat dueDateLabel di atas). */
+function computeDueDateLabel(documentDate: string, paymentTermsDays: number | null): string | null {
+  if (paymentTermsDays === null) return null;
+  const [year, month, day] = documentDate.slice(0, 10).split("-").map(Number);
+  const due = new Date(Date.UTC(year, month - 1, day));
+  due.setUTCDate(due.getUTCDate() + paymentTermsDays);
+  const dueIso = `${due.getUTCFullYear()}-${String(due.getUTCMonth() + 1).padStart(2, "0")}-${String(due.getUTCDate()).padStart(2, "0")}`;
+  return `${formatIndonesianDate(dueIso)} (${paymentTermsDays} Hari)`;
+}
+
+/** SATU snapshot -> SATU view model (1 dokumen = 1 halaman, tidak ada duplikasi panel). */
+export function buildPrintViewModel(snapshot: DocumentSnapshot): PrintDocumentViewModel {
   return {
     documentTypeLabel: documentTypeLabel(snapshot),
     documentNumber: snapshot.documentNumber,
-    documentDateLabel: snapshot.documentDate,
+    documentDateLabel: formatIndonesianDate(snapshot.documentDate),
+    dueDateLabel: computeDueDateLabel(snapshot.documentDate, snapshot.paymentTermsDays),
     tenant: snapshot.tenant,
+    storeCode: snapshot.store.storeCode ?? "-",
     storeName: snapshot.store.storeName,
     storeAddress: snapshot.store.storeAddress ?? "-",
-    picLabel: snapshot.store.picName ?? "-",
+    storePhone: snapshot.store.storePhone ?? "-",
     salesmanName: snapshot.salesman.salesmanName,
     orderReference: snapshot.orderReference,
     deliveryReference: snapshot.deliveryReference,
-    paymentTermsLabel: snapshot.paymentTermsDays !== null ? `${snapshot.paymentTermsDays} hari` : "-",
+    paymentTermsLabel: snapshot.paymentTermsDays !== null ? `${snapshot.paymentTermsDays} Hari` : null,
     lines: snapshot.lines.map((line) => ({
       no: line.no,
       productCode: line.productCode ?? "-",
@@ -90,14 +147,6 @@ function toPanelViewModel(snapshot: DocumentSnapshot): PrintPanelViewModel {
     grandTotalLabel: formatRupiah(snapshot.totals.grandTotal),
     terbilangLabel: terbilang(snapshot.totals.grandTotal),
     signatures: snapshot.signatures,
-  };
-}
-
-/** Dua panel identik dari SATU snapshot -- tidak pernah dua query/dua build terpisah. */
-export function buildPrintViewModel(snapshot: DocumentSnapshot): PrintDocumentViewModel {
-  const panel = toPanelViewModel(snapshot);
-  return {
-    documentNumber: snapshot.documentNumber,
-    panels: [panel, panel],
+    receiverName: snapshot.store.picName,
   };
 }

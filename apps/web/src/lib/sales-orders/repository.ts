@@ -108,9 +108,20 @@ export interface SalesOrderTelegramRepository {
     },
   ): Promise<PersistedOrder>;
 
-  /** Idempotent: memanggil ulang pada order yang sudah confirmed tidak membuat perubahan. */
+  /**
+   * Idempotent: memanggil ulang pada order yang sudah confirmed tidak membuat
+   * perubahan. options.paymentTermsDays -- diisi eksplisit SAAT transisi
+   * draft->confirmed ini (sales_orders.payment_terms_days, migration
+   * 20260812000003); undefined/null berarti belum diisi (order tetap boleh
+   * confirmed, Document Engine yang menolak eksplisit lewat
+   * PAYMENT_TERMS_INCOMPLETE saat issuance, bukan confirmOrder). Setelah
+   * confirmed, nilai ini immutable lewat trigger DB
+   * (prevent_payment_terms_mutation_after_confirmed) -- tidak bisa diubah
+   * diam-diam lewat panggilan berikutnya.
+   */
   confirmOrder(
     orderId: string,
+    options?: { paymentTermsDays?: number | null },
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }>;
 }
 
@@ -491,6 +502,7 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
 
   async confirmOrder(
     orderId: string,
+    options: { paymentTermsDays?: number | null } = {},
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
     const existing = await this.getOrder(orderId);
     if (!existing) throw new Error("Order not found");
@@ -499,9 +511,14 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       return { order: existing, alreadyConfirmed: true };
     }
 
+    const updates: Record<string, unknown> = { status: "confirmed" };
+    if (options.paymentTermsDays !== undefined) {
+      updates.payment_terms_days = options.paymentTermsDays;
+    }
+
     await this.supabase
       .from("sales_orders")
-      .update({ status: "confirmed" })
+      .update(updates)
       .eq("id", orderId)
       .eq("status", "draft"); // guard: hanya transisi dari draft, mencegah race/duplikasi
 
@@ -668,6 +685,8 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
 
   async confirmOrder(
     orderId: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- InMemory tidak memodelkan kolom DB payment_terms_days (lihat PersistedOrder), parameter dipertahankan hanya demi kesesuaian interface produksi.
+    options: { paymentTermsDays?: number | null } = {},
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
     const existing = this.orders.get(orderId);
     if (!existing) throw new Error("Order not found");

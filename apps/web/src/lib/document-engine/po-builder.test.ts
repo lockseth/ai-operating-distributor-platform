@@ -32,7 +32,7 @@ function order(overrides: Partial<OrderSource> = {}): OrderSource {
     companyId: "company-1",
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
-    store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+    store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
     salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
     lines: [orderLine()],
     paymentTermsDays: 14,
@@ -92,5 +92,41 @@ describe("buildPurchaseOrderSnapshot -- 1", () => {
         lines: [foreignLine],
       }),
     ).toThrow(DocumentSourceError);
+  });
+});
+
+describe("buildPurchaseOrderSnapshot -- kapasitas cetak LOCKED maksimum 30 baris", () => {
+  function ordersWithLineCount(count: number): OrderSource {
+    return order({
+      lines: Array.from({ length: count }, (_, i) =>
+        orderLine({ orderLineId: `line-${i + 1}`, productCode: `SKU-${i + 1}` }),
+      ),
+    });
+  }
+
+  it("30 baris item -- PASS, snapshot berhasil dibangun", () => {
+    const snapshot = buildPurchaseOrderSnapshot({
+      order: ordersWithLineCount(30),
+      tenant: TENANT,
+      documentNumber: "PO-20260810-000004",
+      documentDate: "2026-08-10",
+    });
+    expect(snapshot.lines).toHaveLength(30);
+  });
+
+  it("31 baris item -- REJECT eksplisit DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED, bukan halaman lanjutan", () => {
+    try {
+      buildPurchaseOrderSnapshot({
+        order: ordersWithLineCount(31),
+        tenant: TENANT,
+        documentNumber: "PO-20260810-000005",
+        documentDate: "2026-08-10",
+      });
+      expect.fail("seharusnya throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DocumentSourceError);
+      expect((err as DocumentSourceError).code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
+      expect((err as DocumentSourceError).metadata).toEqual({ actualCount: 31, maxCount: 30 });
+    }
   });
 });

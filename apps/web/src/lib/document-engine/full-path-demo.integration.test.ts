@@ -15,6 +15,13 @@
 // finalizeItemQuantities/finalizeDelivery -- repository asli, tidak ditulis
 // ulang di sini).
 //
+// Fixture PRODUK: 7 SKU kanonik ("Pak Waluyo", sama seperti describe
+// "Invoice canonical Pak Waluyo" di repository-adapter.test.ts) -- membuktikan
+// Kode Barang/Jenis Produk asli bertahan untuk BANYAK baris, bukan hanya satu.
+// companies.logo_url diisi data: URI base64 dari aset logo asli
+// (docs/document-engine/assets/samples/waluyo) -- SELF-CONTAINED, tidak
+// bergantung file/URL eksternal saat dicetak/di-export PDF.
+//
 // Fixture terisolasi per run (companyId/order/delivery UUID acak + runTag),
 // dibersihkan di afterAll. Skip graceful bila Supabase lokal tidak tersedia
 // (pola sama seperti issuance-repository.integration.test.ts).
@@ -77,7 +84,35 @@ function renderStandaloneHtml(bodyHtml: string): string {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Full Path Demo</title><style>${css}</style></head><body>${bodyHtml}</body></html>`;
 }
 
-const SCRATCHPAD_DIR = "C:\\Users\\PC\\AppData\\Local\\Temp\\claude\\D--PROJECT-AI-Operating-Distributor-Platform\\034846e4-7a79-42e2-83ea-708be9047beb\\scratchpad";
+/**
+ * Logo ASLI PT SUMBER WARNA ALAM SUDIADA (docs/document-engine/assets/samples/
+ * waluyo) -- dibaca dari disk lalu di-encode base64 menjadi `data:image/...`
+ * SEKALI per run, BUKAN diambil dari URL eksternal. Ini memastikan dokumen
+ * yang dihasilkan (HTML/PDF) self-contained: `<img>` membawa byte gambar itu
+ * sendiri, tidak merujuk file/URL lain.
+ */
+function loadLogoDataUri(): string {
+  const logoPath = path.resolve(
+    __dirname,
+    "../../../../../docs/document-engine/assets/samples/waluyo/logo-pt-sumber-warna-alam-sudiada .png",
+  );
+  const bytes = readFileSync(logoPath);
+  return `data:image/png;base64,${bytes.toString("base64")}`;
+}
+
+const SCRATCHPAD_DIR =
+  "C:\\Users\\PC\\AppData\\Local\\Temp\\claude\\D--PROJECT-AI-Operating-Distributor-Platform\\048d86ef-a77f-482d-b9b5-6e147e5dcc7c\\scratchpad";
+
+/** 7 SKU kanonik "Pak Waluyo" -- sama dengan WALUYO_PRODUCTS di repository-adapter.test.ts, dipakai di sini lewat DB sungguhan (bukan fake reader). */
+const WALUYO_PRODUCTS = [
+  { sku: "SKU-001", name: "Minyak Goreng 2L", category: "Minyak Goreng", quantity: 20, unitPrice: 210000, discount: 10000 },
+  { sku: "SKU-002", name: "Indomie Goreng", category: "Mie Instan", quantity: 15, unitPrice: 85000, discount: 5000 },
+  { sku: "SKU-003", name: "Gula Pasir 1Kg", category: "Sembako", quantity: 25, unitPrice: 16000, discount: 0 },
+  { sku: "SKU-004", name: "Kecap Manis 600ml", category: "Bumbu Dapur", quantity: 12, unitPrice: 22000, discount: 2000 },
+  { sku: "SKU-005", name: "Sabun Cuci Piring 800ml", category: "Perawatan Rumah", quantity: 18, unitPrice: 14500, discount: 0 },
+  { sku: "SKU-006", name: "Teh Celup Kotak", category: "Minuman", quantity: 10, unitPrice: 12000, discount: 1000 },
+  { sku: "SKU-007", name: "Kopi Sachet Renceng", category: "Minuman", quantity: 30, unitPrice: 21000, discount: 0 },
+] as const;
 
 describeIfDb("Full production path: DB lokal -> repository asli -> issued snapshot -> renderer", () => {
   let supabase: SupabaseClient;
@@ -85,10 +120,11 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
   let issuanceRepo: SupabaseDocumentIssuanceRepository;
   const runTag = `itest-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   const companyId = randomUUID();
+  const logoDataUri = loadLogoDataUri();
   let salesAuthId = "";
   let customerId = "";
   let orderId = "";
-  let orderItemId = "";
+  let orderItemIds: string[] = [];
   let deliveryId = "";
 
   beforeAll(async () => {
@@ -98,12 +134,13 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
 
     await supabase.from("companies").insert({
       id: companyId,
-      name: "PT Full Path Demo",
+      name: "PT SUMBER WARNA ALAM SUDIADA",
       slug: `fullpath-${runTag}`,
-      legal_address: "Jl. Demo Jalur Produksi No. 88, Cirebon",
-      contact_email: "demo@fullpath.test",
-      contact_phone: "021-5550188",
+      legal_address: "Jl. Cendana Raya Talun Cirebon 45171",
+      contact_email: "sumberwanaalamsudiada@gmail.com",
+      contact_phone: "085185905859",
       document_number_prefix: "FPD",
+      logo_url: logoDataUri,
     });
 
     const { data: salesAuth, error: salesErr } = await supabase.auth.admin.createUser({
@@ -113,11 +150,11 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     });
     if (salesErr || !salesAuth.user) throw new Error(`gagal buat auth user: ${salesErr?.message}`);
     salesAuthId = salesAuth.user.id;
-    await supabase.from("users").insert({ id: salesAuthId, company_id: companyId, email: `${runTag}-sales@fullpath.test`, full_name: "Sales Demo", is_active: true });
+    await supabase.from("users").insert({ id: salesAuthId, company_id: companyId, email: `${runTag}-sales@fullpath.test`, full_name: "Budi Santoso", is_active: true });
 
     const { data: customer, error: custErr } = await supabase
       .from("customers")
-      .insert({ company_id: companyId, name: "Toko Demo Jalur Produksi", code: `CUST-${runTag}` })
+      .insert({ company_id: companyId, name: "Toko Sari Rasa (Pak Waluyo)", code: `CUST-${runTag}` })
       .select("id")
       .single();
     if (custErr) throw new Error(`gagal buat customer: ${custErr.message}`);
@@ -125,27 +162,50 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
 
     const { data: order, error: orderErr } = await supabase
       .from("sales_orders")
-      .insert({ company_id: companyId, order_number: `SO-${runTag}`, customer_id: customerId, sales_id: salesAuthId, status: "confirmed" })
+      .insert({ company_id: companyId, order_number: `SO-${runTag}`, customer_id: customerId, sales_id: salesAuthId, status: "confirmed", payment_terms_days: 14 })
       .select("id")
       .single();
     if (orderErr) throw new Error(`gagal buat order: ${orderErr.message}`);
     orderId = (order as { id: string }).id;
 
-    const { data: orderItem, error: itemErr } = await supabase
-      .from("sales_order_items")
-      .insert({
-        order_id: orderId,
-        product_name_raw: "Minyak Goreng 2L",
-        quantity: 20,
-        unit: "dus",
-        unit_price: 210000,
-        discount_amount: 10000,
-        total_amount: 20 * 210000 - 10000,
-      })
-      .select("id")
-      .single();
-    if (itemErr) throw new Error(`gagal buat order item: ${itemErr.message}`);
-    orderItemId = (orderItem as { id: string }).id;
+    // products.sku/product_categories.name -- membuktikan Kode Barang/Jenis
+    // Produk asli bertahan lewat seluruh jalur produksi (bukan hanya fixture
+    // in-process): getConfirmedOrder/getDelivery (join sales_order_item->
+    // product->category) -> builder -> issued_documents.snapshot (JSONB) ->
+    // dibaca ulang dari DB -> renderer. 7 baris (bukan 1) supaya kanonik
+    // "Pak Waluyo" sungguhan lewat DB, bukan hanya fake reader di unit test.
+    orderItemIds = [];
+    for (const p of WALUYO_PRODUCTS) {
+      const { data: category, error: categoryErr } = await supabase
+        .from("product_categories")
+        .insert({ company_id: companyId, name: p.category })
+        .select("id")
+        .single();
+      if (categoryErr) throw new Error(`gagal buat product_categories (${p.category}): ${categoryErr.message}`);
+
+      const { data: product, error: productErr } = await supabase
+        .from("products")
+        .insert({ company_id: companyId, sku: `${p.sku}-${runTag}`, name: p.name, category_id: (category as { id: string }).id, price: p.unitPrice, unit: "dus" })
+        .select("id")
+        .single();
+      if (productErr) throw new Error(`gagal buat products (${p.name}): ${productErr.message}`);
+
+      const { data: orderItem, error: itemErr } = await supabase
+        .from("sales_order_items")
+        .insert({
+          order_id: orderId,
+          product_id: (product as { id: string }).id,
+          quantity: p.quantity,
+          unit: "dus",
+          unit_price: p.unitPrice,
+          discount_amount: p.discount,
+          total_amount: p.quantity * p.unitPrice - p.discount,
+        })
+        .select("id")
+        .single();
+      if (itemErr) throw new Error(`gagal buat order item (${p.name}): ${itemErr.message}`);
+      orderItemIds.push((orderItem as { id: string }).id);
+    }
   }, 30000);
 
   afterAll(async () => {
@@ -167,7 +227,7 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
 
     const issued = await issuePurchaseOrderDocument(
       { issuance: issuanceRepo, orderReader },
-      { companyId, orderId, issuedBy: salesAuthId, delivererName: "Sales Demo" },
+      { companyId, orderId, issuedBy: salesAuthId, delivererName: "Budi Santoso" },
     );
 
     expect(issued.record.documentNumber).toMatch(/^FPD-PO-\d{8}-\d{6}$/);
@@ -181,31 +241,65 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     expect(snapshotFromDb.documentNumber).toBe(issued.record.documentNumber);
     expect((row as { document_type: string }).document_type).toBe("PURCHASE_ORDER");
 
-    const viewModel = buildPrintViewModel(snapshotFromDb);
-    const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel }));
+    // 7 SKU kanonik "Pak Waluyo" -- products.sku/product_categories.name
+    // (Kode Barang/Jenis Produk) WAJIB ikut tersimpan dalam snapshot immutable
+    // dan bertahan setelah dibaca ulang dari DB -- bukan "-", untuk SETIAP baris.
+    expect(snapshotFromDb.lines).toHaveLength(7);
+    for (const [i, p] of WALUYO_PRODUCTS.entries()) {
+      expect(snapshotFromDb.lines[i]!.productCode).toBe(`${p.sku}-${runTag}`);
+      expect(snapshotFromDb.lines[i]!.productCode).not.toBe("-");
+      expect(snapshotFromDb.lines[i]!.productType).toBe(p.category);
+    }
 
-    expect(html).not.toContain("CATATAN");
-    expect(html).not.toContain("DPP");
-    expect(html).not.toContain("PPN");
-    expect(html.match(/doc-engine-signature-role">Salesman/g)).toHaveLength(2); // 2 panel identik
-    expect(html.match(/doc-engine-signature-role">Pengirim/g)).toHaveLength(2);
-    expect(html.match(/doc-engine-signature-role">Penerima/g)).toHaveLength(2);
+    const viewModel = buildPrintViewModel(snapshotFromDb);
+
+    // Logo tersedia pada print view model sebagai data URI self-contained
+    // (BUKAN URL eksternal) -- tenant.logoUrl langsung dari companies.logo_url.
+    expect(viewModel.tenant.logoUrl).not.toBeNull();
+    expect(viewModel.tenant.logoUrl).toMatch(/^data:image\/png;base64,/);
+    expect(viewModel.tenant.logoUrl).toBe(logoDataUri);
+
+    const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel }));
+    // Base64 logo (~1.3 juta karakter acak) bisa secara kebetulan memuat
+    // substring seperti "DPP"/"PPN" -- redaksi payload base64 SEBELUM
+    // memeriksa larangan teks bisnis, supaya pemeriksaan itu tetap berarti
+    // (memeriksa konten dokumen, bukan noise base64 gambar).
+    const htmlTextCheck = html.split(logoDataUri).join("[LOGO_DATA_URI]");
+
+    expect(htmlTextCheck).not.toContain("CATATAN");
+    expect(htmlTextCheck).not.toContain("DPP");
+    expect(htmlTextCheck).not.toContain("PPN");
+    // LOCKED 2026-07-23: SATU halaman = SATU dokumen, tidak ada lagi duplikasi 2 panel.
+    expect(html.match(/doc-engine-signature-role">SALESMAN</g)).toHaveLength(1);
+    expect(html.match(/doc-engine-signature-role">PENGIRIM</g)).toHaveLength(1);
+    expect(html.match(/doc-engine-signature-role">DITERIMA OLEH</g)).toHaveLength(1);
+    expect(html.match(/class="doc-engine-page"/g)).toHaveLength(1);
     expect(html).toContain(issued.record.documentNumber);
-    expect(html).toContain("Toko Demo Jalur Produksi");
+    expect(html).toContain("Toko Sari Rasa (Pak Waluyo)");
+    // Logo BENAR-BENAR tertanam pada markup yang dirender (data: URI utuh di
+    // dalam <img>, bukan sekadar path/URL) -- inilah yang Chromium/Playwright
+    // embed sebagai byte gambar sungguhan saat dokumen ini di-export ke PDF.
+    expect(html).toContain(`<img src="${logoDataUri}"`);
+    expect(html).toContain('class="doc-engine-logo"');
+    for (const p of WALUYO_PRODUCTS) {
+      expect(html).toContain(`<td>${p.sku}-${runTag}</td>`);
+      expect(html).toContain(`<td>${p.category}</td>`);
+    }
 
     writeFileSync(path.join(SCRATCHPAD_DIR, "full-path-demo-po.html"), renderStandaloneHtml(html), "utf-8");
   });
 
-  it("2. Delivery Note (Target 2) diterbitkan SEBELUM dispatch, lalu delivery diverifikasi penuh lewat repository asli", async () => {
+  it("2. Delivery Note (Target 2) diterbitkan SEBELUM dispatch, lalu delivery diverifikasi penuh (7 baris) lewat repository asli", async () => {
     const created = await deliveryRepo.createDelivery({
       companyId,
       salesOrderId: orderId,
       idempotencyKey: null,
       createdBy: salesAuthId,
-      items: [{ salesOrderItemId: orderItemId, productName: "Minyak Goreng 2L", unit: "dus", unitPrice: 210000, orderedQuantity: 20 }],
+      items: WALUYO_PRODUCTS.map((p, i) => ({ salesOrderItemId: orderItemIds[i]!, productName: p.name, unit: "dus", unitPrice: p.unitPrice, orderedQuantity: p.quantity })),
     });
     deliveryId = created.id;
     expect(created.status).toBe("planned");
+    expect(created.items).toHaveLength(7);
 
     // Target 2: Surat Jalan WAJIB diterbitkan sebelum dispatch.
     const note = await issuanceRepo.issueDeliveryNote(deliveryId);
@@ -213,38 +307,76 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
 
     await deliveryRepo.recordDispatch(deliveryId);
     await deliveryRepo.recordArrival(deliveryId);
-    const finalizeResult = await deliveryRepo.finalizeItemQuantities(deliveryId, [
-      { deliveryItemId: created.items[0].id, receivedQuantity: 20, rejectedQuantity: 0, returnedQuantity: 0, unresolvedQuantity: 0 },
-    ]);
+    const finalizeResult = await deliveryRepo.finalizeItemQuantities(
+      deliveryId,
+      created.items.map((item, i) => ({
+        deliveryItemId: item.id,
+        receivedQuantity: WALUYO_PRODUCTS[i]!.quantity,
+        rejectedQuantity: 0,
+        returnedQuantity: 0,
+        unresolvedQuantity: 0,
+      })),
+    );
     expect(finalizeResult.ok).toBe(true);
     const finalized = await deliveryRepo.finalizeDelivery(deliveryId, "fully_received");
     expect(finalized.delivery.status).toBe("fully_received");
   });
 
-  it("3. Invoice: menagih verifiedQuantity via jalur produksi, deliveryReference = nomor Surat Jalan Target 2, disimpan sebagai version 1", async () => {
+  it("3. Invoice: menagih verifiedQuantity via jalur produksi (7 baris), deliveryReference = nomor Surat Jalan Target 2, disimpan sebagai version 1", async () => {
     const orderReader = new ConfirmedOrderReader(deliveryRepo);
     const deliveryReader = new DeliveryVerificationReader(deliveryRepo);
 
     const issued = await issueInvoiceDocument(
       { issuance: issuanceRepo, orderReader, deliveryReader },
-      { companyId, orderId, deliveryId, issuedBy: salesAuthId, delivererName: "Sales Demo" },
+      { companyId, orderId, deliveryId, issuedBy: salesAuthId, delivererName: "Budi Santoso" },
     );
 
     expect(issued.record.documentNumber).toMatch(/^FPD-INV-\d{8}-\d{6}$/);
     expect(issued.snapshot.deliveryReference).toMatch(/^FPD-SJ-\d{8}-\d{6}$/);
-    expect(issued.snapshot.lines[0].quantity).toBe(20); // verifiedQuantity, bukan ordered mentah
+    expect(issued.snapshot.lines).toHaveLength(7);
+    for (const [i, p] of WALUYO_PRODUCTS.entries()) {
+      expect(issued.snapshot.lines[i]!.quantity).toBe(p.quantity); // verifiedQuantity, bukan ordered mentah
+    }
 
     const { data: row } = await supabase.from("issued_documents").select("snapshot, source_order_id, source_delivery_id").eq("id", issued.record.id).single();
     const snapshotFromDb = (row as { snapshot: DocumentSnapshot }).snapshot;
     expect((row as { source_order_id: string }).source_order_id).toBe(orderId);
     expect((row as { source_delivery_id: string }).source_delivery_id).toBe(deliveryId);
 
+    // 7 SKU kanonik "Pak Waluyo" WAJIB ikut ditagih (Invoice via
+    // DeliveryVerificationReader -> computeInvoiceEligibility), bertahan
+    // setelah snapshot dibaca ulang dari DB -- bukan "-", untuk SETIAP baris.
+    expect(snapshotFromDb.lines).toHaveLength(7);
+    for (const [i, p] of WALUYO_PRODUCTS.entries()) {
+      expect(snapshotFromDb.lines[i]!.productCode).toBe(`${p.sku}-${runTag}`);
+      expect(snapshotFromDb.lines[i]!.productCode).not.toBe("-");
+      expect(snapshotFromDb.lines[i]!.productType).toBe(p.category);
+    }
+
     const viewModel = buildPrintViewModel(snapshotFromDb);
+
+    // Logo tersedia pada print view model Invoice juga (branding sama, bukan
+    // hanya PO) -- data URI self-contained, sama persis dengan companies.logo_url.
+    expect(viewModel.tenant.logoUrl).not.toBeNull();
+    expect(viewModel.tenant.logoUrl).toMatch(/^data:image\/png;base64,/);
+    expect(viewModel.tenant.logoUrl).toBe(logoDataUri);
+
     const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel }));
-    expect(html).not.toContain("CATATAN");
-    expect(html).not.toContain("DPP");
-    expect(html).not.toContain("PPN");
-    expect(html).toContain(`Ref. Delivery: ${issued.snapshot.deliveryReference}`);
+    // Lihat catatan di test 1 -- redaksi payload base64 logo sebelum memeriksa larangan teks bisnis.
+    const htmlTextCheck = html.split(logoDataUri).join("[LOGO_DATA_URI]");
+    expect(htmlTextCheck).not.toContain("CATATAN");
+    expect(htmlTextCheck).not.toContain("DPP");
+    expect(htmlTextCheck).not.toContain("PPN");
+    // Baris terpisah per kolom (label/":"/value) di layout baru, bukan "Label: value" satu string.
+    expect(html).toContain("Ref. Delivery");
+    expect(html).toContain(`<td>${issued.snapshot.deliveryReference}</td>`);
+    // Logo BENAR-BENAR tertanam pada markup Invoice juga.
+    expect(html).toContain(`<img src="${logoDataUri}"`);
+    expect(html).toContain('class="doc-engine-logo"');
+    for (const p of WALUYO_PRODUCTS) {
+      expect(html).toContain(`<td>${p.sku}-${runTag}</td>`);
+      expect(html).toContain(`<td>${p.category}</td>`);
+    }
 
     writeFileSync(path.join(SCRATCHPAD_DIR, "full-path-demo-invoice.html"), renderStandaloneHtml(html), "utf-8");
   });

@@ -75,8 +75,10 @@ export interface OrderReaderRecord {
   orderNumber: string;
   orderDate: string | null;
   customerId: string | null;
+  customerCode: string | null;
   customerName: string | null;
   customerAddress: string | null;
+  customerPhone: string | null;
   picName: string | null;
   salesmanId: string | null;
   salesmanName: string | null;
@@ -160,6 +162,22 @@ function assertOrderComplete(record: OrderReaderRecord): asserts record is Order
 }
 
 /**
+ * Termin pembayaran (sales_orders.payment_terms_days) -- kode error TERPISAH
+ * dari ORDER_SOURCE_INCOMPLETE (keputusan Founder 2026-07-23), supaya caller
+ * bisa membedakan "order belum lengkap" dari "termin belum diisi" secara
+ * eksplisit. TIDAK fallback ke 0/placeholder -- null berarti order historis
+ * atau belum pernah diisi lewat alur input termin (di luar scope modul ini).
+ */
+function assertPaymentTermsComplete(record: OrderReaderRecord): asserts record is OrderReaderRecord & { paymentTermsDays: number } {
+  if (record.paymentTermsDays === null) {
+    throw new DocumentSourceError(
+      "PAYMENT_TERMS_INCOMPLETE",
+      `Order ${record.orderId} belum memiliki termin pembayaran (payment_terms_days).`,
+    );
+  }
+}
+
+/**
  * Mengambil SATU order milik companyId yang terautentikasi lewat OrderReader
  * resmi, memverifikasi kepemilikan tenant, lalu memetakannya ke OrderSource.
  * orderId/companyId adalah SATU-SATUNYA input identitas -- tidak ada parameter
@@ -187,6 +205,7 @@ export async function loadPurchaseOrderSource(
   }
 
   assertOrderComplete(record);
+  assertPaymentTermsComplete(record);
 
   const lines: OrderLineSource[] = record.lines.map((line) => ({
     orderLineId: line.orderLineId,
@@ -206,8 +225,10 @@ export async function loadPurchaseOrderSource(
     orderDate: record.orderDate,
     store: {
       customerId: record.customerId,
+      storeCode: record.customerCode,
       storeName: record.customerName,
       storeAddress: record.customerAddress,
+      storePhone: record.customerPhone,
       picName: record.picName,
     },
     salesman: {
@@ -351,26 +372,33 @@ export class ConfirmedOrderReader implements OrderReader {
       orderNumber: confirmed.orderNumber,
       orderDate: confirmed.orderDate ?? null,
       customerId: confirmed.customerId ?? null,
+      customerCode: confirmed.customerCode ?? null,
       customerName: confirmed.customerName,
-      // customerAddress dan picName masih tidak tersedia pada getConfirmedOrder
-      // -- keduanya opsional pada OrderSource, jadi tetap null tanpa memicu
-      // ORDER_SOURCE_INCOMPLETE (lihat StoreIdentity di types.ts).
-      customerAddress: null,
+      customerAddress: confirmed.customerAddress ?? null,
+      customerPhone: confirmed.customerPhone ?? null,
+      // picName masih tidak tersedia pada getConfirmedOrder (customers tidak
+      // punya kolom PIC dedicated -- ada subsistem customer_pics terpisah,
+      // di luar scope wiring ini) -- opsional pada OrderSource, tetap null
+      // tanpa memicu ORDER_SOURCE_INCOMPLETE (lihat StoreIdentity di types.ts).
       picName: null,
       salesmanId: confirmed.salesmanId ?? null,
       salesmanName: confirmed.salesmanName ?? null,
-      // Payment terms masih tidak tersedia pada getConfirmedOrder -- opsional
-      // pada OrderSource, tetap null tanpa memicu ORDER_SOURCE_INCOMPLETE.
-      paymentTermsDays: null,
+      // sales_orders.payment_terms_days (migration 20260812000003) -- null untuk
+      // order historis/belum diisi. loadPurchaseOrderSource menolak eksplisit
+      // (PAYMENT_TERMS_INCOMPLETE) untuk kasus tsb via assertPaymentTermsComplete,
+      // BUKAN memperlakukannya sebagai opsional seperti customerAddress/picName.
+      paymentTermsDays: confirmed.paymentTermsDays ?? null,
       lines: confirmed.items.map((item) => ({
         orderLineId: item.id,
-        // productCode tidak tersedia pada getConfirmedOrder saat ini.
+        // products.sku/product_categories.name (migration lama, baru diwiring
+        // di sini) -- null bila item tanpa product_id/produk tanpa sku/kategori
+        // (jangan dikarang).
         // quantity di sini adalah OUTSTANDING (ordered dikurangi delivery
         // attempt sebelumnya), bukan ordered asli -- identik untuk order yang
         // belum pernah dikirim sebagian.
-        productCode: null,
+        productCode: item.productCode ?? null,
         productName: item.productName,
-        productType: null,
+        productType: item.productType ?? null,
         unit: item.unit,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
@@ -412,10 +440,13 @@ export class DeliveryVerificationReader implements DeliveryReader {
         return {
           deliveryLineId: eligibleItem.deliveryItemId,
           orderLineId: eligibleItem.salesOrderItemId,
-          // productCode tidak tersedia pada delivery repository saat ini.
-          productCode: null,
+          // products.sku/product_categories.name -- diwiring lewat
+          // computeInvoiceEligibility (lib/delivery/service.ts), yang meneruskan
+          // DeliveryItemRecord.productCode/productType apa adanya (join
+          // sales_order_item->product pada SupabaseDeliveryRepository.getDelivery).
+          productCode: eligibleItem.productCode,
           productName: eligibleItem.productName,
-          productType: null,
+          productType: eligibleItem.productType,
           unit: original?.unit ?? null,
           orderedQuantity: original?.orderedQuantity ?? 0,
           verifiedQuantity: eligibleItem.eligibleQuantity,

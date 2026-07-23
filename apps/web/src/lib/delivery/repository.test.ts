@@ -57,6 +57,7 @@ const BASE_ROW = {
   customer_name_raw: null,
   sales_id: "sales-1",
   salesman: { full_name: "Budi Santoso", company_id: "company-swa" },
+  payment_terms_days: 14,
   items: [
     {
       id: "soi-1",
@@ -104,6 +105,19 @@ describe("SupabaseDeliveryRepository.getConfirmedOrder -- perluasan additive", (
     expect(order?.items[0].discountAmount).toBe(0);
   });
 
+  it("memetakan payment_terms_days apa adanya (present)", async () => {
+    const repo = new SupabaseDeliveryRepository(fakeSupabaseForConfirmedOrder(BASE_ROW));
+    const order = await repo.getConfirmedOrder("order-A", "company-swa");
+    expect(order?.paymentTermsDays).toBe(14);
+  });
+
+  it("payment_terms_days null (order historis/belum diisi) -> tetap null, TIDAK fallback ke 0", async () => {
+    const row = { ...BASE_ROW, payment_terms_days: null };
+    const repo = new SupabaseDeliveryRepository(fakeSupabaseForConfirmedOrder(row));
+    const order = await repo.getConfirmedOrder("order-A", "company-swa");
+    expect(order?.paymentTermsDays).toBeNull();
+  });
+
   it("TENANT-SAFETY: join users!sales_id mengembalikan user company LAIN (hipotetis) -> salesmanId/salesmanName di-null-kan, TIDAK bocor", async () => {
     const row = { ...BASE_ROW, salesman: { full_name: "Orang Company Lain", company_id: "company-lain" } };
     const repo = new SupabaseDeliveryRepository(fakeSupabaseForConfirmedOrder(row));
@@ -111,5 +125,110 @@ describe("SupabaseDeliveryRepository.getConfirmedOrder -- perluasan additive", (
     expect(order?.salesmanId).toBeNull();
     expect(order?.salesmanName).toBeNull();
     expect(JSON.stringify(order)).not.toContain("Orang Company Lain");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getDelivery -- wiring products.sku/product_categories.name (jenis produk)
+// ke DeliveryItemRecord, supaya Invoice (via DeliveryVerificationReader +
+// computeInvoiceEligibility) bisa menampilkan Kode Barang/Jenis Produk asli,
+// bukan "-".
+// ---------------------------------------------------------------------------
+
+function fakeSupabaseForGetDelivery(row: unknown): SupabaseClient {
+  return {
+    from(table: string) {
+      if (table === "deliveries") {
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  maybeSingle: async () => ({ data: row }),
+                };
+              },
+            };
+          },
+        };
+      }
+      throw new Error(`unexpected table in fake: ${table}`);
+    },
+  } as unknown as SupabaseClient;
+}
+
+const DELIVERY_ROW = {
+  id: "delivery-A",
+  company_id: "company-swa",
+  sales_order_id: "order-A",
+  attempt_number: 1,
+  assigned_driver_id: null,
+  status: "verified",
+  delivery_number: "SWAS-SJ-20260811-000001",
+  delivery_date: "2026-08-11",
+  items: [
+    {
+      id: "dli-1",
+      sales_order_item_id: "soi-1",
+      ordered_quantity: 10,
+      dispatched_quantity: 10,
+      received_quantity: 10,
+      rejected_quantity: 0,
+      returned_quantity: 0,
+      unresolved_quantity: 0,
+      sales_order_item: {
+        unit_price: 85000,
+        unit: "dus",
+        product_name_raw: null,
+        product: { name: "Indomie Goreng", sku: "SKU-1", category: { name: "Mie Instan" } },
+      },
+    },
+  ],
+  exceptions: [],
+  evidence: [],
+  recipient: [],
+};
+
+describe("SupabaseDeliveryRepository.getDelivery -- wiring products.sku/product_categories.name", () => {
+  it("memetakan productCode (products.sku) dan productType (product_categories.name) dari join sales_order_item->product", async () => {
+    const repo = new SupabaseDeliveryRepository(fakeSupabaseForGetDelivery(DELIVERY_ROW));
+    const delivery = await repo.getDelivery("delivery-A");
+    expect(delivery?.items[0]?.productCode).toBe("SKU-1");
+    expect(delivery?.items[0]?.productType).toBe("Mie Instan");
+  });
+
+  it("produk tanpa sku/kategori -> productCode/productType null, TIDAK dikarang", async () => {
+    const row = {
+      ...DELIVERY_ROW,
+      items: [
+        {
+          ...DELIVERY_ROW.items[0],
+          sales_order_item: {
+            ...DELIVERY_ROW.items[0].sales_order_item,
+            product: { name: "Indomie Goreng", sku: null, category: null },
+          },
+        },
+      ],
+    };
+    const repo = new SupabaseDeliveryRepository(fakeSupabaseForGetDelivery(row));
+    const delivery = await repo.getDelivery("delivery-A");
+    expect(delivery?.items[0]?.productCode).toBeNull();
+    expect(delivery?.items[0]?.productType).toBeNull();
+  });
+
+  it("item tanpa product_id (product null, hanya product_name_raw) -> productCode/productType null", async () => {
+    const row = {
+      ...DELIVERY_ROW,
+      items: [
+        {
+          ...DELIVERY_ROW.items[0],
+          sales_order_item: { unit_price: 85000, unit: "dus", product_name_raw: "Barang Manual", product: null },
+        },
+      ],
+    };
+    const repo = new SupabaseDeliveryRepository(fakeSupabaseForGetDelivery(row));
+    const delivery = await repo.getDelivery("delivery-A");
+    expect(delivery?.items[0]?.productName).toBe("Barang Manual");
+    expect(delivery?.items[0]?.productCode).toBeNull();
+    expect(delivery?.items[0]?.productType).toBeNull();
   });
 });

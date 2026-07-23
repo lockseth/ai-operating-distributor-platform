@@ -25,6 +25,10 @@ import type {
 export interface ConfirmedOrderItemSnapshot {
   id: string;
   productName: string;
+  /** products.sku -- null bila item tanpa product_id/produk tanpa sku (jangan dikarang). */
+  productCode?: string | null;
+  /** product_categories.name (jenis produk) -- null bila belum ada kategori (jangan dikarang). */
+  productType?: string | null;
   unit: string | null;
   unitPrice: number;
   quantity: number;
@@ -55,10 +59,18 @@ export interface ConfirmedOrderSnapshot {
   orderDate?: string | null;
   /** sales_orders.customer_id -- FK asli (bukan hasil join nama saja). */
   customerId?: string | null;
+  /** customers.code -- null bila tidak tersedia (jangan dikarang). */
+  customerCode?: string | null;
+  /** customers.address -- null bila tidak tersedia (jangan dikarang). */
+  customerAddress?: string | null;
+  /** customers.phone -- null bila tidak tersedia (jangan dikarang). */
+  customerPhone?: string | null;
   /** sales_orders.sales_id. Null bila order belum diberi salesman ATAU (defense-in-depth) join users ternyata bukan milik company yang sama -- lihat getConfirmedOrder. */
   salesmanId?: string | null;
   /** users.full_name milik salesmanId di atas -- selalu null/isi bersamaan dengan salesmanId. */
   salesmanName?: string | null;
+  /** sales_orders.payment_terms_days -- null untuk order historis/belum diisi. Document Engine WAJIB gagal eksplisit (PAYMENT_TERMS_INCOMPLETE) untuk kasus tsb, bukan fallback. Optional di sini untuk kompatibilitas fixture test lama. */
+  paymentTermsDays?: number | null;
 }
 
 export type DeliveryConversationAwaiting =
@@ -212,7 +224,7 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
     const { data } = await this.supabase
       .from("sales_orders")
       .select(
-        "id, company_id, order_number, status, confirmed_at, customer_id, customer:customers!customer_id(name), customer_name_raw, sales_id, salesman:users!sales_id(full_name, company_id), items:sales_order_items(id, quantity, unit, unit_price, discount_amount, product_name_raw, product:products!product_id(name))"
+        "id, company_id, order_number, status, confirmed_at, customer_id, customer:customers!customer_id(name, code, address, phone), customer_name_raw, sales_id, salesman:users!sales_id(full_name, company_id), payment_terms_days, items:sales_order_items(id, quantity, unit, unit_price, discount_amount, product_name_raw, product:products!product_id(name, sku, category:product_categories!category_id(name)))"
       )
       .eq("id", salesOrderId)
       .eq("company_id", companyId)
@@ -226,10 +238,11 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       status: string;
       confirmed_at: string | null;
       customer_id: string | null;
-      customer: { name: string } | null;
+      customer: { name: string; code: string | null; address: string | null; phone: string | null } | null;
       customer_name_raw: string | null;
       sales_id: string | null;
       salesman: { full_name: string; company_id: string } | null;
+      payment_terms_days: number | null;
       items: {
         id: string;
         quantity: number;
@@ -237,7 +250,7 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
         unit_price: number;
         discount_amount: number;
         product_name_raw: string | null;
-        product: { name: string } | null;
+        product: { name: string; sku: string | null; category: { name: string } | null } | null;
       }[];
     };
 
@@ -250,6 +263,8 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       row.items.map(async (i) => ({
         id: i.id,
         productName: i.product?.name ?? i.product_name_raw ?? "(produk)",
+        productCode: i.product?.sku ?? null,
+        productType: i.product?.category?.name ?? null,
         unit: i.unit,
         unitPrice: i.unit_price,
         quantity: await this.getOutstandingQuantity(i.id, null),
@@ -275,8 +290,12 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       items: itemsWithOutstanding,
       orderDate: row.confirmed_at,
       customerId: row.customer_id,
+      customerCode: row.customer?.code ?? null,
+      customerAddress: row.customer?.address ?? null,
+      customerPhone: row.customer?.phone ?? null,
       salesmanId: salesmanTenantSafe ? row.sales_id : null,
       salesmanName: salesmanTenantSafe?.full_name ?? null,
+      paymentTermsDays: row.payment_terms_days,
     };
   }
 
@@ -382,7 +401,7 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       .from("deliveries")
       .select(
         "id, company_id, sales_order_id, attempt_number, assigned_driver_id, status, delivery_number, delivery_date, " +
-          "items:delivery_items(id, sales_order_item_id, ordered_quantity, dispatched_quantity, received_quantity, rejected_quantity, returned_quantity, unresolved_quantity, sales_order_item:sales_order_items!sales_order_item_id(unit_price, unit, product_name_raw, product:products!product_id(name))), " +
+          "items:delivery_items(id, sales_order_item_id, ordered_quantity, dispatched_quantity, received_quantity, rejected_quantity, returned_quantity, unresolved_quantity, sales_order_item:sales_order_items!sales_order_item_id(unit_price, unit, product_name_raw, product:products!product_id(name, sku, category:product_categories!category_id(name)))), " +
           "exceptions:delivery_exceptions(id, reason_code, note, severity, resolution_status, actor_id, created_at, delivery_item_id), " +
           "evidence:delivery_evidence(id, evidence_type, storage_ref, captured_at, latitude, longitude, actor_id, metadata, delivery_item_id), " +
           "recipient:delivery_recipients(recipient_name, identity_note, is_expected_pic, signature_evidence_id)"
@@ -724,7 +743,12 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
       rejected_quantity: number;
       returned_quantity: number;
       unresolved_quantity: number;
-      sales_order_item: { unit_price: number; unit: string | null; product_name_raw: string | null; product: { name: string } | null } | null;
+      sales_order_item: {
+        unit_price: number;
+        unit: string | null;
+        product_name_raw: string | null;
+        product: { name: string; sku: string | null; category: { name: string } | null } | null;
+      } | null;
     }[];
     exceptions: {
       id: string;
@@ -754,6 +778,8 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
     id: i.id,
     salesOrderItemId: i.sales_order_item_id,
     productName: i.sales_order_item?.product?.name ?? i.sales_order_item?.product_name_raw ?? "(produk)",
+    productCode: i.sales_order_item?.product?.sku ?? null,
+    productType: i.sales_order_item?.product?.category?.name ?? null,
     unit: i.sales_order_item?.unit ?? null,
     unitPrice: i.sales_order_item?.unit_price ?? 0,
     orderedQuantity: i.ordered_quantity,
@@ -816,6 +842,8 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   confirmedOrders = new Map<string, ConfirmedOrderSnapshot>();
   /** Ordered quantity ASLI per sales_order_item_id -- confirmedOrders.items[].quantity di atas berubah makna menjadi "outstanding saat dibaca" (lihat getConfirmedOrder), jadi nilai asli disimpan terpisah di sini untuk komputasi outstanding itu sendiri. */
   private originalQuantities = new Map<string, number>();
+  /** productCode/productType per sales_order_item_id -- disimpan terpisah supaya createDelivery (yang inputnya tidak membawa field ini, meniru delivery_items yang tidak menyimpan product master sendiri) tetap bisa memetakannya ke DeliveryItemRecord, sama seperti join sales_order_item->product pada SupabaseDeliveryRepository.getDelivery. */
+  private productMeta = new Map<string, { productCode: string | null; productType: string | null }>();
   private deliveries = new Map<string, DeliveryRecord>();
   private idempotencyIndex = new Map<string, string>(); // `${companyId}:${key}` -> deliveryId
   private conversationStates = new Map<string, DeliveryConversationState>();
@@ -827,6 +855,7 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
     this.confirmedOrders.set(order.id, order);
     for (const item of order.items) {
       this.originalQuantities.set(item.id, item.quantity);
+      this.productMeta.set(item.id, { productCode: item.productCode ?? null, productType: item.productType ?? null });
     }
   }
 
@@ -924,6 +953,8 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
         id: this.nextId("ditem"),
         salesOrderItemId: item.salesOrderItemId,
         productName: item.productName,
+        productCode: this.productMeta.get(item.salesOrderItemId)?.productCode ?? null,
+        productType: this.productMeta.get(item.salesOrderItemId)?.productType ?? null,
         unit: item.unit,
         unitPrice: item.unitPrice,
         orderedQuantity: item.orderedQuantity,

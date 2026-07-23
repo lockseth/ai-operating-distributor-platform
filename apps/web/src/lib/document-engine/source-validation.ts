@@ -9,6 +9,27 @@
 import { DocumentSourceError } from "./errors";
 import type { DeliverySource, OrderLineSource, OrderSource } from "./types";
 
+/** Kapasitas cetak LOCKED Founder 2026-07-23 -- maksimum baris item per dokumen fisik (PO/Invoice), 1 dokumen = 1 halaman 9.5x11in. */
+export const MAX_DOCUMENT_LINE_ITEMS = 30;
+
+/**
+ * Menegakkan kapasitas cetak LOCKED: dokumen dengan lebih dari
+ * MAX_DOCUMENT_LINE_ITEMS baris ditolak eksplisit -- TIDAK ADA halaman
+ * lanjutan, TIDAK mengecilkan font/row-height, TIDAK memakai overflow:hidden
+ * sebagai solusi (lihat AODP_DOCUMENT_LAYOUT_GUIDE.md). Dipanggil dari
+ * po-builder.ts/invoice-builder.ts terhadap JUMLAH BARIS AKHIR dokumen
+ * (setelah resolusi/filter, bukan jumlah baris sumber mentah).
+ */
+export function assertLineItemLimit(lineCount: number): void {
+  if (lineCount > MAX_DOCUMENT_LINE_ITEMS) {
+    throw new DocumentSourceError(
+      "DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED",
+      `Dokumen memiliki ${lineCount} baris item, melebihi kapasitas cetak maksimum ${MAX_DOCUMENT_LINE_ITEMS} baris per dokumen.`,
+      { actualCount: lineCount, maxCount: MAX_DOCUMENT_LINE_ITEMS },
+    );
+  }
+}
+
 /**
  * Memvalidasi baris kandidat PO adalah SUBSET sah dari order.lines (dicocokkan
  * per orderLineId), lalu mengembalikan baris KANONIK dari order.lines --

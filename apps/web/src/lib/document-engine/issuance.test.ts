@@ -29,8 +29,10 @@ function orderReaderRecord(overrides: Partial<OrderReaderRecord> = {}): OrderRea
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
     customerId: "cust-1",
+    customerCode: "CUST-1",
     customerName: "Toko Sari",
     customerAddress: "Jl. Mangga 1",
+    customerPhone: "081200000001",
     picName: "Ibu Sari",
     salesmanId: "sales-1",
     salesmanName: "Budi",
@@ -183,6 +185,35 @@ describe("issuePurchaseOrderDocument", () => {
       issuePurchaseOrderDocument({ issuance: repo, orderReader }, { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW }),
     ).rejects.toMatchObject({ code: "ORDER_NOT_FOUND" });
   });
+
+  it("31 baris item -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
+    const repo = new InMemoryDocumentIssuanceRepository();
+    repo.companies.set("company-swa", COMPLETE_PROFILE);
+    const tooManyLines = Array.from({ length: 31 }, (_, i) => ({
+      orderLineId: `soi-${i + 1}`,
+      productCode: `SKU-${i + 1}`,
+      productName: "Indomie Goreng",
+      productType: "Mie Instan",
+      unit: "dus",
+      quantity: 1,
+      unitPrice: 85000,
+      discountAmount: 0,
+    }));
+    const orderReader = makeOrderReader([orderReaderRecord({ lines: tooManyLines })]);
+
+    await expect(
+      issuePurchaseOrderDocument({ issuance: repo, orderReader }, { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW }),
+    ).rejects.toMatchObject({ code: "DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED" });
+
+    // Penerbitan berikutnya (valid) tetap mendapat nomor urut PERTAMA --
+    // membuktikan attempt yang ditolak di atas TIDAK membakar nomor dokumen.
+    const validOrderReader = makeOrderReader([orderReaderRecord()]);
+    const result = await issuePurchaseOrderDocument(
+      { issuance: repo, orderReader: validOrderReader },
+      { companyId: "company-swa", orderId: "order-A", issuedBy: null, now: FIXED_NOW },
+    );
+    expect(result.record.documentNumber).toMatch(/-000001$/);
+  });
 });
 
 describe("issueInvoiceDocument", () => {
@@ -231,6 +262,52 @@ describe("issueInvoiceDocument", () => {
         { companyId: "company-swa", orderId: "order-A", deliveryId: "delivery-A", issuedBy: null, now: FIXED_NOW },
       ),
     ).rejects.toMatchObject({ code: "DELIVERY_NOT_BILLABLE" });
+  });
+
+  it("31 baris item tertagih -- REJECT DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED SEBELUM alokasi nomor dokumen, tidak ada nomor tertinggal", async () => {
+    const repo = new InMemoryDocumentIssuanceRepository();
+    repo.companies.set("company-swa", COMPLETE_PROFILE);
+    const tooManyOrderLines = Array.from({ length: 31 }, (_, i) => ({
+      orderLineId: `soi-${i + 1}`,
+      productCode: `SKU-${i + 1}`,
+      productName: "Indomie Goreng",
+      productType: "Mie Instan",
+      unit: "dus",
+      quantity: 1,
+      unitPrice: 85000,
+      discountAmount: 0,
+    }));
+    const tooManyDeliveryLines = Array.from({ length: 31 }, (_, i) => ({
+      deliveryLineId: `dline-${i + 1}`,
+      orderLineId: `soi-${i + 1}`,
+      productCode: `SKU-${i + 1}`,
+      productName: "Indomie Goreng",
+      productType: "Mie Instan",
+      unit: "dus",
+      orderedQuantity: 1,
+      verifiedQuantity: 1,
+      unitPrice: 85000,
+    }));
+    const orderReader = makeOrderReader([orderReaderRecord({ lines: tooManyOrderLines })]);
+    const deliveryReader = makeDeliveryReader([deliveryReaderRecord({ lines: tooManyDeliveryLines })]);
+
+    await expect(
+      issueInvoiceDocument(
+        { issuance: repo, orderReader, deliveryReader },
+        { companyId: "company-swa", orderId: "order-A", deliveryId: "delivery-A", issuedBy: null, now: FIXED_NOW },
+      ),
+    ).rejects.toMatchObject({ code: "DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED" });
+
+    // Penerbitan berikutnya (valid, delivery lain) tetap mendapat nomor urut
+    // PERTAMA -- membuktikan attempt yang ditolak di atas TIDAK membakar nomor
+    // dokumen INVOICE.
+    const validOrderReader = makeOrderReader([orderReaderRecord()]);
+    const validDeliveryReader = makeDeliveryReader([deliveryReaderRecord()]);
+    const result = await issueInvoiceDocument(
+      { issuance: repo, orderReader: validOrderReader, deliveryReader: validDeliveryReader },
+      { companyId: "company-swa", orderId: "order-A", deliveryId: "delivery-A", issuedBy: null, now: FIXED_NOW },
+    );
+    expect(result.record.documentNumber).toMatch(/-000001$/);
   });
 });
 

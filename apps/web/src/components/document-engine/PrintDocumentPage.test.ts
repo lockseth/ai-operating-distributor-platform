@@ -48,7 +48,7 @@ function order(overrides: Partial<OrderSource> = {}): OrderSource {
     companyId: "company-swa",
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
-    store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+    store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
     salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
     lines: [orderLine()],
     paymentTermsDays: 14,
@@ -100,21 +100,21 @@ describe("PrintDocumentPage -- 11, 12, 16, 18", () => {
     expect(html.toUpperCase()).not.toContain("CATATAN");
   });
 
-  it("12. Output memiliki tiga label tanda tangan: Salesman, Pengirim, Penerima", () => {
+  it("12. Output memiliki tiga label tanda tangan: SALESMAN, PENGIRIM, DITERIMA OLEH (template LOCK Pak Waluyo)", () => {
     const html = renderInvoiceHtml();
-    expect(html).toContain(">Salesman<");
-    expect(html).toContain(">Pengirim<");
-    expect(html).toContain(">Penerima<");
+    expect(html).toContain(">SALESMAN<");
+    expect(html).toContain(">PENGIRIM<");
+    expect(html).toContain(">DITERIMA OLEH<");
   });
 
-  it("Salesman dan Pengirim tetap dua area terpisah walau nama orangnya sama", () => {
+  it("Salesman, Pengirim, dan Diterima Oleh tetap tiga area terpisah dan berurutan walau nama orangnya sama", () => {
     const html = renderInvoiceHtml();
-    const salesmanBlockIndex = html.indexOf(">Salesman<");
-    const pengirimBlockIndex = html.indexOf(">Pengirim<");
-    const penerimaBlockIndex = html.indexOf(">Penerima<");
+    const salesmanBlockIndex = html.indexOf(">SALESMAN<");
+    const pengirimBlockIndex = html.indexOf(">PENGIRIM<");
+    const diterimaBlockIndex = html.indexOf(">DITERIMA OLEH<");
     expect(salesmanBlockIndex).toBeGreaterThan(-1);
     expect(pengirimBlockIndex).toBeGreaterThan(salesmanBlockIndex);
-    expect(penerimaBlockIndex).toBeGreaterThan(pengirimBlockIndex);
+    expect(diterimaBlockIndex).toBeGreaterThan(pengirimBlockIndex);
   });
 
   it("16. Branding hanya PT Sumber Warna Alam Sudiada -- data kontak sesuai spesifikasi LOCKED", () => {
@@ -143,10 +143,20 @@ describe("PrintDocumentPage -- 11, 12, 16, 18", () => {
     expect(html).not.toContain("<textarea");
   });
 
-  it("dua panel muncul dalam satu halaman (data-document-number sama pada wrapper tunggal)", () => {
+  it("REGRESSION LOCKED 2026-07-23: HANYA SATU document panel per halaman -- tidak ada duplikasi konten (supersede 2-panel LOCK lama)", () => {
     const html = renderInvoiceHtml();
-    const panelCount = (html.match(/doc-engine-panel"/g) ?? []).length;
-    expect(panelCount).toBe(2);
+    const pageCount = (html.match(/class="doc-engine-page"/g) ?? []).length;
+    expect(pageCount).toBe(1);
+    // data-document-number HANYA muncul sekali -- bukti tidak ada wrapper kedua yang identik.
+    const docNumberAttrCount = (html.match(/data-document-number="/g) ?? []).length;
+    expect(docNumberAttrCount).toBe(1);
+    // Baris "No. Dokumen" (konten tabel metadata yang terlihat) hanya tercetak
+    // sekali -- bukan 2x seperti panel lama (attribute data-document-number
+    // TIDAK dihitung di sini karena itu bukan konten visual/cetak).
+    const visibleMetaRowCount = (html.match(/>No\. Dokumen</g) ?? []).length;
+    expect(visibleMetaRowCount).toBe(1);
+    // Kelas panel lama (dua-panel) tidak boleh tersisa sama sekali.
+    expect(html).not.toContain("doc-engine-panel\"");
   });
 
   it("LOCKED: Totals menampilkan Terbilang, TIDAK PERNAH menampilkan DPP/PPN/Other Charges (kontrak aktif Pak Waluyo)", () => {
@@ -168,6 +178,36 @@ describe("PrintDocumentPage -- 11, 12, 16, 18", () => {
     const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel: buildPrintViewModel(poSnapshot) }));
     expect(html).toContain("PURCHASE ORDER");
     expect(html).not.toContain("Ref. Delivery"); // PO tidak punya delivery reference
+  });
+
+  it("REGRESSION 2026-07-23: panel KETENTUAN PEMBAYARAN terpisah DAN heading/badge-nya DIHAPUS -- panel DATA TOKO/CUSTOMER full-width dengan dua kolom internal", () => {
+    const html = renderInvoiceHtml();
+    expect(html).not.toContain("KETENTUAN PEMBAYARAN");
+    expect(html).not.toContain("Termin Pembayaran");
+    expect(html).not.toContain("doc-engine-panel-badge");
+    // Hanya SATU panel info (DATA TOKO/CUSTOMER) yang tersisa pada info-row, disusun dua kolom internal.
+    expect((html.match(/class="doc-engine-info-panel"/g) ?? []).length).toBe(1);
+    expect((html.match(/class="doc-engine-info-column"/g) ?? []).length).toBe(2);
+  });
+
+  it("REGRESSION: teks 'Tempo' HANYA muncul satu kali (meta-box header) ketika data tersedia -- TIDAK diulang di panel DATA TOKO/CUSTOMER (baris TEMPO yang sempat ditambahkan sudah dihapus lagi)", () => {
+    const html = renderInvoiceHtml();
+    expect((html.match(/>Tempo</g) ?? []).length).toBe(1);
+    expect(html).not.toContain("<td>TEMPO</td>");
+    // Satu-satunya sumber tempo pembayaran: due date lengkap di meta-box header ("6 Agustus 2026 (14 Hari)"), bukan baris ringkas terpisah.
+    expect(html).toContain("(14 Hari)");
+  });
+
+  it("teks 'Tempo' tidak muncul sama sekali bila paymentTermsDays null (baik di header maupun panel)", () => {
+    const snapshot = buildPurchaseOrderSnapshot({
+      order: order({ paymentTermsDays: null }),
+      tenant: SWA_TENANT,
+      documentNumber: "PO-20260810-000002",
+      documentDate: "2026-08-10",
+    });
+    const html = renderToStaticMarkup(createElement(PrintDocumentPage, { viewModel: buildPrintViewModel(snapshot) }));
+    expect(html).not.toContain(">Tempo<");
+    expect(html).not.toContain("<td>TEMPO</td>");
   });
 });
 

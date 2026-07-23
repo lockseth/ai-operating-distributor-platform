@@ -68,6 +68,10 @@ export interface DeliveryItemRecord {
   id: string;
   salesOrderItemId: string;
   productName: string;
+  /** products.sku -- null bila item tanpa product_id/produk tanpa sku. Optional untuk kompatibilitas fixture test lama (jangan dikarang bila absen -- diperlakukan sebagai null). */
+  productCode?: string | null;
+  /** product_categories.name (jenis produk) -- null bila belum ada kategori. Optional, lihat catatan productCode. */
+  productType?: string | null;
   unit: string | null;
   unitPrice: number;
   orderedQuantity: number;
@@ -159,6 +163,10 @@ export interface InvoiceEligibilityItem {
   salesOrderItemId: string;
   deliveryItemId: string;
   productName: string;
+  /** products.sku -- null bila item tanpa product_id/produk tanpa sku (jangan dikarang). */
+  productCode: string | null;
+  /** product_categories.name (jenis produk) -- null bila belum ada kategori (jangan dikarang). */
+  productType: string | null;
   eligibleQuantity: number;
   unitPrice: number;
   eligibleValue: number;

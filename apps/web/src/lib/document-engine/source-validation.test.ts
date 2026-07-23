@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DocumentSourceError } from "./errors";
-import { resolvePurchaseOrderLines, validateInvoiceSource } from "./source-validation";
+import { assertLineItemLimit, MAX_DOCUMENT_LINE_ITEMS, resolvePurchaseOrderLines, validateInvoiceSource } from "./source-validation";
 import type { DeliverySource, OrderLineSource, OrderSource } from "./types";
 
 function orderLine(overrides: Partial<OrderLineSource> = {}): OrderLineSource {
@@ -23,7 +23,7 @@ function order(overrides: Partial<OrderSource> = {}): OrderSource {
     companyId: "company-1",
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
-    store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+    store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
     salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
     lines: [orderLine()],
     paymentTermsDays: 14,
@@ -142,5 +142,31 @@ describe("validateInvoiceSource -- 3, 4, 5, 6", () => {
       expect(err).toBeInstanceOf(DocumentSourceError);
       expect((err as DocumentSourceError).code).toBe("DELIVERY_NOT_BILLABLE");
     }
+  });
+});
+
+describe("assertLineItemLimit -- kapasitas cetak LOCKED maksimum 30 baris per dokumen", () => {
+  it("MAX_DOCUMENT_LINE_ITEMS terkunci pada 30", () => {
+    expect(MAX_DOCUMENT_LINE_ITEMS).toBe(30);
+  });
+
+  it("tepat 30 baris -- PASS (tidak throw)", () => {
+    expect(() => assertLineItemLimit(30)).not.toThrow();
+  });
+
+  it("31 baris -- REJECT eksplisit dengan kode dan metadata actualCount/maxCount", () => {
+    try {
+      assertLineItemLimit(31);
+      expect.fail("seharusnya throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DocumentSourceError);
+      const docErr = err as DocumentSourceError;
+      expect(docErr.code).toBe("DOCUMENT_LINE_ITEM_LIMIT_EXCEEDED");
+      expect(docErr.metadata).toEqual({ actualCount: 31, maxCount: 30 });
+    }
+  });
+
+  it("0 baris -- PASS (limit hanya menolak KELEBIHAN, bukan kekosongan)", () => {
+    expect(() => assertLineItemLimit(0)).not.toThrow();
   });
 });

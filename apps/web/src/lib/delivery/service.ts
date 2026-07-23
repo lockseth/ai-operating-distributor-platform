@@ -146,6 +146,8 @@ export function computeInvoiceEligibility(delivery: DeliveryRecord): InvoiceElig
     salesOrderItemId: item.salesOrderItemId,
     deliveryItemId: item.id,
     productName: item.productName,
+    productCode: item.productCode ?? null,
+    productType: item.productType ?? null,
     eligibleQuantity: item.receivedQuantity,
     unitPrice: item.unitPrice,
     eligibleValue: item.receivedQuantity * item.unitPrice,

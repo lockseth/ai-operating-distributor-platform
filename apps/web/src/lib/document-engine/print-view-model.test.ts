@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildInvoiceSnapshot } from "./invoice-builder";
 import { buildPrintViewModel } from "./print-view-model";
+import { formatRupiah as formatRupiahForTest } from "./monetary";
 import type { DeliverySource, OrderLineSource, OrderSource, TenantIdentity } from "./types";
 
 const TENANT: TenantIdentity = {
@@ -32,7 +33,7 @@ function order(overrides: Partial<OrderSource> = {}): OrderSource {
     companyId: "company-1",
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
-    store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+    store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
     salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
     lines: [orderLine()],
     paymentTermsDays: 14,
@@ -66,8 +67,8 @@ function delivery(overrides: Partial<DeliverySource> = {}): DeliverySource {
   };
 }
 
-describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", () => {
-  it("10. nomor dokumen kedua panel identik", () => {
+describe("buildPrintViewModel -- SATU view model per snapshot (LOCKED 2026-07-23: 1 dokumen = 1 halaman, TIDAK ADA duplikasi panel)", () => {
+  it("10. nomor dokumen dipetakan apa adanya dari snapshot", () => {
     const snapshot = buildInvoiceSnapshot({
       order: order(),
       delivery: delivery(),
@@ -76,11 +77,10 @@ describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", ()
       documentDate: "2026-08-11",
     });
     const vm = buildPrintViewModel(snapshot);
-    expect(vm.panels[0].documentNumber).toBe(vm.panels[1].documentNumber);
-    expect(vm.panels[0].documentNumber).toBe("INV-20260811-000001");
+    expect(vm.documentNumber).toBe("INV-20260811-000001");
   });
 
-  it("17. total dan diskon kedua panel identik", () => {
+  it("17. total dan diskon dipetakan apa adanya (terformat Rupiah) dari snapshot", () => {
     const snapshot = buildInvoiceSnapshot({
       order: order(),
       delivery: delivery(),
@@ -89,12 +89,12 @@ describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", ()
       documentDate: "2026-08-11",
     });
     const vm = buildPrintViewModel(snapshot);
-    expect(vm.panels[0].grandTotalLabel).toBe(vm.panels[1].grandTotalLabel);
-    expect(vm.panels[0].totalDiscountLabel).toBe(vm.panels[1].totalDiscountLabel);
-    expect(vm.panels[0].subtotalLabel).toBe(vm.panels[1].subtotalLabel);
+    expect(vm.grandTotalLabel).toBe(formatRupiahForTest(snapshot.totals.grandTotal));
+    expect(vm.totalDiscountLabel).toBe(formatRupiahForTest(snapshot.totals.totalDiscount));
+    expect(vm.subtotalLabel).toBe(formatRupiahForTest(snapshot.totals.subtotal));
   });
 
-  it("kedua panel adalah referensi objek yang SAMA (bukan dua build terpisah)", () => {
+  it("view model TIDAK memiliki struktur 'panels' -- satu objek flat, bukan array dua elemen (supersede 2-panel LOCK lama)", () => {
     const snapshot = buildInvoiceSnapshot({
       order: order(),
       delivery: delivery(),
@@ -103,7 +103,8 @@ describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", ()
       documentDate: "2026-08-11",
     });
     const vm = buildPrintViewModel(snapshot);
-    expect(vm.panels[0]).toBe(vm.panels[1]);
+    expect(vm).not.toHaveProperty("panels");
+    expect(Array.isArray(vm)).toBe(false);
   });
 
   it("formatRupiah dipakai di view model, bukan angka mentah tak terformat", () => {
@@ -115,10 +116,10 @@ describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", ()
       documentDate: "2026-08-11",
     });
     const vm = buildPrintViewModel(snapshot);
-    expect(vm.panels[0].grandTotalLabel).toMatch(/^Rp[\d.]+$/);
+    expect(vm.grandTotalLabel).toMatch(/^Rp[\d.]+$/);
   });
 
-  it("LOCKED: terbilangLabel dihitung dari grandTotal yang sama, identik di kedua panel, dan tidak pernah menyebut DPP/PPN", () => {
+  it("LOCKED: terbilangLabel dihitung dari grandTotal, selalu diakhiri 'Rupiah', dan tidak pernah menyebut DPP/PPN", () => {
     const snapshot = buildInvoiceSnapshot({
       order: order(),
       delivery: delivery(),
@@ -127,9 +128,73 @@ describe("buildPrintViewModel -- 10, 17 (dua panel dari snapshot yang sama)", ()
       documentDate: "2026-08-11",
     });
     const vm = buildPrintViewModel(snapshot);
-    expect(vm.panels[0].terbilangLabel).toBe(vm.panels[1].terbilangLabel);
-    expect(vm.panels[0].terbilangLabel.endsWith("Rupiah")).toBe(true);
-    expect(vm.panels[0].terbilangLabel.toUpperCase()).not.toContain("PPN");
-    expect(vm.panels[0].terbilangLabel.toUpperCase()).not.toContain("DPP");
+    expect(vm.terbilangLabel.endsWith("Rupiah")).toBe(true);
+    expect(vm.terbilangLabel.toUpperCase()).not.toContain("PPN");
+    expect(vm.terbilangLabel.toUpperCase()).not.toContain("DPP");
+  });
+
+  it("documentDateLabel diformat Bahasa Indonesia (bukan ISO mentah)", () => {
+    const snapshot = buildInvoiceSnapshot({
+      order: order(),
+      delivery: delivery(),
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000006",
+      documentDate: "2026-07-15",
+    });
+    const vm = buildPrintViewModel(snapshot);
+    expect(vm.documentDateLabel).toBe("15 Juli 2026");
+  });
+
+  it("dueDateLabel dihitung dari documentDate + paymentTermsDays ('Tempo')", () => {
+    const snapshot = buildInvoiceSnapshot({
+      order: order({ paymentTermsDays: 14 }),
+      delivery: delivery(),
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000007",
+      documentDate: "2026-07-15",
+    });
+    const vm = buildPrintViewModel(snapshot);
+    expect(vm.dueDateLabel).toBe("29 Juli 2026 (14 Hari)");
+  });
+
+  it("storeCode/storePhone dipetakan apa adanya dari StoreIdentity", () => {
+    const snapshot = buildInvoiceSnapshot({
+      order: order(),
+      delivery: delivery(),
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000008",
+      documentDate: "2026-08-11",
+    });
+    const vm = buildPrintViewModel(snapshot);
+    expect(vm.storeCode).toBe("CUST-1");
+    expect(vm.storePhone).toBe("081200000001");
+  });
+
+  it("receiverName berasal dari store.picName -- null bila belum ditentukan (bukan nama karangan)", () => {
+    const snapshot = buildInvoiceSnapshot({
+      order: order({ store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: null } }),
+      delivery: delivery(),
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000009",
+      documentDate: "2026-08-11",
+    });
+    const vm = buildPrintViewModel(snapshot);
+    expect(vm.receiverName).toBeNull();
+  });
+
+  it("paymentTermsLabel null bila paymentTermsDays null (renderer menyembunyikan baris, bukan placeholder)", () => {
+    // Catatan: skenario ini secara bisnis seharusnya sudah ditolak PAYMENT_TERMS_INCOMPLETE
+    // sebelum sampai builder (lihat repository-adapter.ts assertPaymentTermsComplete) --
+    // test ini membuktikan view model tetap null-safe di lapisan presentasi.
+    const snapshot = buildInvoiceSnapshot({
+      order: order({ paymentTermsDays: null }),
+      delivery: delivery(),
+      tenant: TENANT,
+      documentNumber: "INV-20260811-000010",
+      documentDate: "2026-08-11",
+    });
+    const vm = buildPrintViewModel(snapshot);
+    expect(vm.paymentTermsLabel).toBeNull();
+    expect(vm.dueDateLabel).toBeNull();
   });
 });

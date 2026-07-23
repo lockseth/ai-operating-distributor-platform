@@ -1,9 +1,12 @@
 /* ============================================================================
    AODP Document Engine -- print stylesheet.
-   Continuous Form 4 Ply, fisik 9.5in x 11in, dibagi 2 panel horizontal
-   masing-masing 9.5in x 5.5in (BUKAN A4, BUKAN dibagi 3). Empat ply adalah
-   rangkap fisik/carbon copy printer dot matrix -- HANYA 2 panel HTML per
-   halaman, bukan 4.
+   LOCKED (Founder, 2026-07-23): satu transaksi = SATU halaman fisik
+   9.5in x 11in. Continuous Form 4 Ply berarti kertas rangkap FISIK/carbonless
+   printer dot matrix (4 lembar karbon tercetak bersamaan dalam satu print
+   run) -- BUKAN duplikasi konten oleh renderer. Supersede LOCK lama (2 panel
+   horizontal per halaman) -- lihat AODP_DOCUMENT_LAYOUT_GUIDE.md revision
+   history. Palet warna/struktur visual mengikuti template Pak Waluyo
+   (docs/document-engine -- source of truth visual).
    ============================================================================ */
 
 @page {
@@ -11,12 +14,22 @@
   margin: 0;
 }
 
-/* Dokumen cetak SELALU putih/hitam, tidak boleh mengikuti dark mode browser/
-   OS/preview tool apa pun (mis. forced-colors, prefers-color-scheme, ekstensi
-   "dark reader") -- color-scheme membatalkan auto-inversion, background/color
-   eksplisit di html/body adalah lapis kedua untuk viewer yang mengabaikan
-   color-scheme. Berlaku di seluruh media (bukan hanya @media print) karena
-   HTML yang sama juga dipakai untuk preview di layar sebelum dicetak. */
+:root {
+  --doc-green: #1c5c3f;
+  --doc-green-dark: #164a32;
+  --doc-green-tint: #eaf3ee;
+  --doc-orange: #de7a22;
+  --doc-orange-tint: #fbe9d9;
+  --doc-border: #1a1a1a;
+  --doc-gray-bg: #f2f2f2;
+  --doc-gray-line: #cfcfcf;
+}
+
+/* Dokumen cetak SELALU putih/hitam sebagai basis, warna aksen hijau/oranye
+   HANYA elemen struktural (header, table header, totals bar) -- tidak
+   mengikuti dark mode browser/OS/preview tool apa pun. Berlaku di seluruh
+   media (bukan hanya @media print) karena HTML yang sama juga dipakai untuk
+   preview di layar sebelum dicetak. */
 html,
 body {
   margin: 0;
@@ -27,132 +40,338 @@ body {
 }
 
 .doc-engine-page {
+  position: relative;
   width: 9.5in;
   height: 11in;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
   page-break-after: always;
   break-after: page;
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 9pt;
+  font-size: 8.5pt;
   background: #fff;
   color: #000;
+  overflow: hidden;
 }
 
-/* Satu panel = satu salinan dokumen, 9.5in x 5.5in persis (dua panel = 11in). */
-.doc-engine-panel {
-  width: 9.5in;
-  height: 5.5in;
+/* Perforasi continuous form kiri/kanan -- lubang tractor-feed dot matrix,
+   dekoratif (bukan data), direplikasi persis dari template LOCK. */
+.doc-engine-perforation {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.22in;
+  background-image: radial-gradient(circle at center, #bdbdbd 3.2px, transparent 3.6px);
+  background-size: 100% 0.42in;
+  background-repeat: repeat-y;
+  background-position: center 0.21in;
+}
+.doc-engine-perforation-left {
+  left: 0;
+}
+.doc-engine-perforation-right {
+  right: 0;
+}
+
+.doc-engine-content {
+  position: absolute;
+  top: 0;
+  left: 0.4in;
+  right: 0.4in;
+  bottom: 0;
+  padding: 0.22in 0.05in 0.12in 0.05in;
   box-sizing: border-box;
-  /* Safe padding -- teks tidak menempel ke perforasi/tepi tractor-feed printer dot matrix. */
-  padding: 0.28in 0.4in;
-  overflow: hidden;
-  page-break-inside: avoid;
-  break-inside: avoid;
   display: flex;
   flex-direction: column;
 }
+
+/* ---------------------------------------------------------------------- */
+/* Header: logo + identitas PT, panel metadata dokumen kanan atas          */
+/* ---------------------------------------------------------------------- */
 
 .doc-engine-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  border-bottom: 1px solid #000;
-  padding-bottom: 0.06in;
-  margin-bottom: 0.06in;
-}
-
-.doc-engine-logo {
-  max-height: 0.5in;
-  max-width: 1.2in;
-  object-fit: contain;
-  margin-right: 0.1in;
+  gap: 0.2in;
 }
 
 .doc-engine-company-block {
   display: flex;
   align-items: flex-start;
+  gap: 0.12in;
+}
+
+.doc-engine-logo {
+  width: 0.85in;
+  height: 0.85in;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .doc-engine-company-name {
   font-weight: bold;
-  font-size: 10pt;
+  font-size: 15pt;
+  color: var(--doc-green);
+  line-height: 1.15;
 }
 
-.doc-engine-doc-meta {
-  text-align: right;
+.doc-engine-company-address {
+  font-size: 8.5pt;
+  margin-top: 0.03in;
 }
 
-.doc-engine-doc-title {
+.doc-engine-company-contact {
+  font-size: 8.5pt;
+  margin-top: 0.05in;
+  display: flex;
+  gap: 0.25in;
+}
+
+.doc-engine-contact-icon {
+  width: 9px;
+  height: 9px;
+  margin-right: 3px;
+  vertical-align: -1px;
+  fill: var(--doc-green);
+}
+
+.doc-engine-meta-box {
+  border: 1.5px solid var(--doc-green);
+  border-radius: 5px;
+  overflow: hidden;
+  width: 2.9in;
+  flex-shrink: 0;
+}
+
+.doc-engine-meta-title {
+  background: var(--doc-green);
+  color: #fff;
   font-weight: bold;
-  font-size: 11pt;
+  font-size: 9.5pt;
+  text-align: center;
+  padding: 0.05in 0;
+  letter-spacing: 0.3px;
 }
 
-.doc-engine-customer {
-  margin-bottom: 0.06in;
-  line-height: 1.35;
+.doc-engine-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+  padding: 0.06in 0.1in;
 }
+
+.doc-engine-meta-table td {
+  padding: 0.02in 0.02in;
+}
+
+.doc-engine-meta-table td:first-child {
+  width: 1.05in;
+  white-space: nowrap;
+}
+
+.doc-engine-meta-table td:nth-child(2) {
+  width: 0.1in;
+}
+
+/* Garis identitas hijau/oranye di bawah header -- ciri visual template LOCK. */
+.doc-engine-identity-divider {
+  height: 0.045in;
+  margin: 0.09in 0 0.12in 0;
+  background: linear-gradient(to right, var(--doc-green) 0%, var(--doc-green) 70%, var(--doc-orange) 70%, var(--doc-orange) 100%);
+}
+
+/* ---------------------------------------------------------------------- */
+/* DATA TOKO / CUSTOMER -- LOCKED (Founder, 2026-07-23): panel tunggal     */
+/* full-width, dua kolom internal (kiri: Kode Toko/Nama Toko/Alamat;      */
+/* kanan: No. Telp/Ref. Order/Ref. Delivery/Salesman). Panel KETENTUAN    */
+/* PEMBAYARAN terpisah DIHAPUS -- Tempo SATU-SATUNYA tampil di meta-box   */
+/* header, TIDAK diulang di sini. Jangan mengembalikan panel terpisah     */
+/* atau menduplikasi baris Tempo tanpa approval eksplisit baru.           */
+/* ---------------------------------------------------------------------- */
+
+.doc-engine-info-row {
+  display: flex;
+  gap: 0.18in;
+  margin-bottom: 0.12in;
+}
+
+.doc-engine-info-panel {
+  flex: 1;
+  border: 1px solid var(--doc-gray-line);
+  border-radius: 4px;
+  padding: 0.08in 0.12in;
+}
+
+.doc-engine-panel-title {
+  font-weight: bold;
+  font-size: 9pt;
+  color: var(--doc-green);
+  margin-bottom: 0.06in;
+  display: flex;
+  align-items: center;
+  gap: 0.06in;
+}
+
+.doc-engine-info-columns {
+  display: flex;
+  gap: 0.24in;
+}
+
+.doc-engine-info-column {
+  flex: 1;
+}
+
+.doc-engine-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 8pt;
+}
+
+.doc-engine-info-table td {
+  padding: 0.015in 0.02in;
+  vertical-align: top;
+}
+
+.doc-engine-info-table td:first-child {
+  width: 1in;
+  white-space: nowrap;
+}
+
+.doc-engine-info-table td:nth-child(2) {
+  width: 0.1in;
+}
+
+.doc-engine-info-empty {
+  font-size: 7.5pt;
+  color: #666;
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Tabel produk -- header hijau (LOCKED item columns)                     */
+/* ---------------------------------------------------------------------- */
 
 .doc-engine-items {
   width: 100%;
   border-collapse: collapse;
-  flex-grow: 1;
-}
-
-.doc-engine-items th,
-.doc-engine-items td {
-  border: 1px solid #000;
-  padding: 0.02in 0.05in;
-  font-size: 8pt;
-  text-align: left;
+  font-size: 7.8pt;
 }
 
 .doc-engine-items th {
+  background: var(--doc-green);
+  color: #fff;
   font-weight: bold;
-}
-
-.doc-engine-totals {
-  text-align: right;
-  margin-top: 0.05in;
-  line-height: 1.35;
-}
-
-.doc-engine-grand-total {
-  font-weight: bold;
-  font-size: 10pt;
-}
-
-/* Terbilang -- satu-satunya baris tambahan Totals selain Subtotal/Potongan/
-   Total (LOCKED, tanpa DPP/PPN). Kiri, italic, di bawah Grand Total. */
-.doc-engine-terbilang {
+  border: 1px solid var(--doc-green-dark);
+  padding: 0.05in 0.05in;
   text-align: left;
-  font-style: italic;
-  margin-top: 0.03in;
 }
 
-.doc-engine-signatures {
+.doc-engine-items td {
+  border: 1px solid var(--doc-gray-line);
+  padding: 0.04in 0.05in;
+  text-align: left;
+}
+
+.doc-engine-items tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Footer: tanda tangan (kiri) + ringkasan total (kanan)                  */
+/* ---------------------------------------------------------------------- */
+
+.doc-engine-footer-row {
   display: flex;
-  justify-content: space-between;
+  gap: 0.2in;
   margin-top: 0.12in;
 }
 
+.doc-engine-signatures {
+  flex: 1.3;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.1in;
+}
+
 .doc-engine-signature-block {
-  width: 30%;
+  flex: 1;
   text-align: center;
 }
 
+.doc-engine-signature-space {
+  height: 0.45in;
+}
+
 .doc-engine-signature-line {
-  height: 0.35in;
   border-bottom: 1px solid #000;
-  margin-bottom: 0.03in;
+  margin-bottom: 0.04in;
 }
 
 .doc-engine-signature-role {
   font-weight: bold;
+  font-size: 8pt;
 }
+
+.doc-engine-signature-name {
+  font-size: 8pt;
+}
+
+.doc-engine-signature-placeholder {
+  font-size: 7pt;
+  color: #444;
+  line-height: 1.3;
+}
+
+.doc-engine-totals-box {
+  flex: 1;
+  background: var(--doc-gray-bg);
+  border-radius: 4px;
+  padding: 0.08in 0.12in;
+  font-size: 8.3pt;
+  align-self: flex-start;
+}
+
+.doc-engine-totals-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.02in 0;
+}
+
+.doc-engine-grand-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--doc-green);
+  color: #fff;
+  font-weight: bold;
+  font-size: 9.5pt;
+  padding: 0.05in 0.08in;
+  border-radius: 3px;
+  margin: 0.05in 0;
+}
+
+.doc-engine-grand-total-value {
+  background: var(--doc-orange);
+  padding: 0.01in 0.08in;
+  border-radius: 3px;
+}
+
+.doc-engine-terbilang {
+  font-style: italic;
+  font-size: 7.5pt;
+  margin-top: 0.03in;
+}
+
+/* ---------------------------------------------------------------------- */
+/* CATATAN (Founder, 2026-07-23): footer benefit/service, badge continuous
+   form 4 ply, dan strip COPY 1-4 SENGAJA DIHAPUS -- ruang dibebaskan untuk
+   mencegah tabel produk bertabrakan dengan panel tanda tangan/total pada
+   transaksi dengan banyak baris item (lihat laporan closure line-item
+   boundary). 4 Ply tidak perlu dicetak karena sudah merupakan jenis kertas
+   fisik itu sendiri. Panel tanda tangan/total/Terbilang TETAP dipertahankan.
+   ---------------------------------------------------------------------- */
 
 @media screen {
   .doc-engine-page {

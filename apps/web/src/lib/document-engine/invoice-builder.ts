@@ -9,7 +9,7 @@
 
 import { DocumentSourceError } from "./errors";
 import { computeLineTotal, computeTotals } from "./monetary";
-import { validateInvoiceSource } from "./source-validation";
+import { assertLineItemLimit, validateInvoiceSource } from "./source-validation";
 import type { DeliverySource, DocumentLineSnapshot, DocumentSnapshot, OrderSource, TenantIdentity } from "./types";
 
 export interface InvoiceQuantityOverride {
@@ -75,6 +75,7 @@ export function buildInvoiceSnapshot(input: BuildInvoiceInput): DocumentSnapshot
       `Tidak ada baris yang dapat ditagih untuk delivery ${input.delivery.deliveryId} (seluruh kuantitas terverifikasi nol).`,
     );
   }
+  assertLineItemLimit(lines.length);
 
   const totals = computeTotals(lines);
   const generatedAt = (input.now ?? (() => new Date()))().toISOString();

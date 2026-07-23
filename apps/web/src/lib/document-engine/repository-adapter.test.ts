@@ -64,8 +64,10 @@ function orderReaderRecord(overrides: Partial<OrderReaderRecord> = {}): OrderRea
     orderNumber: "SO-0001",
     orderDate: "2026-08-10",
     customerId: "cust-1",
+    customerCode: "CUST-1",
     customerName: "Toko Sari",
     customerAddress: "Jl. Mangga 1",
+    customerPhone: "081200000001",
     picName: "Ibu Sari",
     salesmanId: "sales-1",
     salesmanName: "Budi",
@@ -194,7 +196,7 @@ describe("loadPurchaseOrderSource -- pemetaan Order dasar", () => {
       companyId: "company-swa",
       orderNumber: "SO-0001",
       orderDate: "2026-08-10",
-      store: { customerId: "cust-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", picName: "Ibu Sari" },
+      store: { customerId: "cust-1", storeCode: "CUST-1", storeName: "Toko Sari", storeAddress: "Jl. Mangga 1", storePhone: "081200000001", picName: "Ibu Sari" },
       salesman: { salesmanId: "sales-1", salesmanName: "Budi" },
       lines: [
         {
@@ -312,6 +314,13 @@ describe("loadPurchaseOrderSource -- pemetaan Order dasar", () => {
     await expect(
       loadPurchaseOrderSource(reader, { companyId: "company-swa", orderId: "order-A" }),
     ).rejects.toMatchObject({ code: "ORDER_SOURCE_INCOMPLETE" });
+  });
+
+  it("8e. paymentTermsDays belum tersedia (null) -> PAYMENT_TERMS_INCOMPLETE eksplisit, kode TERPISAH dari ORDER_SOURCE_INCOMPLETE", async () => {
+    const reader = makeOrderReader([orderReaderRecord({ paymentTermsDays: null })]);
+    await expect(
+      loadPurchaseOrderSource(reader, { companyId: "company-swa", orderId: "order-A" }),
+    ).rejects.toMatchObject({ code: "PAYMENT_TERMS_INCOMPLETE" });
   });
 
   it("28a. Error repository tidak pernah menjadi dokumen kosong -- error dari reader diteruskan apa adanya", async () => {
@@ -576,7 +585,7 @@ describe("loadInvoiceSource -- pemetaan Order + Delivery", () => {
     const viewModel = buildPrintViewModel(snapshot);
     expect(orderCalls).toBe(1);
     expect(deliveryCalls).toBe(1);
-    expect(viewModel.panels[0]).toBe(viewModel.panels[1]);
+    expect(viewModel.documentNumber).toBe("INV-TEST-6");
   });
 });
 
@@ -612,7 +621,7 @@ describe("29+30+31. Output adapter live bisa langsung dijalankan lewat builder +
     expect(snapshot.deliveryReference).toBe("DO-0001");
   });
 
-  it("31. Print view model tetap menghasilkan 2 panel identik dari satu snapshot hasil adapter live", async () => {
+  it("31. Print view model tetap menghasilkan SATU view flat (bukan 2 panel) dari satu snapshot hasil adapter live", async () => {
     const orderReader = makeOrderReader([orderReaderRecord()]);
     const order = await loadPurchaseOrderSource(orderReader, { companyId: "company-swa", orderId: "order-A" });
     const snapshot = buildPurchaseOrderSnapshot({
@@ -622,8 +631,8 @@ describe("29+30+31. Output adapter live bisa langsung dijalankan lewat builder +
       documentDate: "2026-08-10",
     });
     const viewModel = buildPrintViewModel(snapshot);
-    expect(viewModel.panels).toHaveLength(2);
-    expect(viewModel.panels[0]).toBe(viewModel.panels[1]);
+    expect(viewModel).not.toHaveProperty("panels");
+    expect(viewModel.documentNumber).toBe("PO-TEST-2");
   });
 });
 
@@ -732,6 +741,7 @@ describe("ConfirmedOrderReader -- wrapper produksi di atas DeliveryRepositoryInt
       customerId: "cust-real-1",
       salesmanId: "sales-real-1",
       salesmanName: "Budi Santoso",
+      paymentTermsDays: 14,
       items: [{ id: "soi-1", productName: "Indomie Goreng", unit: "dus", unitPrice: 85000, quantity: 10, discountAmount: 5000 }],
     });
     const reader = new ConfirmedOrderReader(repo);
@@ -741,6 +751,26 @@ describe("ConfirmedOrderReader -- wrapper produksi di atas DeliveryRepositoryInt
     expect(order.salesman.salesmanId).toBe("sales-real-1");
     expect(order.salesman.salesmanName).toBe("Budi Santoso");
     expect(order.lines[0].discountAmount).toBe(5000);
+    expect(order.paymentTermsDays).toBe(14);
+  });
+
+  it("ConfirmedOrderSnapshot TANPA payment_terms_days (mis. order historis) -> PAYMENT_TERMS_INCOMPLETE, kode TERPISAH dari ORDER_SOURCE_INCOMPLETE", async () => {
+    const repo = fakeConfirmedOrderRepo({
+      id: "order-A",
+      companyId: "company-swa",
+      orderNumber: "SO-0001",
+      customerName: "Toko Sari",
+      status: "confirmed",
+      orderDate: "2026-08-11",
+      customerId: "cust-real-1",
+      salesmanId: "sales-real-1",
+      salesmanName: "Budi Santoso",
+      items: [{ id: "soi-1", productName: "Indomie Goreng", unit: "dus", unitPrice: 85000, quantity: 10, discountAmount: 5000 }],
+    });
+    const reader = new ConfirmedOrderReader(repo);
+    await expect(
+      loadPurchaseOrderSource(reader, { companyId: "company-swa", orderId: "order-A" }),
+    ).rejects.toMatchObject({ code: "PAYMENT_TERMS_INCOMPLETE" });
   });
 
   it("discountAmount 0 (baris memang tanpa diskon) TETAP dianggap lengkap -- bukan diperlakukan sama dengan null/belum tersedia", async () => {
@@ -754,6 +784,7 @@ describe("ConfirmedOrderReader -- wrapper produksi di atas DeliveryRepositoryInt
       customerId: "cust-real-1",
       salesmanId: "sales-real-1",
       salesmanName: "Budi Santoso",
+      paymentTermsDays: 30,
       items: [{ id: "soi-1", productName: "Indomie Goreng", unit: "dus", unitPrice: 85000, quantity: 10, discountAmount: 0 }],
     });
     const reader = new ConfirmedOrderReader(repo);
@@ -874,5 +905,145 @@ describe("DeliveryVerificationReader -- wrapper produksi di atas DeliveryReposit
     const record = await reader.getDeliveryForDocument("company-swa", "delivery-A");
     expect(record?.deliveryNumber).toBeNull();
     expect(record?.deliveryDate).toBeNull();
+  });
+
+  it("memetakan productCode (products.sku)/productType (product_categories.name) ASLI dari DeliveryRecord -- BUKAN hardcoded null", async () => {
+    const repo = fakeDeliveryRepo(
+      deliveryRecord({
+        items: [
+          {
+            id: "dli-1",
+            salesOrderItemId: "soi-1",
+            productName: "Indomie Goreng",
+            productCode: "SKU-1",
+            productType: "Mie Instan",
+            unit: "dus",
+            unitPrice: 85000,
+            orderedQuantity: 10,
+            dispatchedQuantity: 10,
+            receivedQuantity: 10,
+            rejectedQuantity: 0,
+            returnedQuantity: 0,
+            unresolvedQuantity: 0,
+          },
+        ],
+      }),
+    );
+    const reader = new DeliveryVerificationReader(repo);
+    const record = await reader.getDeliveryForDocument("company-swa", "delivery-A");
+    expect(record?.lines[0]?.productCode).toBe("SKU-1");
+    expect(record?.lines[0]?.productType).toBe("Mie Instan");
+  });
+
+  it("produk tanpa sku/kategori (belum ada di master data) -> productCode/productType null, TIDAK dikarang", async () => {
+    const repo = fakeDeliveryRepo(
+      deliveryRecord({
+        items: [
+          {
+            id: "dli-1",
+            salesOrderItemId: "soi-1",
+            productName: "Indomie Goreng",
+            productCode: null,
+            productType: null,
+            unit: "dus",
+            unitPrice: 85000,
+            orderedQuantity: 10,
+            dispatchedQuantity: 10,
+            receivedQuantity: 10,
+            rejectedQuantity: 0,
+            returnedQuantity: 0,
+            unresolvedQuantity: 0,
+          },
+        ],
+      }),
+    );
+    const reader = new DeliveryVerificationReader(repo);
+    const record = await reader.getDeliveryForDocument("company-swa", "delivery-A");
+    expect(record?.lines[0]?.productCode).toBeNull();
+    expect(record?.lines[0]?.productType).toBeNull();
+  });
+});
+
+describe("Invoice canonical Pak Waluyo -- 7 SKU menampilkan Kode Barang/Jenis Produk asli, bukan '-'", () => {
+  const WALUYO_PRODUCTS = [
+    { code: "SKU-001", name: "Minyak Goreng 2L", category: "Minyak Goreng" },
+    { code: "SKU-002", name: "Indomie Goreng", category: "Mie Instan" },
+    { code: "SKU-003", name: "Gula Pasir 1Kg", category: "Sembako" },
+    { code: "SKU-004", name: "Kecap Manis 600ml", category: "Bumbu Dapur" },
+    { code: "SKU-005", name: "Sabun Cuci Piring 800ml", category: "Perawatan Rumah" },
+    { code: "SKU-006", name: "Teh Celup Kotak", category: "Minuman" },
+    { code: "SKU-007", name: "Kopi Sachet Renceng", category: "Minuman" },
+  ] as const;
+
+  it("delivery record produksi (7 baris, seluruh SKU/kategori terisi) -> Invoice snapshot + print view model tidak ada satupun '-' pada Kode Barang/Jenis Produk", async () => {
+    const orderReader = makeOrderReader([
+      orderReaderRecord({
+        lines: WALUYO_PRODUCTS.map((p, i) => orderReaderLine({
+          orderLineId: `soi-${i + 1}`,
+          productCode: p.code,
+          productName: p.name,
+          productType: p.category,
+        })),
+      }),
+    ]);
+
+    const waluyoDeliveryRecord: DeliveryRecord = {
+      id: "delivery-A",
+      companyId: "company-swa",
+      salesOrderId: "order-A",
+      attemptNumber: 1,
+      assignedDriverId: "driver-1",
+      status: "verified" as DeliveryStatus,
+      items: WALUYO_PRODUCTS.map((p, i) => ({
+        id: `dli-${i + 1}`,
+        salesOrderItemId: `soi-${i + 1}`,
+        productName: p.name,
+        productCode: p.code,
+        productType: p.category,
+        unit: "dus",
+        unitPrice: 85000,
+        orderedQuantity: 10,
+        dispatchedQuantity: 10,
+        receivedQuantity: 10,
+        rejectedQuantity: 0,
+        returnedQuantity: 0,
+        unresolvedQuantity: 0,
+      })),
+      exceptions: [],
+      evidence: [],
+      recipient: null,
+      deliveryNumber: "SWAS-SJ-20260812-000001",
+      deliveryDate: "2026-08-12",
+    };
+    const deliveryRepo: Pick<DeliveryRepositoryInterface, "getDelivery"> = {
+      async getDelivery(deliveryId) {
+        return deliveryId === waluyoDeliveryRecord.id ? waluyoDeliveryRecord : null;
+      },
+    };
+    const deliveryReader = new DeliveryVerificationReader(deliveryRepo);
+
+    const bundle = await loadInvoiceSource(
+      { orderReader, deliveryReader },
+      { companyId: "company-swa", orderId: "order-A", deliveryId: "delivery-A" },
+    );
+    const snapshot = buildInvoiceSnapshot({
+      order: bundle.order,
+      delivery: bundle.delivery,
+      tenant: TENANT,
+      documentNumber: "INV-WALUYO-000001",
+      documentDate: "2026-08-12",
+    });
+    const viewModel = buildPrintViewModel(snapshot);
+
+    expect(snapshot.lines).toHaveLength(7);
+    expect(viewModel.lines).toHaveLength(7);
+    for (const [i, p] of WALUYO_PRODUCTS.entries()) {
+      expect(snapshot.lines[i]!.productCode).toBe(p.code);
+      expect(snapshot.lines[i]!.productType).toBe(p.category);
+      expect(viewModel.lines[i]!.productCode).toBe(p.code);
+      expect(viewModel.lines[i]!.productType).toBe(p.category);
+      expect(viewModel.lines[i]!.productCode).not.toBe("-");
+      expect(viewModel.lines[i]!.productType).not.toBe("-");
+    }
   });
 });
