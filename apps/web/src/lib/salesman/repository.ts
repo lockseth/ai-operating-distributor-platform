@@ -170,7 +170,11 @@ interface InMemoryUserRow {
   phone: string | null;
 }
 
-const MANAGE_ROLES = ["owner", "manager", "admin", "super_admin"];
+// Owner Control Plane (corrective closure 2026-07-23): Tambah Salesman,
+// Tambah Wilayah, dan Ubah Wilayah Salesman existing memakai satu model
+// otorisasi yang sama -- owner-only. Mencerminkan actor check di RPC
+// assign_salesman_coverage_areas (migration 20260814000001).
+const OWNER_ONLY_ROLES = ["owner"];
 
 interface InMemoryAuditEvent {
   action: string;
@@ -294,7 +298,7 @@ export class InMemorySalesmanRepository implements SalesmanRepository {
     actorId: string;
   }): Promise<AssignCoverageAreasResult> {
     const actorAllowed = this.actorRoles.some(
-      (r) => r.userId === input.actorId && r.companyId === input.companyId && MANAGE_ROLES.includes(r.roleName)
+      (r) => r.userId === input.actorId && r.companyId === input.companyId && OWNER_ONLY_ROLES.includes(r.roleName)
     );
     if (!actorAllowed) return { outcome: "forbidden" };
 

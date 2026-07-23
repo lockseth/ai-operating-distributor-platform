@@ -17,6 +17,14 @@ function canManageSalesman(user: { roles: string[]; permissions: string[] }): bo
   );
 }
 
+// Owner Control Plane (corrective closure 2026-07-23): Tambah Salesman,
+// Tambah Wilayah, dan Ubah Wilayah Salesman existing satu domain otorisasi
+// -- owner-only, lebih ketat dari canManageSalesman/MANAGE_ROLES di atas.
+// Dipakai oleh createSalesmanAction DAN updateSalesmanCoverageAreasAction.
+function isOwnerActor(user: { roles: string[] }): boolean {
+  return user.roles.includes("owner");
+}
+
 export interface CreateSalesmanFormInput {
   fullName: string;
   email: string;
@@ -34,7 +42,7 @@ const OUTCOME_MESSAGE: Record<string, string> = {
   duplicate_email: "Email sudah terdaftar di sistem.",
   role_not_found: "Role Salesman tidak ditemukan. Hubungi administrator sistem.",
   no_areas_provided: "Pilih minimal satu wilayah kerja.",
-  no_coverage_configured: "Tenant ini belum memiliki konfigurasi wilayah kerja. Hubungi admin untuk menambahkannya terlebih dahulu.",
+  no_coverage_configured: "Tenant ini belum memiliki wilayah kerja. Tambahkan wilayah terlebih dahulu dari form Tambah Salesman.",
   invalid_area: "Wilayah yang dipilih tidak terdaftar pada konfigurasi tenant.",
 };
 
@@ -46,8 +54,8 @@ export async function createSalesmanAction(
   if (user.isDemo) {
     return { ok: false, error: "Tambah Salesman tidak tersedia pada sesi demo." };
   }
-  if (!canManageSalesman(user)) {
-    return { ok: false, error: "Tidak berwenang menambahkan Salesman." };
+  if (!canManageSalesman(user) || !isOwnerActor(user)) {
+    return { ok: false, error: "Hanya Owner tenant yang dapat menambahkan Salesman." };
   }
 
   const repo = new SupabaseSalesmanRepository(getAdminClient());
@@ -104,8 +112,8 @@ export async function updateSalesmanCoverageAreasAction(
   if (user.isDemo) {
     return { ok: false, error: "Perubahan wilayah tidak tersedia pada sesi demo." };
   }
-  if (!canManageSalesman(user)) {
-    return { ok: false, error: "Tidak berwenang mengubah wilayah kerja Salesman." };
+  if (!canManageSalesman(user) || !isOwnerActor(user)) {
+    return { ok: false, error: "Hanya Owner tenant yang dapat mengubah wilayah kerja Salesman." };
   }
   if (!UUID_PATTERN.test(salesmanId)) {
     return { ok: false, error: "Salesman tidak valid." };

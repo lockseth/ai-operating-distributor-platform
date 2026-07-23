@@ -104,6 +104,11 @@ export default async function UsersPage() {
     ["owner", "manager", "admin", "super_admin"].some((role) =>
       user.roles.includes(role),
     );
+  // Owner Control Plane (corrective closure 2026-07-23): Ubah Wilayah
+  // Salesman existing kini owner-only, konsisten dengan Tambah Salesman dan
+  // Tambah Wilayah -- lebih ketat dari canManageTelegram di atas (Telegram
+  // enrollment TIDAK berubah, di luar scope gate ini).
+  const isOwner = user.roles.includes("owner");
 
   const { data: telegramData } = canManageTelegram
     ? await supabase
@@ -298,7 +303,7 @@ export default async function UsersPage() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       {roles.includes("sales") ? (
-                        canManageTelegram ? (
+                        isOwner ? (
                           <SalesmanCoverageControl
                             salesmanId={u.id}
                             availableAreas={availableAreas}

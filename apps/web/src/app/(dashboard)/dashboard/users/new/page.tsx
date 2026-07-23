@@ -23,8 +23,13 @@ export default async function NewSalesmanPage() {
   const canManage =
     hasPermission(user.permissions, "users.manage") ||
     MANAGE_ROLES.some((role) => user.roles.includes(role));
+  // Owner Control Gate 1A: halaman Tambah Salesman + wilayah kerja khusus
+  // Owner tenant, lebih ketat dari MANAGE_ROLES di atas (manager/admin/
+  // super_admin masih boleh mengubah wilayah Salesman existing di halaman
+  // Pengguna, tapi tidak boleh membuka halaman ini).
+  const isOwner = user.roles.includes("owner");
 
-  if (!canManage) redirect("/dashboard/users");
+  if (!canManage || !isOwner) redirect("/dashboard/users");
 
   const supabase = await createClient();
   const { data: companyRow } = await supabase

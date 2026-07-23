@@ -53,6 +53,27 @@ describe("Salesman creation security contracts", () => {
     expect(auditCall).not.toMatch(/tempPassword/i);
   });
 
+  it("createSalesmanAction diproteksi Owner Control Gate 1A: hanya Owner tenant (bukan manager/admin/super_admin) yang dapat menambahkan Salesman", () => {
+    const start = actions.indexOf("export async function createSalesmanAction");
+    const body = actions.slice(start, start + 1200);
+    expect(body).toContain("isOwnerActor(user)");
+    expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
+
+    const fnStart = actions.indexOf("function isOwnerActor");
+    const fnBody = actions.slice(fnStart, fnStart + 200);
+    expect(fnBody).toContain('user.roles.includes("owner")');
+    expect(fnBody).not.toMatch(/manager|admin|super_admin/i);
+  });
+
+  it("updateSalesmanCoverageAreasAction (Ubah Wilayah Salesman existing) diproteksi owner-only juga -- satu domain Owner Control Plane dengan createSalesmanAction", () => {
+    const start = actions.indexOf("export async function updateSalesmanCoverageAreasAction");
+    const body = actions.slice(start, start + 800);
+    expect(body).toContain("getAuthUser()");
+    expect(body).toContain("isOwnerActor(user)");
+    expect(body.indexOf("getAuthUser()")).toBeLessThan(body.indexOf("getAdminClient()"));
+    expect(body.indexOf("isOwnerActor(user)")).toBeLessThan(body.indexOf("getAdminClient()"));
+  });
+
   it("tidak ada kode KTP/selfie/face/liveness/biometric pada modul Salesman (non-biometric by design)", () => {
     // Strip komentar '//' -- dokumentasi yang MENJELASKAN ketiadaan biometrik
     // boleh menyebut kata tsb; yang dilarang adalah kode (identifier/field)

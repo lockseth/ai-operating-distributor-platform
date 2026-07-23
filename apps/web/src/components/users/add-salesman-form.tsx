@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Loader2, Plus } from "lucide-react";
 import { createSalesmanAction } from "@/lib/salesman/actions";
+import { createCoverageAreaAction } from "@/lib/coverage-area/actions";
 
-export function AddSalesmanForm({ availableAreas }: { availableAreas: string[] }) {
+export function AddSalesmanForm({ availableAreas: initialAreas }: { availableAreas: string[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -18,8 +19,41 @@ export function AddSalesmanForm({ availableAreas }: { availableAreas: string[] }
   const [tempPassword, setTempPassword] = useState("");
   const [areas, setAreas] = useState<string[]>([]);
 
+  const [availableAreas, setAvailableAreas] = useState<string[]>(initialAreas);
+  const [showAreaForm, setShowAreaForm] = useState(false);
+  const [newAreaName, setNewAreaName] = useState("");
+  const [newAreaDescription, setNewAreaDescription] = useState("");
+  const [areaError, setAreaError] = useState<string | null>(null);
+  const [areaFeedback, setAreaFeedback] = useState<string | null>(null);
+  const [isAreaPending, startAreaTransition] = useTransition();
+
   function toggleArea(area: string) {
     setAreas((prev) => (prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]));
+  }
+
+  function handleAddArea() {
+    setAreaError(null);
+    const trimmedName = newAreaName.trim();
+    if (!trimmedName) {
+      setAreaError("Nama wilayah wajib diisi.");
+      return;
+    }
+
+    startAreaTransition(async () => {
+      const result = await createCoverageAreaAction(trimmedName, newAreaDescription);
+      if (!result.ok) {
+        setAreaError(result.error ?? "Gagal menambahkan wilayah.");
+        return;
+      }
+      setAvailableAreas(result.areas ?? availableAreas);
+      if (result.createdArea) {
+        setAreas((prev) => (prev.includes(result.createdArea!) ? prev : [...prev, result.createdArea!]));
+      }
+      setNewAreaName("");
+      setNewAreaDescription("");
+      setShowAreaForm(false);
+      setAreaFeedback(`Wilayah "${result.createdArea}" berhasil ditambahkan dan otomatis dipilih.`);
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -152,10 +186,20 @@ export function AddSalesmanForm({ availableAreas }: { availableAreas: string[] }
         <label className={labelCls}>
           Wilayah Kerja <span className="text-red-500">*</span>
         </label>
+        <p className="mb-2 text-xs text-gray-500">
+          Pilih satu atau beberapa wilayah yang menjadi tanggung jawab Salesman.
+        </p>
+
+        {areaFeedback && (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            {areaFeedback}
+          </div>
+        )}
+
         {availableAreas.length === 0 ? (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-            Tenant ini belum memiliki konfigurasi wilayah kerja. Hubungi admin untuk
-            menambahkannya terlebih dahulu sebelum membuat Salesman.
+          <p className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            Belum ada wilayah kerja. Tambahkan wilayah pertama untuk Salesman ini.
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -179,6 +223,77 @@ export function AddSalesmanForm({ availableAreas }: { availableAreas: string[] }
             })}
           </div>
         )}
+
+        {!showAreaForm ? (
+          <button
+            type="button"
+            onClick={() => {
+              setAreaError(null);
+              setAreaFeedback(null);
+              setShowAreaForm(true);
+            }}
+            className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Tambah Wilayah Baru
+          </button>
+        ) : (
+          <div className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+            {areaError && (
+              <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {areaError}
+              </div>
+            )}
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">
+                Nama Wilayah <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                value={newAreaName}
+                onChange={(e) => setNewAreaName(e.target.value)}
+                placeholder="mis. Cirebon Timur"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-700">Keterangan</label>
+              <input
+                type="text"
+                value={newAreaDescription}
+                onChange={(e) => setNewAreaDescription(e.target.value)}
+                placeholder="Opsional"
+                className={inputCls}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleAddArea}
+                disabled={isAreaPending}
+                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+              >
+                {isAreaPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Simpan Wilayah
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAreaForm(false);
+                  setAreaError(null);
+                  setNewAreaName("");
+                  setNewAreaDescription("");
+                }}
+                disabled={isAreaPending}
+                className="text-xs font-medium text-gray-500 hover:text-gray-700"
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+
         <p className="mt-1 text-xs text-gray-400">Bisa pilih lebih dari satu wilayah.</p>
       </div>
 
@@ -189,7 +304,7 @@ export function AddSalesmanForm({ availableAreas }: { availableAreas: string[] }
 
       <button
         type="submit"
-        disabled={isPending || availableAreas.length === 0}
+        disabled={isPending || isAreaPending}
         className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
       >
         {isPending && <Loader2 className="h-4 w-4 animate-spin" />}

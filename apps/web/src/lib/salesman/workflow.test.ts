@@ -231,7 +231,7 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
     expect(repo.getCoverageAreasFor(COMPANY_A, created.userId)).toEqual(["Cirebon Timur"]);
   });
 
-  it("actor tanpa wewenang (bukan owner/manager/admin/super_admin) ditolak", async () => {
+  it("actor tanpa wewenang (random id, tidak terdaftar sama sekali) ditolak", async () => {
     const repo = repoWithAreas();
     const created = await createSalesman(repo, baseInput());
     if (created.outcome !== "created") throw new Error("setup failed");
@@ -243,6 +243,99 @@ describe("assignCoverageAreas — standalone (ubah assignment salesman existing)
       actorId: "random-unauthorized-id",
     });
     expect(result.outcome).toBe("forbidden");
+  });
+
+  describe("Owner Control Plane (corrective closure): hanya role 'owner' yang berwenang mengubah wilayah", () => {
+    it("owner tenant sendiri berhasil mengubah wilayah Salesman-nya", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput({ areas: ["Cirebon Timur"] }));
+      if (created.outcome !== "created") throw new Error("setup failed");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: ACTOR_A, // seeded sebagai "owner" oleh repoWithAreas()
+      });
+      expect(result.outcome).toBe("assigned");
+      expect(repo.getCoverageAreasFor(COMPANY_A, created.userId)).toEqual(["Cirebon Kota"]);
+    });
+
+    it("sales ditolak (direct call, bukan lewat UI)", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      repo.seedActorRole("actor-sales", COMPANY_A, "sales");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: "actor-sales",
+      });
+      expect(result.outcome).toBe("forbidden");
+    });
+
+    it("manager ditolak (direct call, bukan lewat UI) -- MANAGE_ROLES lama tidak lagi berlaku", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      repo.seedActorRole("actor-manager", COMPANY_A, "manager");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: "actor-manager",
+      });
+      expect(result.outcome).toBe("forbidden");
+      expect(repo.getCoverageAreasFor(COMPANY_A, created.userId)).toEqual(["Cirebon Timur"]);
+    });
+
+    it("admin ditolak (direct call, bukan lewat UI)", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      repo.seedActorRole("actor-admin", COMPANY_A, "admin");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: "actor-admin",
+      });
+      expect(result.outcome).toBe("forbidden");
+    });
+
+    it("super_admin ditolak (direct call, bukan lewat UI)", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      repo.seedActorRole("actor-super-admin", COMPANY_A, "super_admin");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: "actor-super-admin",
+      });
+      expect(result.outcome).toBe("forbidden");
+    });
+
+    it("owner tenant lain ditolak mengubah wilayah salesman tenant ini", async () => {
+      const repo = repoWithAreas();
+      const created = await createSalesman(repo, baseInput());
+      if (created.outcome !== "created") throw new Error("setup failed");
+      repo.seedActorRole("owner-tenant-b", COMPANY_B, "owner");
+
+      const result = await repo.assignCoverageAreas({
+        companyId: COMPANY_A,
+        userId: created.userId,
+        areas: ["Cirebon Kota"],
+        actorId: "owner-tenant-b",
+      });
+      expect(result.outcome).toBe("forbidden");
+    });
   });
 
   it("target non-sales (mis. owner) ditolak", async () => {
