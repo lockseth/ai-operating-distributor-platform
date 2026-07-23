@@ -71,7 +71,7 @@ export async function updateCustomerAction(
   data: CustomerFormData
 ): Promise<void> {
   const user = await getAuthUser();
-  if (!hasPermission(user.permissions, "customers.edit")) {
+  if (!hasPermission(user.permissions, "customers.update")) {
     throw new Error("Tidak punya akses untuk mengedit pelanggan");
   }
 
@@ -116,7 +116,7 @@ export async function deactivateCustomerAction(customerId: string): Promise<void
   const user = await getAuthUser();
   const canDeactivate =
     hasPermission(user.permissions, "customers.delete") ||
-    hasPermission(user.permissions, "customers.edit");
+    hasPermission(user.permissions, "customers.update");
   if (!canDeactivate) throw new Error("Tidak punya akses");
 
   const supabase = await createClient();
@@ -142,7 +142,7 @@ export async function deactivateCustomerAction(customerId: string): Promise<void
 
 export async function activateCustomerAction(customerId: string): Promise<void> {
   const user = await getAuthUser();
-  if (!hasPermission(user.permissions, "customers.edit")) {
+  if (!hasPermission(user.permissions, "customers.update")) {
     throw new Error("Tidak punya akses");
   }
 

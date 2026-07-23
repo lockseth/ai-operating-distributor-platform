@@ -75,7 +75,7 @@ export default async function CustomerDetailPage({
   if (!data) notFound();
 
   const customer   = data as unknown as Customer;
-  const canEdit    = hasPermission(user.permissions, "customers.edit");
+  const canEdit    = hasPermission(user.permissions, "customers.update");
   const canDeactivate =
     hasPermission(user.permissions, "customers.delete") || canEdit;
 
