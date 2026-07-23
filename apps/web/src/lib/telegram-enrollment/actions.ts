@@ -36,6 +36,15 @@ function canManageTelegram(user: {
   );
 }
 
+// Owner Control Plane Gate 1C: pairing/reset Telegram Salesman satu domain
+// otorisasi dengan Gate 1A/1B (createSalesmanAction, updateSalesmanCoverageAreasAction,
+// setSalesmanActiveStatusAction) -- owner-only, lebih ketat dari
+// canManageTelegram/MANAGE_ROLES di atas (dipertahankan agar tidak mengubah
+// kontrak izin "telegram.manage" yang sudah ada, tetapi bukan lagi satu-satunya gate).
+function isOwnerActor(user: { roles: string[] }): boolean {
+  return user.roles.includes("owner");
+}
+
 export async function createTelegramEnrollmentAction(
   salesmanId: string,
 ): Promise<TelegramEnrollmentActionResult> {
@@ -43,8 +52,11 @@ export async function createTelegramEnrollmentAction(
   if (user.isDemo) {
     return { ok: false, error: "Enrollment tidak tersedia pada sesi demo." };
   }
-  if (!canManageTelegram(user)) {
-    return { ok: false, error: "Tidak berwenang mengelola Telegram Salesman." };
+  if (!canManageTelegram(user) || !isOwnerActor(user)) {
+    return {
+      ok: false,
+      error: "Hanya Owner tenant yang dapat mengelola Telegram Salesman.",
+    };
   }
   if (!UUID_PATTERN.test(salesmanId)) {
     return { ok: false, error: "Salesman tidak valid." };
@@ -121,8 +133,11 @@ export async function disconnectTelegramIdentityAction(
   if (user.isDemo) {
     return { ok: false, error: "Perubahan tidak tersedia pada sesi demo." };
   }
-  if (!canManageTelegram(user)) {
-    return { ok: false, error: "Tidak berwenang mengelola Telegram Salesman." };
+  if (!canManageTelegram(user) || !isOwnerActor(user)) {
+    return {
+      ok: false,
+      error: "Hanya Owner tenant yang dapat mengelola Telegram Salesman.",
+    };
   }
   if (!UUID_PATTERN.test(salesmanId)) {
     return { ok: false, error: "Salesman tidak valid." };

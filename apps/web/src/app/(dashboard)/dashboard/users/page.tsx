@@ -100,11 +100,16 @@ export default async function UsersPage() {
     );
   // Owner Control Plane (corrective closure 2026-07-23): Ubah Wilayah
   // Salesman existing kini owner-only, konsisten dengan Tambah Salesman dan
-  // Tambah Wilayah -- lebih ketat dari canManageTelegram di atas (Telegram
-  // enrollment TIDAK berubah, di luar scope gate ini).
+  // Tambah Wilayah -- lebih ketat dari canManageTelegram di atas.
   const isOwner = user.roles.includes("owner");
 
-  const { data: telegramData } = canManageTelegram
+  // Gate 1C corrective (2026-07-24): identity/pending-token Telegram adalah
+  // data pairing/reset itu sendiri -- digate ke isOwner, BUKAN
+  // canManageTelegram, supaya manager/admin/super_admin tidak menerima data
+  // ini lewat RSC props sama sekali (bukan sekadar disembunyikan di render).
+  // canManageTelegram tetap dipertahankan untuk fitur lain yang tidak
+  // berubah di gate ini (mis. tombol Tambah Salesman/Gate 1A).
+  const { data: telegramData } = isOwner
     ? await supabase
         .from("telegram_identities")
         .select("user_id, telegram_username, is_active")
@@ -122,7 +127,7 @@ export default async function UsersPage() {
   // Status Telegram lengkap (Pairing Aktif/Kedaluwarsa/Diputuskan) butuh dua
   // sinyal tambahan di luar identity aktif: identity yang pernah ada lalu
   // dinonaktifkan (revoke), dan token enrollment yang masih pending.
-  const { data: previousIdentityData } = canManageTelegram
+  const { data: previousIdentityData } = isOwner
     ? await supabase
         .from("telegram_identities")
         .select("user_id")
@@ -133,7 +138,7 @@ export default async function UsersPage() {
     ((previousIdentityData ?? []) as { user_id: string }[]).map((r) => r.user_id),
   );
 
-  const { data: pendingTokenData } = canManageTelegram
+  const { data: pendingTokenData } = isOwner
     ? await supabase
         .from("telegram_enrollment_tokens")
         .select("user_id, expires_at, claimed_at, revoked_at")
@@ -326,7 +331,7 @@ export default async function UsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      {canManageTelegram && roles.includes("sales") ? (
+                      {isOwner && roles.includes("sales") ? (
                         <TelegramEnrollmentControl
                           salesmanId={u.id}
                           activeIdentity={
