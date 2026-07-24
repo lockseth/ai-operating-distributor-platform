@@ -100,6 +100,8 @@ export interface SalesOrderTelegramRepository {
   updateDraftOrder(
     orderId: string,
     input: {
+      companyId: string;
+      actorId: string;
       priced: PricedOrder;
       knowledgeVersion: string;
       extractionConfidence: number;
@@ -121,6 +123,8 @@ export interface SalesOrderTelegramRepository {
    */
   confirmOrder(
     orderId: string,
+    companyId: string,
+    actorId: string,
     options?: { paymentTermsDays?: number | null },
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }>;
 }
@@ -295,64 +299,49 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     const orderNumber = await this.generateOrderNumber(input.companyId);
     const { priced } = input;
 
-    const { data: orderRow, error: orderError } = await this.supabase
-      .from("sales_orders")
-      .insert({
-        company_id: input.companyId,
-        order_number: orderNumber,
-        customer_id: priced.customerId,
-        customer_name_raw: priced.customerId ? null : priced.customerName,
-        sales_id: input.salesId,
-        status: "draft",
-        source_channel: "telegram",
-        order_source: input.orderSource,
-        knowledge_version: input.knowledgeVersion,
-        extraction_confidence: input.extractionConfidence,
-        missing_fields: input.missingFields,
-        requires_discount_review: priced.requiresDiscountReview,
-        delivery_note: priced.deliveryNote,
-        telegram_update_event_id: input.telegramEventId,
-        total_amount: priced.subtotal,
-        discount_amount: priced.totalDiscount,
-        tax_amount: 0,
-        final_amount: priced.estimatedTotal,
-        created_by: input.salesId,
-      })
-      .select("id")
-      .single();
+    const { data: rpcData, error: rpcError } = await this.supabase.rpc(
+      "create_draft_sales_order_atomic",
+      {
+        p_company_id: input.companyId,
+        p_sales_id: input.salesId,
+        p_order_number: orderNumber,
+        p_customer_id: priced.customerId,
+        p_customer_name_raw: priced.customerId ? null : priced.customerName,
+        p_order_source: input.orderSource,
+        p_knowledge_version: input.knowledgeVersion,
+        p_extraction_confidence: input.extractionConfidence,
+        p_missing_fields: input.missingFields,
+        p_requires_discount_review: priced.requiresDiscountReview,
+        p_delivery_note: priced.deliveryNote,
+        p_telegram_event_id: input.telegramEventId,
+        p_total_amount: priced.subtotal,
+        p_discount_amount: priced.totalDiscount,
+        p_final_amount: priced.estimatedTotal,
+        p_items: priced.items.map((item) => ({
+          product_id: item.productId,
+          product_name_raw: item.productId ? null : item.productName,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unitPrice,
+          discount_type: item.discountType,
+          discount_value: item.discountValue,
+          amount_before_discount: item.amountBeforeDiscount,
+          discount_amount: item.amountBeforeDiscount - item.amountAfterDiscount,
+          discount_exception: item.discountException,
+          total_amount: item.amountAfterDiscount,
+        })),
+      },
+    );
 
-    if (orderError)
-      throw new Error(`createDraftOrder failed: ${orderError.message}`);
-    const orderId = (orderRow as { id: string }).id;
-
-    if (priced.items.length > 0) {
-      const { error: itemsError } = await this.supabase
-        .from("sales_order_items")
-        .insert(
-          priced.items.map((item) => ({
-            order_id: orderId,
-            product_id: item.productId,
-            product_name_raw: item.productId ? null : item.productName,
-            quantity: item.quantity,
-            unit: item.unit,
-            unit_price: item.unitPrice,
-            discount_type: item.discountType,
-            discount_value: item.discountValue,
-            amount_before_discount: item.amountBeforeDiscount,
-            discount_amount:
-              item.amountBeforeDiscount - item.amountAfterDiscount,
-            discount_exception: item.discountException,
-            total_amount: item.amountAfterDiscount,
-          })),
-        );
-      if (itemsError) {
-        await this.supabase.from("sales_orders").delete().eq("id", orderId);
-        throw new Error(`createDraftOrder items failed: ${itemsError.message}`);
-      }
+    if (rpcError)
+      throw new Error(`createDraftOrder failed: ${rpcError.message}`);
+    const row = ((rpcData ?? []) as { result_outcome: string; result_order_id: string }[])[0];
+    if (!row || row.result_outcome !== "created") {
+      throw new Error(`createDraftOrder failed: ${row?.result_outcome ?? "empty RPC result"}`);
     }
 
     return {
-      id: orderId,
+      id: row.result_order_id,
       orderNumber,
       status: "draft",
       requiresDiscountReview: priced.requiresDiscountReview,
@@ -364,6 +353,8 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
   async updateDraftOrder(
     orderId: string,
     input: {
+      companyId: string;
+      actorId: string;
       priced: PricedOrder;
       knowledgeVersion: string;
       extractionConfidence: number;
@@ -373,54 +364,50 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
   ): Promise<PersistedOrder> {
     const { priced } = input;
 
-    const { error: updateError } = await this.supabase
-      .from("sales_orders")
-      .update({
-        customer_id: priced.customerId,
-        customer_name_raw: priced.customerId ? null : priced.customerName,
-        knowledge_version: input.knowledgeVersion,
-        extraction_confidence: input.extractionConfidence,
-        missing_fields: input.missingFields,
-        requires_discount_review: priced.requiresDiscountReview,
-        delivery_note: priced.deliveryNote,
-        total_amount: priced.subtotal,
-        discount_amount: priced.totalDiscount,
-        final_amount: priced.estimatedTotal,
-        order_source: input.orderSource,
-      })
-      .eq("id", orderId)
-      .eq("status", "draft"); // guard: hanya order yang masih draft yang boleh dikoreksi
+    const { data: rpcData, error: rpcError } = await this.supabase.rpc(
+      "update_draft_sales_order_atomic",
+      {
+        p_company_id: input.companyId,
+        p_actor_id: input.actorId,
+        p_order_id: orderId,
+        p_customer_id: priced.customerId,
+        p_customer_name_raw: priced.customerId ? null : priced.customerName,
+        p_order_source: input.orderSource,
+        p_knowledge_version: input.knowledgeVersion,
+        p_extraction_confidence: input.extractionConfidence,
+        p_missing_fields: input.missingFields,
+        p_requires_discount_review: priced.requiresDiscountReview,
+        p_delivery_note: priced.deliveryNote,
+        p_total_amount: priced.subtotal,
+        p_discount_amount: priced.totalDiscount,
+        p_final_amount: priced.estimatedTotal,
+        p_items: priced.items.map((item) => ({
+          product_id: item.productId,
+          product_name_raw: item.productId ? null : item.productName,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unitPrice,
+          discount_type: item.discountType,
+          discount_value: item.discountValue,
+          amount_before_discount: item.amountBeforeDiscount,
+          discount_amount: item.amountBeforeDiscount - item.amountAfterDiscount,
+          discount_exception: item.discountException,
+          total_amount: item.amountAfterDiscount,
+        })),
+      },
+    );
 
-    if (updateError)
-      throw new Error(`updateDraftOrder failed: ${updateError.message}`);
-
-    await this.supabase
-      .from("sales_order_items")
-      .delete()
-      .eq("order_id", orderId);
-
-    if (priced.items.length > 0) {
-      const { error: itemsError } = await this.supabase
-        .from("sales_order_items")
-        .insert(
-          priced.items.map((item) => ({
-            order_id: orderId,
-            product_id: item.productId,
-            product_name_raw: item.productId ? null : item.productName,
-            quantity: item.quantity,
-            unit: item.unit,
-            unit_price: item.unitPrice,
-            discount_type: item.discountType,
-            discount_value: item.discountValue,
-            amount_before_discount: item.amountBeforeDiscount,
-            discount_amount:
-              item.amountBeforeDiscount - item.amountAfterDiscount,
-            discount_exception: item.discountException,
-            total_amount: item.amountAfterDiscount,
-          })),
-        );
-      if (itemsError)
-        throw new Error(`updateDraftOrder items failed: ${itemsError.message}`);
+    if (rpcError)
+      throw new Error(`updateDraftOrder failed: ${rpcError.message}`);
+    const row = ((rpcData ?? []) as { result_outcome: string }[])[0];
+    if (!row || row.result_outcome !== "updated") {
+      // "not_draft" adalah guard yang sudah ada sebelumnya (silent no-op) --
+      // dipertahankan sebagai perilaku yang sama: kembalikan order apa adanya.
+      if (row?.result_outcome === "not_draft") {
+        const existing = await this.getOrder(orderId);
+        if (existing) return existing;
+      }
+      throw new Error(`updateDraftOrder failed: ${row?.result_outcome ?? "empty RPC result"}`);
     }
 
     const updated = await this.getOrder(orderId);
@@ -502,31 +489,31 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
 
   async confirmOrder(
     orderId: string,
+    companyId: string,
+    actorId: string,
     options: { paymentTermsDays?: number | null } = {},
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
-    const existing = await this.getOrder(orderId);
-    if (!existing) throw new Error("Order not found");
+    const { data: rpcData, error: rpcError } = await this.supabase.rpc(
+      "confirm_sales_order_atomic",
+      {
+        p_company_id: companyId,
+        p_actor_id: actorId,
+        p_order_id: orderId,
+        p_payment_terms_days: options.paymentTermsDays ?? null,
+      },
+    );
 
-    if (existing.status === "confirmed") {
-      return { order: existing, alreadyConfirmed: true };
+    if (rpcError) throw new Error(`confirmOrder failed: ${rpcError.message}`);
+    const row = ((rpcData ?? []) as { result_outcome: string; already_confirmed: boolean }[])[0];
+    if (!row) throw new Error("confirmOrder failed: empty RPC result");
+    if (row.result_outcome === "not_found") throw new Error("Order not found");
+    if (row.result_outcome !== "confirmed" && row.result_outcome !== "already_confirmed") {
+      throw new Error(`confirmOrder failed: ${row.result_outcome}`);
     }
-
-    const updates: Record<string, unknown> = { status: "confirmed" };
-    if (options.paymentTermsDays !== undefined) {
-      updates.payment_terms_days = options.paymentTermsDays;
-    }
-
-    await this.supabase
-      .from("sales_orders")
-      .update(updates)
-      .eq("id", orderId)
-      .eq("status", "draft"); // guard: hanya transisi dari draft, mencegah race/duplikasi
 
     const updated = await this.getOrder(orderId);
-    return {
-      order: updated ?? { ...existing, status: "confirmed" },
-      alreadyConfirmed: false,
-    };
+    if (!updated) throw new Error("confirmOrder: order not found after update");
+    return { order: updated, alreadyConfirmed: row.already_confirmed };
   }
 }
 
@@ -545,11 +532,21 @@ export interface InMemoryEventRecord {
   rejectionReason?: string;
 }
 
+export interface InMemoryOrderAuditEvent {
+  action: string;
+  companyId: string;
+  actorId: string;
+  entityId: string;
+  oldData: unknown;
+  newData: unknown;
+}
+
 export class InMemorySalesOrderRepository implements SalesOrderTelegramRepository {
   private events = new Map<number, InMemoryEventRecord>();
   private identities = new Map<number, ResolvedIdentity>();
   private conversationStates = new Map<string, ConversationState>();
   private orders = new Map<string, PersistedOrder>();
+  private auditTrail: InMemoryOrderAuditEvent[] = [];
   private seq = 0;
 
   seedIdentity(telegramChatId: number, identity: ResolvedIdentity): void {
@@ -652,6 +649,14 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       orderSource: input.orderSource,
     };
     this.orders.set(id, order);
+    this.auditTrail.push({
+      action: "order.create",
+      companyId: input.companyId,
+      actorId: input.salesId,
+      entityId: id,
+      oldData: null,
+      newData: { orderNumber, orderSource: input.orderSource },
+    });
     return order;
   }
 
@@ -662,6 +667,8 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
   async updateDraftOrder(
     orderId: string,
     input: {
+      companyId: string;
+      actorId: string;
       priced: PricedOrder;
       knowledgeVersion: string;
       extractionConfidence: number;
@@ -680,11 +687,21 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       orderSource: input.orderSource,
     };
     this.orders.set(orderId, updated);
+    this.auditTrail.push({
+      action: "order.update",
+      companyId: input.companyId,
+      actorId: input.actorId,
+      entityId: orderId,
+      oldData: { orderSource: existing.orderSource },
+      newData: { orderSource: input.orderSource },
+    });
     return updated;
   }
 
   async confirmOrder(
     orderId: string,
+    companyId: string,
+    actorId: string,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars -- InMemory tidak memodelkan kolom DB payment_terms_days (lihat PersistedOrder), parameter dipertahankan hanya demi kesesuaian interface produksi.
     options: { paymentTermsDays?: number | null } = {},
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }> {
@@ -695,6 +712,18 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     }
     const updated: PersistedOrder = { ...existing, status: "confirmed" };
     this.orders.set(orderId, updated);
+    this.auditTrail.push({
+      action: "order.confirm",
+      companyId,
+      actorId,
+      entityId: orderId,
+      oldData: { status: existing.status },
+      newData: { status: "confirmed" },
+    });
     return { order: updated, alreadyConfirmed: false };
+  }
+
+  getAuditTrail(): InMemoryOrderAuditEvent[] {
+    return this.auditTrail;
   }
 }

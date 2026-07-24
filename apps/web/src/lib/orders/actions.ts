@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
-import { logAuditEvent } from "@/lib/actions/audit";
+import { getAdminClient } from "@/lib/supabase/admin";
 
 export type OrderStatus =
   | "draft" | "confirmed" | "processing"
@@ -75,58 +75,51 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
     throw new Error("Order harus memiliki minimal 1 item");
   }
 
-  const supabase    = await createClient();
   const orderNumber = await generateOrderNumber(user.company_id);
-  const totals      = calcTotals(data.items, data.discount_amount ?? 0);
+  const admin = getAdminClient();
 
-  const { data: order, error: orderError } = await supabase
-    .from("sales_orders")
-    .insert({
-      company_id:      user.company_id,
-      order_number:    orderNumber,
-      customer_id:     data.customer_id,
-      sales_id:        data.sales_id || null,
-      status:          "draft",
-      notes:           data.notes || null,
-      delivery_date:   data.delivery_date || null,
-      created_by:      user.id,
-      ...totals,
-    })
-    .select("id")
-    .single();
+  const { data: rpcData, error: rpcError } = await admin.rpc("create_sales_order_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_order_number: orderNumber,
+    p_customer_id: data.customer_id,
+    p_sales_id: data.sales_id || null,
+    p_notes: data.notes || null,
+    p_delivery_date: data.delivery_date || null,
+    p_discount_amount: data.discount_amount ?? 0,
+    p_items: data.items.map((item) => ({
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      discount_amount: item.discount_amount,
+      total_amount: item.total_amount,
+      notes: item.notes || null,
+    })),
+  });
 
-  if (orderError) throw new Error(orderError.message);
+  if (rpcError) throw new Error(rpcError.message);
+  const row = ((rpcData ?? []) as { result_outcome: string; result_order_id: string }[])[0];
+  if (!row) throw new Error("create_sales_order_atomic: empty RPC result");
 
-  const { error: itemsError } = await supabase
-    .from("sales_order_items")
-    .insert(
-      data.items.map((item) => ({
-        order_id:        order.id,
-        product_id:      item.product_id,
-        quantity:        item.quantity,
-        unit_price:      item.unit_price,
-        discount_amount: item.discount_amount,
-        total_amount:    item.total_amount,
-        notes:           item.notes || null,
-      }))
-    );
-
-  if (itemsError) {
-    await supabase.from("sales_orders").delete().eq("id", order.id);
-    throw new Error(itemsError.message);
+  switch (row.result_outcome) {
+    case "created":
+      break;
+    case "forbidden":
+      throw new Error("Tidak punya akses untuk membuat sales order");
+    case "invalid_customer":
+      throw new Error("Customer tidak ditemukan");
+    case "invalid_sales_id":
+      throw new Error("Salesperson tidak valid");
+    case "invalid_product":
+      throw new Error("Salah satu produk tidak valid");
+    case "no_items":
+      throw new Error("Order harus memiliki minimal 1 item");
+    default:
+      throw new Error(`Gagal membuat order: ${row.result_outcome}`);
   }
 
-  await logAuditEvent({
-    company_id:  user.company_id,
-    user_id:     user.id,
-    action:      "order.create",
-    entity_type: "sales_orders",
-    entity_id:   order.id,
-    new_data:    { order_number: orderNumber, customer_id: data.customer_id, final_amount: totals.final_amount },
-  }).catch(() => {});
-
   revalidatePath("/dashboard/orders");
-  redirect(`/dashboard/orders/${order.id}`);
+  redirect(`/dashboard/orders/${row.result_order_id}`);
 }
 
 // -----------------------------------------------------------------------
@@ -134,75 +127,61 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
 // -----------------------------------------------------------------------
 export async function updateOrderAction(
   orderId: string,
-  oldData: { order_number: string; final_amount: number },
+  _oldData: { order_number: string; final_amount: number },
   data: OrderFormData
 ): Promise<void> {
   const user = await getAuthUser();
-  if (!hasPermission(user.permissions, "orders.edit")) {
+  if (!hasPermission(user.permissions, "orders.update")) {
     throw new Error("Tidak punya akses untuk mengedit sales order");
   }
   if (data.items.length === 0) {
     throw new Error("Order harus memiliki minimal 1 item");
   }
 
-  const supabase = await createClient();
-  const totals   = calcTotals(data.items, data.discount_amount ?? 0);
+  const admin = getAdminClient();
+  const { data: rpcData, error: rpcError } = await admin.rpc("update_sales_order_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_order_id: orderId,
+    p_customer_id: data.customer_id,
+    p_sales_id: data.sales_id || null,
+    p_notes: data.notes || null,
+    p_delivery_date: data.delivery_date || null,
+    p_discount_amount: data.discount_amount ?? 0,
+    p_items: data.items.map((item) => ({
+      product_id: item.product_id,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      discount_amount: item.discount_amount,
+      total_amount: item.total_amount,
+      notes: item.notes || null,
+    })),
+  });
 
-  // Verify order status is editable
-  const { data: existing } = await supabase
-    .from("sales_orders")
-    .select("status")
-    .eq("id", orderId)
-    .eq("company_id", user.company_id)
-    .single();
+  if (rpcError) throw new Error(rpcError.message);
+  const row = ((rpcData ?? []) as { result_outcome: string }[])[0];
+  if (!row) throw new Error("update_sales_order_atomic: empty RPC result");
 
-  if (!existing) throw new Error("Order tidak ditemukan");
-  if (!["draft", "confirmed"].includes(existing.status)) {
-    throw new Error("Hanya order berstatus Draft atau Confirmed yang dapat diedit");
+  switch (row.result_outcome) {
+    case "updated":
+      break;
+    case "forbidden":
+      throw new Error("Tidak punya akses untuk mengedit sales order");
+    case "not_found":
+      throw new Error("Order tidak ditemukan");
+    case "invalid_status":
+      throw new Error("Hanya order berstatus Draft atau Confirmed yang dapat diedit");
+    case "invalid_customer":
+      throw new Error("Customer tidak ditemukan");
+    case "invalid_sales_id":
+      throw new Error("Salesperson tidak valid");
+    case "invalid_product":
+      throw new Error("Salah satu produk tidak valid");
+    case "no_items":
+      throw new Error("Order harus memiliki minimal 1 item");
+    default:
+      throw new Error(`Gagal mengubah order: ${row.result_outcome}`);
   }
-
-  // Delete existing items and re-insert
-  await supabase.from("sales_order_items").delete().eq("order_id", orderId);
-
-  const { error: itemsError } = await supabase
-    .from("sales_order_items")
-    .insert(
-      data.items.map((item) => ({
-        order_id:        orderId,
-        product_id:      item.product_id,
-        quantity:        item.quantity,
-        unit_price:      item.unit_price,
-        discount_amount: item.discount_amount,
-        total_amount:    item.total_amount,
-        notes:           item.notes || null,
-      }))
-    );
-
-  if (itemsError) throw new Error(itemsError.message);
-
-  const { error } = await supabase
-    .from("sales_orders")
-    .update({
-      customer_id:   data.customer_id,
-      sales_id:      data.sales_id || null,
-      notes:         data.notes || null,
-      delivery_date: data.delivery_date || null,
-      ...totals,
-    })
-    .eq("id", orderId)
-    .eq("company_id", user.company_id);
-
-  if (error) throw new Error(error.message);
-
-  await logAuditEvent({
-    company_id:  user.company_id,
-    user_id:     user.id,
-    action:      "order.update",
-    entity_type: "sales_orders",
-    entity_id:   orderId,
-    old_data:    oldData as Record<string, unknown>,
-    new_data:    { final_amount: totals.final_amount },
-  }).catch(() => {});
 
   revalidatePath("/dashboard/orders");
   revalidatePath(`/dashboard/orders/${orderId}`);
@@ -217,30 +196,33 @@ export async function updateOrderStatusAction(
   newStatus: OrderStatus
 ): Promise<void> {
   const user = await getAuthUser();
-  if (!hasPermission(user.permissions, "orders.edit")) {
+  if (!hasPermission(user.permissions, "orders.update")) {
     throw new Error("Tidak punya akses");
   }
 
-  const supabase = await createClient();
-  const updates: Record<string, unknown> = { status: newStatus };
-  if (newStatus === "delivered") updates.delivered_at = new Date().toISOString();
+  const admin = getAdminClient();
+  const { data: rpcData, error: rpcError } = await admin.rpc("update_sales_order_status_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_order_id: orderId,
+    p_new_status: newStatus,
+  });
 
-  const { error } = await supabase
-    .from("sales_orders")
-    .update(updates)
-    .eq("id", orderId)
-    .eq("company_id", user.company_id);
+  if (rpcError) throw new Error(rpcError.message);
+  const row = ((rpcData ?? []) as { result_outcome: string }[])[0];
+  if (!row) throw new Error("update_sales_order_status_atomic: empty RPC result");
 
-  if (error) throw new Error(error.message);
-
-  await logAuditEvent({
-    company_id:  user.company_id,
-    user_id:     user.id,
-    action:      "order.status_update",
-    entity_type: "sales_orders",
-    entity_id:   orderId,
-    new_data:    { status: newStatus },
-  }).catch(() => {});
+  switch (row.result_outcome) {
+    case "updated":
+    case "unchanged":
+      break;
+    case "forbidden":
+      throw new Error("Tidak punya akses");
+    case "not_found":
+      throw new Error("Order tidak ditemukan");
+    default:
+      throw new Error(`Gagal mengubah status order: ${row.result_outcome}`);
+  }
 
   revalidatePath("/dashboard/orders");
   revalidatePath(`/dashboard/orders/${orderId}`);
@@ -253,37 +235,32 @@ export async function cancelOrderAction(orderId: string): Promise<void> {
   const user = await getAuthUser();
   const canCancel =
     hasPermission(user.permissions, "orders.delete") ||
-    hasPermission(user.permissions, "orders.edit");
+    hasPermission(user.permissions, "orders.update");
   if (!canCancel) throw new Error("Tidak punya akses untuk membatalkan order");
 
-  const supabase = await createClient();
-  const { data: existing } = await supabase
-    .from("sales_orders")
-    .select("status")
-    .eq("id", orderId)
-    .eq("company_id", user.company_id)
-    .single();
+  const admin = getAdminClient();
+  const { data: rpcData, error: rpcError } = await admin.rpc("cancel_sales_order_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_order_id: orderId,
+  });
 
-  if (!existing) throw new Error("Order tidak ditemukan");
-  if (["delivered", "invoiced", "paid", "cancelled"].includes(existing.status)) {
-    throw new Error("Order dengan status ini tidak dapat dibatalkan");
+  if (rpcError) throw new Error(rpcError.message);
+  const row = ((rpcData ?? []) as { result_outcome: string }[])[0];
+  if (!row) throw new Error("cancel_sales_order_atomic: empty RPC result");
+
+  switch (row.result_outcome) {
+    case "cancelled":
+      break;
+    case "forbidden":
+      throw new Error("Tidak punya akses untuk membatalkan order");
+    case "not_found":
+      throw new Error("Order tidak ditemukan");
+    case "invalid_status":
+      throw new Error("Order dengan status ini tidak dapat dibatalkan");
+    default:
+      throw new Error(`Gagal membatalkan order: ${row.result_outcome}`);
   }
-
-  const { error } = await supabase
-    .from("sales_orders")
-    .update({ status: "cancelled" })
-    .eq("id", orderId)
-    .eq("company_id", user.company_id);
-
-  if (error) throw new Error(error.message);
-
-  await logAuditEvent({
-    company_id:  user.company_id,
-    user_id:     user.id,
-    action:      "order.cancel",
-    entity_type: "sales_orders",
-    entity_id:   orderId,
-  }).catch(() => {});
 
   revalidatePath("/dashboard/orders");
   revalidatePath(`/dashboard/orders/${orderId}`);

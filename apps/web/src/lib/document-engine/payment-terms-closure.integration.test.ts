@@ -123,7 +123,7 @@ describeIfDb("Payment Terms closure check -- production confirmOrder() + immutab
   }, 30000);
 
   it("1. confirmOrder() PRODUKSI menulis payment_terms_days saat transisi draft->confirmed, dibaca ulang dari DB", async () => {
-    const result = await salesOrderRepo.confirmOrder(orderIdWithTerms, { paymentTermsDays: 14 });
+    const result = await salesOrderRepo.confirmOrder(orderIdWithTerms, companyId, salesAuthId, { paymentTermsDays: 14 });
     expect(result.alreadyConfirmed).toBe(false);
 
     const { data: row } = await supabase.from("sales_orders").select("status, payment_terms_days").eq("id", orderIdWithTerms).single();
@@ -212,7 +212,7 @@ describeIfDb("Payment Terms closure check -- production confirmOrder() + immutab
   });
 
   it("5. Order historis (confirmed TANPA payment_terms_days) -> issuance PO ditolak PAYMENT_TERMS_INCOMPLETE", async () => {
-    const result = await salesOrderRepo.confirmOrder(orderIdHistorical); // TANPA options -- meniru order lama
+    const result = await salesOrderRepo.confirmOrder(orderIdHistorical, companyId, salesAuthId); // TANPA options -- meniru order lama
     expect(result.alreadyConfirmed).toBe(false);
 
     const { data: row } = await supabase.from("sales_orders").select("payment_terms_days").eq("id", orderIdHistorical).single();

@@ -215,6 +215,8 @@ export async function processTelegramUpdate(
     if (normalizedText === CONFIRM_KEYWORD) {
       const { order, alreadyConfirmed } = await deps.repository.confirmOrder(
         conversation.pendingOrderId,
+        identity.companyId,
+        identity.userId,
       );
       await deps.repository.updateEventStatus(event.id, "processed", order.id);
       // State TIDAK direset ke "none" — dibiarkan "confirmation" supaya
@@ -368,6 +370,8 @@ async function handleCorrection(
   }
 
   await deps.repository.updateDraftOrder(pendingOrderId, {
+    companyId: identity.companyId,
+    actorId: identity.userId,
     priced,
     knowledgeVersion: knowledge.knowledgeVersion,
     extractionConfidence: extracted.confidence,

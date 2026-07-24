@@ -98,7 +98,7 @@ export default async function OrderDetailPage({
 
   const order      = data as unknown as Order;
   const canCreate  = hasPermission(user.permissions, "orders.create");
-  const canEdit    = hasPermission(user.permissions, "orders.edit");
+  const canEdit    = hasPermission(user.permissions, "orders.update");
   const canCancel  = hasPermission(user.permissions, "orders.delete") || canEdit;
   const isEditable = ["draft", "confirmed"].includes(order.status);
   const isCancellable = !["delivered", "invoiced", "paid", "cancelled"].includes(order.status);

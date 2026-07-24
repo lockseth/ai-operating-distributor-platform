@@ -28,7 +28,7 @@ export default async function EditOrderPage({
   const { id } = await params;
   const user   = await getAuthUser();
 
-  if (!hasPermission(user.permissions, "orders.edit")) {
+  if (!hasPermission(user.permissions, "orders.update")) {
     redirect(`/dashboard/orders/${id}`);
   }
 
