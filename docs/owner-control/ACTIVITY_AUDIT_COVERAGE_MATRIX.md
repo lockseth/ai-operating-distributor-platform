@@ -1,8 +1,9 @@
 # Activity & Audit Log — Coverage Matrix
 
-Status: **Gate 1D-A** (fondasi). Dokumen ini adalah inventaris gap, BUKAN klaim
-selesai. Gate 1D secara keseluruhan baru PASS setelah seluruh baris di bawah
-berstatus `covered`.
+Status: **Gate 1D-A selesai + Kelompok 1 (K1 KPI, K2 Order, K3 Discount, K4
+Delivery) selesai**. Dokumen ini adalah inventaris gap, BUKAN klaim selesai
+untuk baris yang belum granular diverifikasi. Gate 1D secara keseluruhan baru
+PASS setelah seluruh baris di bawah berstatus `covered`.
 
 ## Cara membaca
 
@@ -19,13 +20,23 @@ berstatus `covered`.
     hanya sebagian aktivitas modul yang tercatat.
   - `covered` — writer mengisi kontrak kanonis penuh DAN ada test yang
     membuktikannya (bukan UI-only).
-- **PENTING**: karena kontrak kanonis baru (kolom tambahan migration
-  `20260819000001`) belum diisi oleh writer manapun yang sudah ada sebelum
-  Gate 1D-A (retrofit writer adalah scope 1D-B/1D-C, bukan gate ini), **tidak
-  ada modul bisnis yang berstatus `covered` pada Gate 1D-A** — ini
-  konsisten dengan section G Gate 1D-A ("boleh selesai dengan partial/missing").
-  Satu-satunya baris `covered` adalah halaman Activity & Audit Log itu sendiri
-  (fondasi reader, bukan klaim retrofit data bisnis).
+- **PENTING (histori)**: pada Gate 1D-A, kontrak kanonis baru (kolom tambahan
+  migration `20260819000001`) belum diisi oleh writer manapun yang sudah ada
+  — retrofit writer adalah scope 1D-B (Kelompok 1 ini), bukan gate 1D-A. Sejak
+  Kelompok 1 (commit `29f9c4c`, `b54e8c2`, `f2890d3`), tiga baris di bawah
+  (KPI Salesman, Sales Order, Delivery Verification) sudah `covered` untuk
+  transisi material yang dicakup masing-masing commit — baris lain yang masih
+  `partial`/`missing` BELUM disentuh Kelompok 1 (di luar scope K1–K4) dan tetap
+  menunggu Gate 1D-C/gate lanjutan.
+- **Discount (K3)**: TIDAK ADA baris tersendiri di matrix ini karena diskon
+  bukan menu sidebar terpisah — kesimpulan discovery K3 (lihat laporan gate):
+  tidak ada capability approval/rejection/override diskon di codebase ini
+  (`sales-orders/discount.ts` hanya evaluasi nilai per-item saat order dibuat,
+  `requires_discount_review` hanya flag tampilan, tidak pernah ditindaklanjuti
+  lewat aksi approve/reject/override). NOT IMPLEMENTED — tidak ada event
+  dibuat, konsisten dengan instruksi "jangan membuat event palsu". Nilai
+  diskon per order sudah tercakup dalam payload event `order.create`/
+  `order.update` (baris Sales Order di bawah).
 
 ## Matrix
 
@@ -33,10 +44,10 @@ berstatus `covered`.
 |---|---|---|---|---|---|---|---|
 | Dashboard (`/dashboard`) | Lihat ringkasan (read-only, per role) | — | Tidak ada (page-view sengaja tidak dicatat, lihat section H Gate 1D-A) | Page-access/navigation belum punya explicit signal + dedupe | 1D-C | missing | — |
 | WhatsApp AI (`/dashboard/whatsapp`) | Interaksi/konfigurasi AI WhatsApp | Balasan otomatis AI | Tidak ditemukan writer khusus modul ini | Aktivitas AI & human belum tercatat | 1D-C | missing | — |
-| Sales Order (`/dashboard/orders`) | Create/update/cancel/dispute order | — | `logAuditEvent` di actions; RPC dispute/cancel | Kontrak baru (`actor_type`/`event_category`/`module`) belum diisi | 1D-B | partial | `apps/web/src/lib/orders/actions.ts`; `supabase/migrations/20260725000001_order_cancellation_dispute.sql`; `20260726000001_fix_order_dispute_return_type_cast.sql` |
+| Sales Order (`/dashboard/orders`, termasuk Telegram Order Entry) | Create/update/status/cancel order (Web); create/update/confirm draft order (Telegram); cancellation/dispute request+resolve | — | RPC atomik `create/update_sales_order_atomic`, `update_sales_order_status_atomic`, `cancel_sales_order_atomic`, `create/update/confirm_..._draft_..._atomic`, `create/resolve_order_cancellation_dispute` — SEMUA menulis audit_logs kanonis penuh dalam transaksi yang sama dengan mutasi | Tidak ada gap untuk transition yang tercakup K2. Discount decision: lihat catatan K3 di atas (NOT IMPLEMENTED, bukan gap Order) | 1D-B (K2, selesai) | covered | `supabase/migrations/20260822000001_order_lifecycle_audit_atomic.sql`; `apps/web/src/lib/orders/actions.ts`; `apps/web/src/lib/sales-orders/repository.ts`; test: `orders/actions.integration.test.ts`, `document-engine/payment-terms-closure.integration.test.ts`; commit `b54e8c2` |
 | AI Dispatch Planner (`/dashboard/dispatch`) | Approve/adjust rencana dispatch | Saran rute/dispatch AI | Tidak ditemukan writer | Aktivitas AI & human belum tercatat | 1D-C (AI) + 1D-B (approval manusia) | missing | — |
 | Laporan Sales (`/dashboard/reports`) | Input/edit laporan harian (hybrid model) | Agregasi otomatis vs `sales_orders` | `logAuditEvent` di actions | Kontrak baru belum diisi; agregasi otomatis AI belum tercatat terpisah | 1D-B (human) / 1D-C (agregasi otomatis) | partial | `apps/web/src/lib/sales-reports/actions.ts` |
-| KPI Salesman (`/dashboard/kpi`) | Set target KPI, kalibrasi | Kalkulasi achievement otomatis | RPC `INSERT audit_logs` ekstensif | Kontrak baru belum diisi | 1D-B | partial | `supabase/migrations/20260804000001_configurable_sales_kpi_foundation.sql`; `20260805000001_sales_kpi_achievement_integration.sql`; `20260806000001_sales_kpi_target_calibration.sql`; test: `sales-kpi/calibration.integration.test.ts`, `sales-kpi/achievement.integration.test.ts` |
+| KPI Salesman (`/dashboard/kpi`) | Set konfigurasi/target KPI, kalibrasi | Kalkulasi achievement otomatis (TIDAK diaudit — deterministik, sesuai Lean-Audit rule) | RPC `initialize_sales_kpi_foundation`, `create_sales_kpi_period`, `set_sales_kpi_period_status`, `set_sales_kpi_target` — kanonis penuh | Tidak ada gap untuk configuration/period target (K1). Manual achievement override: NOT IMPLEMENTED (tidak ada capability-nya di codebase, ditegakkan struktural via trigger append-only) — sengaja tidak dibuat event. Call/visit recording (`record_sales_call` dkk, domain achievement bukan configuration/target) di luar scope K1, tetap `partial` | 1D-B (K1, selesai) | covered (configuration & period target) | `supabase/migrations/20260821000001_kpi_target_audit_canonical.sql`; test: `sales-kpi/calibration.integration.test.ts`, `sales-kpi/achievement.integration.test.ts`; commit `29f9c4c` |
 | Collection (`/dashboard/collection`) | Pencatatan pembayaran/collection | — | Tidak ditemukan writer | Aktivitas belum tercatat | 1D-B | missing | — |
 | Risk Alert (`/dashboard/risk`) | Acknowledge/tindak lanjut alert (bila ada) | Generate risk alert (Business Guard) | Tidak ditemukan writer | Aktivitas AI & human belum tercatat; CLAUDE.md mengunci alert tidak bisa dihapus role sales — belum ada bukti audit utk enforcement ini | 1D-C (AI) + 1D-B (human ack) | missing | — |
 | AI Insights (`/dashboard/ai`) | Lihat/tindak lanjut insight | Generate insight AI | Tidak ditemukan writer | Aktivitas AI belum tercatat | 1D-C | missing | — |
@@ -46,6 +57,7 @@ berstatus `covered`.
 | Automation (`/dashboard/automation`, rule-based Automation Engine) | Buat/ubah rule automation | Eksekusi rule otomatis | Tidak ditemukan writer utk perubahan rule | Aktivitas AI & human belum tercatat | 1D-C | missing | — |
 | Automation Outbox / n8n (`/dashboard/automation/outbox`) | Replay job (Owner/manager) | Claim/dispatch/complete/fail job oleh n8n | RPC `INSERT audit_logs` ekstensif per transisi job | Kontrak baru belum diisi; actor system/automation belum diberi `actor_type` eksplisit | 1D-B (human replay) / 1D-C (system) | partial | `supabase/migrations/20260807000001_automation_outbox.sql`; test: `n8n-automation/outbox.integration.test.ts` |
 | Pengguna (`/dashboard/users`) — termasuk Salesman, Coverage Area, Telegram Pairing (Gate 1A–1C) | Tambah/nonaktifkan salesman, atur wilayah, pairing Telegram | — | RPC `INSERT audit_logs` sangat ekstensif (Gate 1A–1C) | Kontrak baru belum diisi | 1D-B | partial | `apps/web/src/lib/salesman/actions.ts`+`repository.ts`; `supabase/migrations/20260722000001_telegram_salesman_identity_enrollment.sql`, `20260813000001_company_coverage_area_management.sql`, `20260814000001_salesman_coverage_assignment_owner_only.sql`, `20260815000001_salesman_active_status_owner_only.sql`, `20260816000001_coverage_areas_master.sql`, `20260818000001_telegram_pairing_owner_only.sql`; test: `salesman/security.test.ts`, `coverage-area/security.test.ts`, `telegram-enrollment/security.test.ts` |
+| **Delivery Verification** (dari `/dashboard/orders/[id]`, dieksekusi via Telegram driver) — **baru ditambahkan ke matrix, sebelumnya absen total** | Buat delivery + assign driver (Owner/manager); dispatch, konfirmasi penerimaan/exception/recipient (driver via Telegram) | — | RPC atomik `create_delivery_atomic`, `dispatch_delivery_atomic`, `finalize_delivery_atomic` — audit_logs kanonis penuh, termasuk bukti quantity sent/received/selisih + referensi evidence (ID saja, bukan file/foto) | Tidak ada gap untuk create/dispatch/receipt-confirmation. `delivery_events` (trail operasional pre-existing sejak 20260716000001) TETAP terpisah, tidak digabung. Transisi "arrived" (intermediate, bukan keputusan bisnis) TIDAK diaudit ke audit_logs (tetap di delivery_events saja) — sesuai keputusan scope K4. Cancel/correct delivery: NOT IMPLEMENTED (tidak ada capability-nya) | 1D-B (K4, selesai) | covered (create, dispatch, receipt confirmation) | `supabase/migrations/20260823000001_delivery_audit_atomic.sql`; test: `delivery/delivery-atomic.integration.test.ts`; commit `f2890d3` |
 | Import Data (`/dashboard/imports`) | Upload/preview/commit/rollback import | — | `logAuditEvent` di actions; RPC commit/rollback fix | Kontrak baru belum diisi | 1D-B | partial | `apps/web/src/lib/imports/actions.ts`; `apps/web/src/lib/settings/import-actions.ts`, `import-preview-actions.ts`; `supabase/migrations/20260801000002_legacy_import_commit_rollback.sql`, `20260801000004_fix_commit_row_count_parity.sql`, `20260803000001_fix_commit_invalid_status_type_cast.sql` |
 | Pengaturan (`/dashboard/settings`, di luar Import) | Ubah pengaturan tenant (branding, dll.) | — | Tidak ditemukan writer khusus di luar Import | Aktivitas non-import belum tercatat | 1D-B | missing (untuk non-import) | — |
 | Platform (`/dashboard/platform`, super_admin) | Kelola tenant | — | `logAuditEvent` di `platform/tenant-actions.ts` | Kontrak baru belum diisi | 1D-B | partial | `apps/web/src/lib/platform/tenant-actions.ts` |
@@ -53,15 +65,25 @@ berstatus `covered`.
 
 ## Ringkasan
 
-- Total baris menu sidebar: 17 (Dashboard + 8 Modul + 2 Master Data + 6 Sistem,
-  termasuk Activity & Audit Log baru).
-- `covered`: 1 (Activity & Audit Log — fondasi reader, bukan retrofit data bisnis).
-- `partial`: 9 (Sales Order, Laporan Sales, KPI Salesman, Pelanggan, Produk,
-  Automation Outbox, Pengguna, Import Data, Platform).
+- Total baris: 18 (17 menu sidebar semula + Delivery Verification, baru
+  ditambahkan Kelompok 1 K4 — sebelumnya absen total dari matrix ini).
+- `covered`: 4 — Activity & Audit Log (fondasi reader), KPI Salesman
+  (configuration & period target, K1), Sales Order (termasuk Telegram Order
+  Entry, K2), Delivery Verification (create/dispatch/receipt confirmation, K4).
+  Ketiga baris K1/K2/K4 `covered` UNTUK TRANSISI YANG DICAKUP MASING-MASING
+  COMMIT SAJA — sub-domain di luar scope (achievement/call recording KPI,
+  discount decision, evidence-attachment individual, delivery arrival/cancel)
+  TIDAK diklaim covered, lihat kolom Gap masing-masing baris.
+- `partial`: 7 (Laporan Sales, Pelanggan, Produk, Automation Outbox, Pengguna,
+  Import Data, Platform) — TIDAK disentuh Kelompok 1, di luar scope K1–K4.
 - `missing`: 7 (Dashboard/page-view, WhatsApp AI, AI Dispatch Planner,
   Collection, Risk Alert, AI Insights, Automation rule-based, sebagian
   Pengaturan non-import).
-- Gate 1D **belum PASS** secara keseluruhan — sesuai desain, retrofit
-  `partial → covered` dan `missing → covered` berjalan bertahap di Gate 1D-B
-  (aktivitas manusia/Owner/Salesman) dan Gate 1D-C (AI, system, automation,
-  navigation, export, messaging, retry, security).
+- Discount: TIDAK ADA baris tersendiri — K3 menyimpulkan NOT IMPLEMENTED
+  (tidak ada capability approval/override diskon di codebase ini). Lihat
+  catatan di atas.
+- Gate 1D **belum PASS** secara keseluruhan — baris `partial`/`missing` yang
+  tersisa di luar scope Kelompok 1 (K1–K4) menunggu Gate 1D-C/gate lanjutan
+  (Kelompok 2+, aktivitas AI/system/automation/navigation/export/messaging/
+  retry/security, dan modul non-K1–K4 seperti Laporan Sales/Pelanggan/Produk/
+  Automation Outbox/Pengguna/Import Data/Platform).
