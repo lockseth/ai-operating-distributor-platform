@@ -76,6 +76,11 @@ describeIfDb("Payment Terms closure check -- production confirmOrder() + immutab
     const { data: salesAuth } = await supabase.auth.admin.createUser({ email: `${runTag}-sales@demo.test`, password: randomUUID(), email_confirm: true });
     salesAuthId = salesAuth!.user!.id;
     await supabase.from("users").insert({ id: salesAuthId, company_id: companyId, email: `${runTag}-sales@demo.test`, full_name: "Sales PT Closure", is_active: true });
+    // create_delivery_atomic (migration 20260823000001) memvalidasi permission
+    // delivery.manage untuk actor -- beri role owner supaya createDelivery()
+    // repository PRODUKSI di bawah bisa dipanggil sungguhan.
+    const { data: ownerRole } = await supabase.from("roles").select("id").eq("name", "owner").single();
+    await supabase.from("user_roles").insert({ user_id: salesAuthId, company_id: companyId, role_id: (ownerRole as { id: string }).id });
 
     const { data: customer } = await supabase.from("customers").insert({ company_id: companyId, name: "Toko PT Closure", code: `CUST-${runTag}` }).select("id").single();
     customerId = (customer as { id: string }).id;
@@ -172,9 +177,10 @@ describeIfDb("Payment Terms closure check -- production confirmOrder() + immutab
   it("4. Invoice (order+delivery yang SAMA) membaca payment_terms_days IDENTIK dengan PO -- kedua tipe dokumen, satu order, satu nilai", async () => {
     const created = await deliveryRepo.createDelivery({
       companyId,
+      actorId: salesAuthId,
       salesOrderId: orderIdWithTerms,
       idempotencyKey: null,
-      createdBy: salesAuthId,
+      driverId: salesAuthId,
       items: [{ salesOrderItemId: orderItemIdWithTerms, productName: "Produk PT Closure", unit: "pcs", unitPrice: 20000, orderedQuantity: 5 }],
     });
     deliveryId = created.id;

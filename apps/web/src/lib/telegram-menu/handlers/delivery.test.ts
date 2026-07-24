@@ -24,12 +24,12 @@ async function buildDeps(): Promise<{
   });
   const delivery = await deliveryRepository.createDelivery({
     companyId: COMPANY,
+    actorId: "owner-1",
     salesOrderId: "order-1",
     idempotencyKey: null,
-    createdBy: null,
+    driverId: SALES_1,
     items: [{ salesOrderItemId: "item-1", productName: "Indomie Goreng", unit: "dus", unitPrice: 50000, orderedQuantity: 10 }],
   });
-  await deliveryRepository.assignDriver(delivery.id, SALES_1);
 
   const todayDeliveryRepository = new InMemoryTodayDeliveryRepository();
   todayDeliveryRepository.seedDelivery({

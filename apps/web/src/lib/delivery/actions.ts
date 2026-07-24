@@ -64,9 +64,10 @@ export async function createDeliveryAction(salesOrderId: string, driverId: strin
 
   const delivery = await repository.createDelivery({
     companyId: user.company_id,
+    actorId: user.id,
     salesOrderId,
     idempotencyKey,
-    createdBy: user.id,
+    driverId,
     items: order.items.map((i) => ({
       salesOrderItemId: i.id,
       productName: i.productName,
@@ -76,7 +77,6 @@ export async function createDeliveryAction(salesOrderId: string, driverId: strin
     })),
   });
 
-  await repository.assignDriver(delivery.id, driverId);
   await repository.insertEvent({
     companyId: user.company_id,
     deliveryId: delivery.id,

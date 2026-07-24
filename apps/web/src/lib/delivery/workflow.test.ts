@@ -51,9 +51,10 @@ async function seedDelivery(
   const order = await repo.getConfirmedOrder(salesOrderId, companyId);
   const delivery = await repo.createDelivery({
     companyId,
+    actorId: "owner-1",
     salesOrderId,
     idempotencyKey: `order:${salesOrderId}`,
-    createdBy: "owner-1",
+    driverId: identity.userId,
     items: order!.items.map((i) => ({
       salesOrderItemId: i.id,
       productName: i.productName,
@@ -62,7 +63,6 @@ async function seedDelivery(
       orderedQuantity: i.quantity,
     })),
   });
-  await repo.assignDriver(delivery.id, identity.userId);
   await repo.setConversationState(identity.identityId, companyId, {
     pendingDeliveryId: delivery.id,
     awaiting: "start_confirmation",
@@ -92,12 +92,12 @@ async function seedSingleItemDelivery(
   const order = await repo.getConfirmedOrder(salesOrderId, companyId);
   const delivery = await repo.createDelivery({
     companyId,
+    actorId: "owner-1",
     salesOrderId,
     idempotencyKey: `order:${salesOrderId}:1`,
-    createdBy: "owner-1",
+    driverId: identity.userId,
     items: order!.items.map((i) => ({ salesOrderItemId: i.id, productName: i.productName, unit: i.unit, unitPrice: i.unitPrice, orderedQuantity: i.quantity })),
   });
-  await repo.assignDriver(delivery.id, identity.userId);
   await repo.setConversationState(identity.identityId, companyId, {
     pendingDeliveryId: delivery.id,
     awaiting: "start_confirmation",
@@ -115,12 +115,12 @@ async function seedNextAttempt(
   const order = await repo.getConfirmedOrder(opts.salesOrderId, opts.companyId);
   const delivery = await repo.createDelivery({
     companyId: opts.companyId,
+    actorId: "owner-1",
     salesOrderId: opts.salesOrderId,
     idempotencyKey: `order:${opts.salesOrderId}:${opts.attemptTag}`,
-    createdBy: "owner-1",
+    driverId: opts.identity.userId,
     items: order!.items.map((i) => ({ salesOrderItemId: i.id, productName: i.productName, unit: i.unit, unitPrice: i.unitPrice, orderedQuantity: i.quantity })),
   });
-  await repo.assignDriver(delivery.id, opts.identity.userId);
   await repo.setConversationState(opts.identity.identityId, opts.companyId, {
     pendingDeliveryId: delivery.id,
     awaiting: "start_confirmation",
@@ -285,9 +285,10 @@ describe("Delivery Verification workflow", () => {
     const order = await deps.repository.getConfirmedOrder("order-5", COMPANY_A);
     const delivery2 = await deps.repository.createDelivery({
       companyId: COMPANY_A,
+      actorId: "owner-1",
       salesOrderId: "order-5",
       idempotencyKey: null,
-      createdBy: "owner-1",
+      driverId: DRIVER_A.userId,
       items: order!.items.map((i) => ({
         salesOrderItemId: i.id,
         productName: i.productName,
@@ -673,9 +674,10 @@ describe("Delivery Verification workflow", () => {
     const item1 = order!.items[0]!;
     const delivery2 = await deps.repository.createDelivery({
       companyId: COMPANY_A,
+      actorId: "owner-1",
       salesOrderId: "order-23",
       idempotencyKey: null,
-      createdBy: "owner-1",
+      driverId: DRIVER_A.userId,
       items: [
         {
           salesOrderItemId: item1.id,
@@ -686,7 +688,6 @@ describe("Delivery Verification workflow", () => {
         },
       ],
     });
-    await deps.repository.assignDriver(delivery2.id, DRIVER_A.userId);
     await deps.repository.setConversationState(DRIVER_A.identityId, COMPANY_A, {
       pendingDeliveryId: delivery2.id,
       awaiting: "start_confirmation",
@@ -793,22 +794,22 @@ describe("Delivery Verification workflow", () => {
     // (mensimulasikan dua attempt yang benar-benar berjalan bersamaan).
     const deliveryA = await deps.repository.createDelivery({
       companyId: COMPANY_A,
+      actorId: "owner-1",
       salesOrderId: "order-27",
       idempotencyKey: "order:order-27:A",
-      createdBy: "owner-1",
+      driverId: DRIVER_A.userId,
       items: [{ salesOrderItemId: item.id, productName: item.productName, unit: item.unit, unitPrice: item.unitPrice, orderedQuantity: 100 }],
     });
-    await deps.repository.assignDriver(deliveryA.id, DRIVER_A.userId);
 
     const driverB: ResolvedIdentity = { identityId: "identity-driver-b27", companyId: COMPANY_A, userId: "driver-b27", userFullName: "Wati" };
     const deliveryB = await deps.repository.createDelivery({
       companyId: COMPANY_A,
+      actorId: "owner-1",
       salesOrderId: "order-27",
       idempotencyKey: "order:order-27:B",
-      createdBy: "owner-1",
+      driverId: driverB.userId,
       items: [{ salesOrderItemId: item.id, productName: item.productName, unit: item.unit, unitPrice: item.unitPrice, orderedQuantity: 100 }],
     });
-    await deps.repository.assignDriver(deliveryB.id, driverB.userId);
 
     await deps.repository.setConversationState(DRIVER_A.identityId, COMPANY_A, {
       pendingDeliveryId: deliveryA.id,

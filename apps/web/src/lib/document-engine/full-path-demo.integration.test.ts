@@ -152,6 +152,11 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
     if (salesErr || !salesAuth.user) throw new Error(`gagal buat auth user: ${salesErr?.message}`);
     salesAuthId = salesAuth.user.id;
     await supabase.from("users").insert({ id: salesAuthId, company_id: companyId, email: `${runTag}-sales@fullpath.test`, full_name: "Budi Santoso", is_active: true });
+    // create_delivery_atomic (migration 20260823000001) memvalidasi permission
+    // delivery.manage untuk actor -- beri role owner supaya createDelivery()
+    // repository PRODUKSI di bawah bisa dipanggil sungguhan.
+    const { data: ownerRole } = await supabase.from("roles").select("id").eq("name", "owner").single();
+    await supabase.from("user_roles").insert({ user_id: salesAuthId, company_id: companyId, role_id: (ownerRole as { id: string }).id });
 
     const { data: customer, error: custErr } = await supabase
       .from("customers")
@@ -295,9 +300,10 @@ describeIfDb("Full production path: DB lokal -> repository asli -> issued snapsh
   it("2. Delivery Note (Target 2) diterbitkan SEBELUM dispatch, lalu delivery diverifikasi penuh (7 baris) lewat repository asli", async () => {
     const created = await deliveryRepo.createDelivery({
       companyId,
+      actorId: salesAuthId,
       salesOrderId: orderId,
       idempotencyKey: null,
-      createdBy: salesAuthId,
+      driverId: salesAuthId,
       items: WALUYO_PRODUCTS.map((p, i) => ({ salesOrderItemId: orderItemIds[i]!, productName: p.name, unit: "dus", unitPrice: p.unitPrice, orderedQuantity: p.quantity })),
     });
     deliveryId = created.id;

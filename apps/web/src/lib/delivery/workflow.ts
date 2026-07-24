@@ -138,7 +138,14 @@ async function handleStartConfirmation(
     return { outcome: "invalid_input" };
   }
 
-  await deps.repository.recordDispatch(deliveryId);
+  // Atomik (migration 20260823000001): mutasi dispatched_quantity/status +
+  // audit_logs 'delivery.dispatch' dalam satu transaksi. Idempoten -- status
+  // selain 'planned' (retry) tidak menulis audit lagi.
+  await deps.repository.dispatchDeliveryAtomic({
+    companyId: identity.companyId,
+    actorId: identity.userId,
+    deliveryId,
+  });
   // Delivery pertama untuk order ini benar-benar mulai bergerak -> lifecycle
   // agregat confirmed -> delivering (no-op idempoten bila order sudah
   // delivering dari attempt sebelumnya, lihat sync_sales_order_delivery_status).
@@ -543,69 +550,81 @@ async function handleFinalConfirmation(
     return { outcome: "finalized", deliveryId: delivery.id, alreadyFinalized: true, finalStatus: existing!.status };
   }
 
-  // Satu-satunya jalur commit quantity: atomic, row-locked lintas SELURUH
-  // delivery attempt milik sales_order yang sama. Menolak (TIDAK silent
-  // clamp) bila kombinasi ini akan mendorong SUM received_quantity melebihi
-  // ordered_quantity -- termasuk kasus dua attempt confirm hampir bersamaan.
-  const itemOutcomeEntries = Object.entries(draft.itemOutcomes ?? {});
-  if (itemOutcomeEntries.length > 0) {
-    const result = await deps.repository.finalizeItemQuantities(
-      delivery.id,
-      itemOutcomeEntries.map(([itemId, o]) => ({ deliveryItemId: itemId, ...o }))
-    );
-    if (!result.ok) {
-      await deps.sender.sendMessage(
-        chatId,
-        buildQuantityConflictReply(result.error.salesOrderItemId, result.error.outstanding, result.error.requested)
-      );
-      // TIDAK finalize, TIDAK insert exception/recipient/alert, TIDAK sync
-      // lifecycle -- state tetap final_confirmation, delivery tetap belum
-      // terminal. Driver/admin perlu menindaklanjuti secara manual.
-      return { outcome: "quantity_conflict", deliveryId: delivery.id };
-    }
-  }
+  // Severity dihitung dari PREVIEW item outcomes (angka final yang akan
+  // disubmit, sama seperti moveToPreview()) -- tidak perlu baca DB
+  // pasca-commit karena draft.itemOutcomes sudah berisi hasil akhirnya.
+  const previewItemsForSeverity = delivery.items.map((item) => {
+    const o = draft.itemOutcomes?.[item.id];
+    return o ? { ...item, receivedQuantity: o.receivedQuantity } : item;
+  });
+  const eligibilityForSeverity = computeInvoiceEligibility({ ...delivery, items: previewItemsForSeverity });
+  const severity = draft.reasonCode ? computeExceptionSeverity(outcome, eligibilityForSeverity) : null;
 
-  if (draft.reasonCode) {
-    const finalDeliverySnapshot = await deps.repository.getDelivery(delivery.id);
-    const eligibilityForSeverity = computeInvoiceEligibility(finalDeliverySnapshot ?? delivery);
-    await deps.repository.insertException(
-      identity.companyId,
-      delivery.id,
-      {
-        reasonCode: draft.reasonCode,
-        note: draft.reasonNote ?? null,
-        severity: computeExceptionSeverity(outcome, eligibilityForSeverity),
-      },
-      identity.userId
-    );
-  }
-
+  // DV-05: bandingkan dengan penerima attempt sebelumnya (bila ada) untuk
+  // mendeteksi pergantian PIC — bukan diblokir otomatis, hanya dicatat.
+  let previousRecipient: string | null = null;
+  let isExpectedPic: boolean | null = null;
   if (draft.hasRecipient && draft.recipientName) {
-    // DV-05: bandingkan dengan penerima attempt sebelumnya (bila ada) untuk
-    // mendeteksi pergantian PIC — bukan diblokir otomatis, hanya dicatat.
-    const previousRecipient = await deps.repository.getPreviousRecipientName(delivery.salesOrderId, delivery.attemptNumber);
-    const isExpectedPic = previousRecipient === null || previousRecipient.trim().toLowerCase() === draft.recipientName.trim().toLowerCase();
-    await deps.repository.insertRecipient(identity.companyId, delivery.id, {
-      recipientName: draft.recipientName,
-      isExpectedPic,
-      identityNote: null,
-      signatureEvidenceId: null,
-    });
-    if (!isExpectedPic) {
-      await deps.repository.insertEvent({
-        companyId: identity.companyId,
-        deliveryId: delivery.id,
-        eventType: "recipient_changed",
-        fromStatus: null,
-        toStatus: null,
-        actorId: identity.userId,
-        telegramUpdateEventId,
-        payload: { previousRecipient, newRecipient: draft.recipientName },
-      });
-    }
+    previousRecipient = await deps.repository.getPreviousRecipientName(delivery.salesOrderId, delivery.attemptNumber);
+    isExpectedPic =
+      previousRecipient === null || previousRecipient.trim().toLowerCase() === draft.recipientName.trim().toLowerCase();
   }
 
-  const { delivery: finalized, alreadyFinalized } = await deps.repository.finalizeDelivery(delivery.id, finalStatus);
+  // Satu keputusan bisnis atomik (migration 20260823000001,
+  // finalize_delivery_atomic): commit quantity + exception + recipient +
+  // status -> terminal + audit_logs 'delivery.receipt_confirmed', SEMUA
+  // dalam satu transaksi. Menolak (TIDAK silent clamp, TIDAK ada yang
+  // ter-commit) bila kombinasi ini akan mendorong SUM received_quantity
+  // melebihi ordered_quantity -- termasuk kasus dua attempt confirm hampir
+  // bersamaan.
+  const itemOutcomeEntries = Object.entries(draft.itemOutcomes ?? {});
+  const confirmResult = await deps.repository.confirmDeliveryReceiptAtomic({
+    companyId: identity.companyId,
+    actorId: identity.userId,
+    deliveryId: delivery.id,
+    finalStatus,
+    itemOutcomes: itemOutcomeEntries.map(([itemId, o]) => ({ deliveryItemId: itemId, ...o })),
+    reasonCode: draft.reasonCode ?? null,
+    reasonNote: draft.reasonNote ?? null,
+    severity,
+    recipientName: draft.hasRecipient ? draft.recipientName ?? null : null,
+    isExpectedPic,
+  });
+
+  if (confirmResult.outcome === "quantity_conflict") {
+    await deps.sender.sendMessage(
+      chatId,
+      buildQuantityConflictReply(
+        confirmResult.error.salesOrderItemId,
+        confirmResult.error.outstanding,
+        confirmResult.error.requested
+      )
+    );
+    // TIDAK finalize, TIDAK insert exception/recipient/alert, TIDAK sync
+    // lifecycle -- state tetap final_confirmation, delivery tetap belum
+    // terminal. Driver/admin perlu menindaklanjuti secara manual.
+    return { outcome: "quantity_conflict", deliveryId: delivery.id };
+  }
+
+  const alreadyFinalized = confirmResult.outcome === "already_finalized";
+
+  if (!alreadyFinalized && draft.hasRecipient && draft.recipientName && isExpectedPic === false) {
+    // delivery_events (trail operasional detail, TIDAK berubah) -- terpisah
+    // dari audit_logs 'delivery.receipt_confirmed' yang sudah mencakup info
+    // yang sama di payload-nya.
+    await deps.repository.insertEvent({
+      companyId: identity.companyId,
+      deliveryId: delivery.id,
+      eventType: "recipient_changed",
+      fromStatus: null,
+      toStatus: null,
+      actorId: identity.userId,
+      telegramUpdateEventId,
+      payload: { previousRecipient, newRecipient: draft.recipientName },
+    });
+  }
+
+  const finalized = (await deps.repository.getDelivery(delivery.id)) ?? delivery;
 
   await deps.repository.insertEvent({
     companyId: identity.companyId,

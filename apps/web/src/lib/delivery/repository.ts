@@ -20,6 +20,7 @@ import type {
   RecipientInput,
   OwnerAlertPayload,
   ExceptionSeverity,
+  ReasonCode,
 } from "./types";
 
 export interface ConfirmedOrderItemSnapshot {
@@ -118,9 +119,12 @@ export interface DeliveryRepositoryInterface {
 
   createDelivery(input: {
     companyId: string;
+    /** Aktor delivery.manage yang membuat delivery ini (server-side, dari sesi -- bukan klaim client). */
+    actorId: string;
     salesOrderId: string;
     idempotencyKey: string | null;
-    createdBy: string | null;
+    /** Driver yang ditugaskan -- diikat atomik saat pembuatan (migration create_delivery_atomic), bukan langkah terpisah. */
+    driverId: string;
     items: { salesOrderItemId: string; productName: string; unit: string | null; unitPrice: number; orderedQuantity: number }[];
   }): Promise<DeliveryRecord>;
 
@@ -140,8 +144,25 @@ export interface DeliveryRepositoryInterface {
    */
   syncSalesOrderStatus(salesOrderId: string): Promise<string | null>;
 
-  /** MVP: dispatched_quantity = ordered_quantity untuk semua item (lihat catatan scope di service.ts). */
+  /**
+   * @deprecated Non-atomic (mutasi + delivery_events terpisah). Gunakan
+   * `dispatchDeliveryAtomic` (mutasi + audit_logs kanonis dalam satu
+   * transaksi, migration 20260823000001). Dipertahankan untuk kompatibilitas
+   * tipe internal; tidak dipanggil dari workflow.ts.
+   */
   recordDispatch(deliveryId: string): Promise<void>;
+
+  /**
+   * Atomik (migration 20260823000001): delivery_items.dispatched_quantity +
+   * deliveries.status='dispatched' + audit_logs 'delivery.dispatch' dalam
+   * satu transaksi. Idempoten -- status selain 'planned' mengembalikan
+   * 'unchanged' tanpa menulis audit (no-op).
+   */
+  dispatchDeliveryAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+  }): Promise<{ outcome: "dispatched" | "unchanged" | "not_found" | "forbidden" }>;
 
   recordArrival(deliveryId: string): Promise<void>;
 
@@ -184,6 +205,34 @@ export interface DeliveryRepositoryInterface {
 
   /** Idempotent: memanggil ulang pada delivery yang sudah terminal tidak mengubah apa pun. */
   finalizeDelivery(deliveryId: string, finalStatus: DeliveryStatus): Promise<{ delivery: DeliveryRecord; alreadyFinalized: boolean }>;
+
+  /**
+   * Atomik (migration 20260823000001, finalize_delivery_atomic) -- SATU
+   * keputusan bisnis "konfirmasi penerimaan": commit quantity final
+   * (finalize_delivery_item_quantities internal), exception (bila ada),
+   * recipient (bila ada), status -> terminal, dan audit_logs
+   * 'delivery.receipt_confirmed' (bukti quantity sent/received/selisih,
+   * receiver, referensi evidence) -- SEMUA dalam satu transaksi. Menggantikan
+   * orkestrasi 4-langkah terpisah (finalizeItemQuantities + insertException +
+   * insertRecipient + finalizeDelivery) yang sebelumnya dipakai
+   * lib/delivery/workflow.ts. Idempoten -- delivery yang sudah terminal
+   * mengembalikan 'already_finalized' tanpa menulis apa pun lagi.
+   */
+  confirmDeliveryReceiptAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+    finalStatus: DeliveryStatus;
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[];
+    reasonCode: ReasonCode | null;
+    reasonNote: string | null;
+    severity: ExceptionSeverity | null;
+    recipientName: string | null;
+    isExpectedPic: boolean | null;
+  }): Promise<
+    | { outcome: "finalized" | "already_finalized" | "not_found" | "forbidden" }
+    | { outcome: "quantity_conflict"; error: { salesOrderItemId: string; outstanding: number; requested: number } }
+  >;
 
   insertException(companyId: string, deliveryId: string, input: DeliveryExceptionInput, actorId: string | null): Promise<DeliveryExceptionRecord>;
 
@@ -349,49 +398,39 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
     return this.getDelivery((data as { id: string }).id);
   }
 
+  /**
+   * Atomik (migration 20260823000001): INSERT deliveries + delivery_items +
+   * assign driver + audit_logs 'delivery.create' dalam satu transaksi.
+   * actorId WAJIB (aktor delivery.manage yang membuat delivery ini) --
+   * dipakai untuk validasi permission + audit, BUKAN dari createdBy semata.
+   */
   async createDelivery(input: {
     companyId: string;
+    actorId: string;
     salesOrderId: string;
     idempotencyKey: string | null;
-    createdBy: string | null;
+    driverId: string;
     items: { salesOrderItemId: string; productName: string; unit: string | null; unitPrice: number; orderedQuantity: number }[];
   }): Promise<DeliveryRecord> {
-    const { count } = await this.supabase
-      .from("deliveries")
-      .select("id", { count: "exact", head: true })
-      .eq("sales_order_id", input.salesOrderId);
-    const attemptNumber = (count ?? 0) + 1;
+    const { data: rpcData, error: rpcError } = await this.supabase.rpc("create_delivery_atomic", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_sales_order_id: input.salesOrderId,
+      p_idempotency_key: input.idempotencyKey,
+      p_driver_id: input.driverId,
+      p_items: input.items.map((item) => ({
+        sales_order_item_id: item.salesOrderItemId,
+        ordered_quantity: item.orderedQuantity,
+      })),
+    });
 
-    const { data: headerRow, error: headerError } = await this.supabase
-      .from("deliveries")
-      .insert({
-        company_id: input.companyId,
-        sales_order_id: input.salesOrderId,
-        attempt_number: attemptNumber,
-        idempotency_key: input.idempotencyKey,
-        created_by: input.createdBy,
-        status: "planned",
-      })
-      .select("id")
-      .single();
-    if (headerError) throw new Error(`createDelivery failed: ${headerError.message}`);
-    const deliveryId = (headerRow as { id: string }).id;
-
-    if (input.items.length > 0) {
-      const { error: itemsError } = await this.supabase.from("delivery_items").insert(
-        input.items.map((item) => ({
-          delivery_id: deliveryId,
-          sales_order_item_id: item.salesOrderItemId,
-          ordered_quantity: item.orderedQuantity,
-        }))
-      );
-      if (itemsError) {
-        await this.supabase.from("deliveries").delete().eq("id", deliveryId);
-        throw new Error(`createDelivery items failed: ${itemsError.message}`);
-      }
+    if (rpcError) throw new Error(`createDelivery failed: ${rpcError.message}`);
+    const row = ((rpcData ?? []) as { result_outcome: string; result_delivery_id: string }[])[0];
+    if (!row || (row.result_outcome !== "created" && row.result_outcome !== "already_exists")) {
+      throw new Error(`createDelivery failed: ${row?.result_outcome ?? "empty RPC result"}`);
     }
 
-    const created = await this.getDelivery(deliveryId);
+    const created = await this.getDelivery(row.result_delivery_id);
     if (!created) throw new Error("createDelivery: delivery not found after insert");
     return created;
   }
@@ -455,6 +494,22 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       .eq("status", "planned");
   }
 
+  async dispatchDeliveryAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+  }): Promise<{ outcome: "dispatched" | "unchanged" | "not_found" | "forbidden" }> {
+    const { data, error } = await this.supabase.rpc("dispatch_delivery_atomic", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_delivery_id: input.deliveryId,
+    });
+    if (error) throw new Error(`dispatchDeliveryAtomic failed: ${error.message}`);
+    const row = ((data ?? []) as { result_outcome: string }[])[0];
+    if (!row) throw new Error("dispatchDeliveryAtomic: empty RPC result");
+    return { outcome: row.result_outcome as "dispatched" | "unchanged" | "not_found" | "forbidden" };
+  }
+
   async recordArrival(deliveryId: string): Promise<void> {
     await this.supabase
       .from("deliveries")
@@ -509,6 +564,57 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
 
     const updated = await this.getDelivery(deliveryId);
     return { delivery: updated ?? { ...existing, status: finalStatus }, alreadyFinalized: false };
+  }
+
+  async confirmDeliveryReceiptAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+    finalStatus: DeliveryStatus;
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[];
+    reasonCode: ReasonCode | null;
+    reasonNote: string | null;
+    severity: ExceptionSeverity | null;
+    recipientName: string | null;
+    isExpectedPic: boolean | null;
+  }): Promise<
+    | { outcome: "finalized" | "already_finalized" | "not_found" | "forbidden" }
+    | { outcome: "quantity_conflict"; error: { salesOrderItemId: string; outstanding: number; requested: number } }
+  > {
+    const { data, error } = await this.supabase.rpc("finalize_delivery_atomic", {
+      p_company_id: input.companyId,
+      p_actor_id: input.actorId,
+      p_delivery_id: input.deliveryId,
+      p_final_status: input.finalStatus,
+      p_item_outcomes: input.itemOutcomes.map((o) => ({
+        delivery_item_id: o.deliveryItemId,
+        received_quantity: o.receivedQuantity,
+        rejected_quantity: o.rejectedQuantity,
+        returned_quantity: o.returnedQuantity,
+        unresolved_quantity: o.unresolvedQuantity,
+      })),
+      p_reason_code: input.reasonCode,
+      p_reason_note: input.reasonNote,
+      p_severity: input.severity,
+      p_recipient_name: input.recipientName,
+      p_is_expected_pic: input.isExpectedPic,
+    });
+
+    if (error) {
+      if (error.message.includes("QUANTITY_EXCEEDS_OUTSTANDING")) {
+        let detail: { salesOrderItemId: string; outstanding: number; requested: number };
+        try {
+          detail = JSON.parse((error as unknown as { details?: string }).details ?? "{}");
+        } catch {
+          detail = { salesOrderItemId: "", outstanding: 0, requested: 0 };
+        }
+        return { outcome: "quantity_conflict", error: detail };
+      }
+      throw new Error(`confirmDeliveryReceiptAtomic failed: ${error.message}`);
+    }
+    const row = ((data ?? []) as { result_outcome: string }[])[0];
+    if (!row) throw new Error("confirmDeliveryReceiptAtomic: empty RPC result");
+    return { outcome: row.result_outcome as "finalized" | "already_finalized" | "not_found" | "forbidden" };
   }
 
   async insertException(
@@ -838,6 +944,15 @@ function mapDeliveryRow(data: unknown): DeliveryRecord {
 // In-memory implementation — untuk test.
 // ---------------------------------------------------------------------------
 
+export interface InMemoryDeliveryAuditEvent {
+  action: string;
+  companyId: string;
+  actorId: string;
+  entityId: string;
+  oldData: unknown;
+  newData: unknown;
+}
+
 export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   confirmedOrders = new Map<string, ConfirmedOrderSnapshot>();
   /** Ordered quantity ASLI per sales_order_item_id -- confirmedOrders.items[].quantity di atas berubah makna menjadi "outstanding saat dibaca" (lihat getConfirmedOrder), jadi nilai asli disimpan terpisah di sini untuk komputasi outstanding itu sendiri. */
@@ -848,6 +963,7 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
   private idempotencyIndex = new Map<string, string>(); // `${companyId}:${key}` -> deliveryId
   private conversationStates = new Map<string, DeliveryConversationState>();
   public events: DeliveryEventInput[] = [];
+  public auditTrail: InMemoryDeliveryAuditEvent[] = [];
   public ownerAlerts: (OwnerAlertInsertInput & { id: string; status: "pending" | "sent" | "failed" })[] = [];
   private seq = 0;
 
@@ -932,9 +1048,10 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
 
   async createDelivery(input: {
     companyId: string;
+    actorId: string;
     salesOrderId: string;
     idempotencyKey: string | null;
-    createdBy: string | null;
+    driverId: string;
     items: { salesOrderItemId: string; productName: string; unit: string | null; unitPrice: number; orderedQuantity: number }[];
   }): Promise<DeliveryRecord> {
     const attemptNumber =
@@ -945,7 +1062,7 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
       companyId: input.companyId,
       salesOrderId: input.salesOrderId,
       attemptNumber,
-      assignedDriverId: null,
+      assignedDriverId: input.driverId,
       status: "planned",
       deliveryNumber: null,
       deliveryDate: null,
@@ -972,6 +1089,14 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
     if (input.idempotencyKey) {
       this.idempotencyIndex.set(`${input.companyId}:${input.idempotencyKey}`, id);
     }
+    this.auditTrail.push({
+      action: "delivery.create",
+      companyId: input.companyId,
+      actorId: input.actorId,
+      entityId: id,
+      oldData: null,
+      newData: { salesOrderId: input.salesOrderId, attemptNumber, driverId: input.driverId },
+    });
     return record;
   }
 
@@ -1026,6 +1151,27 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
     d.status = "dispatched";
   }
 
+  async dispatchDeliveryAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+  }): Promise<{ outcome: "dispatched" | "unchanged" | "not_found" | "forbidden" }> {
+    const d = this.deliveries.get(input.deliveryId);
+    if (!d) return { outcome: "not_found" };
+    if (d.status !== "planned") return { outcome: "unchanged" };
+    for (const item of d.items) item.dispatchedQuantity = item.orderedQuantity;
+    d.status = "dispatched";
+    this.auditTrail.push({
+      action: "delivery.dispatch",
+      companyId: input.companyId,
+      actorId: input.actorId,
+      entityId: input.deliveryId,
+      oldData: { status: "planned" },
+      newData: { status: "dispatched" },
+    });
+    return { outcome: "dispatched" };
+  }
+
   async recordArrival(deliveryId: string): Promise<void> {
     const d = this.deliveries.get(deliveryId);
     if (!d || d.status !== "dispatched") return;
@@ -1072,6 +1218,69 @@ export class InMemoryDeliveryRepository implements DeliveryRepositoryInterface {
     }
     d.status = finalStatus;
     return { delivery: d, alreadyFinalized: false };
+  }
+
+  async confirmDeliveryReceiptAtomic(input: {
+    companyId: string;
+    actorId: string;
+    deliveryId: string;
+    finalStatus: DeliveryStatus;
+    itemOutcomes: { deliveryItemId: string; receivedQuantity: number; rejectedQuantity: number; returnedQuantity: number; unresolvedQuantity: number }[];
+    reasonCode: ReasonCode | null;
+    reasonNote: string | null;
+    severity: ExceptionSeverity | null;
+    recipientName: string | null;
+    isExpectedPic: boolean | null;
+  }): Promise<
+    | { outcome: "finalized" | "already_finalized" | "not_found" | "forbidden" }
+    | { outcome: "quantity_conflict"; error: { salesOrderItemId: string; outstanding: number; requested: number } }
+  > {
+    const d = this.deliveries.get(input.deliveryId);
+    if (!d) return { outcome: "not_found" };
+
+    const terminal: DeliveryStatus[] = [
+      "fully_received", "partially_received", "rejected", "store_closed", "failed", "verified",
+    ];
+    if (terminal.includes(d.status)) return { outcome: "already_finalized" };
+
+    if (input.itemOutcomes.length > 0) {
+      const quantityResult = await this.finalizeItemQuantities(input.deliveryId, input.itemOutcomes);
+      if (!quantityResult.ok) return { outcome: "quantity_conflict", error: quantityResult.error };
+    }
+
+    if (input.reasonCode) {
+      await this.insertException(
+        input.companyId, input.deliveryId,
+        { reasonCode: input.reasonCode, note: input.reasonNote, severity: input.severity ?? "medium" },
+        input.actorId
+      );
+    }
+
+    if (input.recipientName) {
+      await this.insertRecipient(input.companyId, input.deliveryId, {
+        recipientName: input.recipientName,
+        isExpectedPic: input.isExpectedPic ?? true,
+      });
+    }
+
+    const oldStatus = d.status;
+    d.status = input.finalStatus;
+
+    this.auditTrail.push({
+      action: "delivery.receipt_confirmed",
+      companyId: input.companyId,
+      actorId: input.actorId,
+      entityId: input.deliveryId,
+      oldData: { status: oldStatus },
+      newData: {
+        status: input.finalStatus,
+        itemOutcomes: input.itemOutcomes,
+        receiverName: input.recipientName,
+        reasonCode: input.reasonCode,
+      },
+    });
+
+    return { outcome: "finalized" };
   }
 
   async insertException(

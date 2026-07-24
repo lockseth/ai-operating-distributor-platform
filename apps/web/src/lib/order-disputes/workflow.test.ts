@@ -77,9 +77,10 @@ async function seedDelivery(
 ) {
   const delivery = await deliveryRepository.createDelivery({
     companyId,
+    actorId: "owner-1",
     salesOrderId,
     idempotencyKey: null,
-    createdBy: null,
+    driverId: SALESMAN_A,
     items: [{ salesOrderItemId: "item-1", productName: "Sabun", unit: "dus", unitPrice: 20_000, orderedQuantity: 5 }],
   });
   delivery.status = status;
