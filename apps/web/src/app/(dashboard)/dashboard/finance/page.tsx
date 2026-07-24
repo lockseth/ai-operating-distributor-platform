@@ -17,28 +17,16 @@ export default async function FinanceDashboardPage() {
 
   const supabase = await createClient();
 
-  const firstOfMonth = new Date();
-  firstOfMonth.setDate(1);
-  firstOfMonth.setHours(0, 0, 0, 0);
+  // Catatan (Payment Status Integrity Containment Gate): sales_orders.status
+  // = 'paid' BUKAN fakta pembayaran -- lihat migration 20260824000001 dan
+  // Payment Proof Discovery Gate. Payment ledger terverifikasi belum ada,
+  // jadi kartu "Pembayaran Diterima" TIDAK dihitung dari status ini lagi.
+  const { data: invoicedData } = await supabase
+    .from("sales_orders")
+    .select("final_amount")
+    .eq("company_id", user.company_id)
+    .eq("status", "invoiced");
 
-  const [{ data: paidData }, { data: invoicedData }] = await Promise.all([
-    supabase
-      .from("sales_orders")
-      .select("final_amount")
-      .eq("company_id", user.company_id)
-      .eq("status", "paid")
-      .gte("created_at", firstOfMonth.toISOString()),
-    supabase
-      .from("sales_orders")
-      .select("final_amount")
-      .eq("company_id", user.company_id)
-      .eq("status", "invoiced"),
-  ]);
-
-  const paid = ((paidData ?? []) as { final_amount: number }[]).reduce(
-    (s, r) => s + (r.final_amount ?? 0),
-    0
-  );
   const invoiced = ((invoicedData ?? []) as { final_amount: number }[]).reduce(
     (s, r) => s + (r.final_amount ?? 0),
     0
@@ -59,10 +47,10 @@ export default async function FinanceDashboardPage() {
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard
-          label="Pembayaran Diterima (Bulan Ini)"
-          value={formatIDR(paid)}
-          description="Status: paid"
-          accent="green"
+          label="Pembayaran Terverifikasi"
+          value="Belum tersedia"
+          description="Payment ledger belum aktif — status order 'paid' tidak dihitung sebagai pembayaran diterima"
+          accent="amber"
         />
         <StatCard
           label="Piutang Invoice"
@@ -75,7 +63,7 @@ export default async function FinanceDashboardPage() {
         <AlertCard
           type="info"
           title="Modul Finance"
-          message="Invoice management, rekonsiliasi, dan laporan keuangan akan aktif di fase berikutnya."
+          message="Invoice management, payment ledger terverifikasi, rekonsiliasi, dan laporan keuangan akan aktif di fase berikutnya."
         />
       </div>
     </DashboardShell>

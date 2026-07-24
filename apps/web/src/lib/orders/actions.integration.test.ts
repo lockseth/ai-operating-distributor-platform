@@ -233,4 +233,100 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
     const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", createdOrderId).single();
     expect((orderRow as { status: string }).status).toBe("cancelled");
   });
+
+  // ---------------------------------------------------------------------
+  // Payment Status Integrity Containment Gate (migration 20260824000001)
+  // ---------------------------------------------------------------------
+  describe("update_sales_order_status_atomic: guard paid (containment gate)", () => {
+    it("Guard A: order sekarang berstatus 'cancelled' -- percobaan -> paid ditolak (payment_workflow_required), order tidak berubah, tidak ada audit sukses baru", async () => {
+      const { count: before } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", createdOrderId).eq("action", "order.status_update");
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: createdOrderId, p_new_status: "paid",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("payment_workflow_required");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", createdOrderId).single();
+      expect((orderRow as { status: string }).status).toBe("cancelled");
+
+      const { count: after } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", createdOrderId).eq("action", "order.status_update");
+      expect(after ?? 0).toBe(before ?? 0);
+    });
+
+    it("Guard A: pemilik/owner sekalipun tidak bisa melewati -- invoiced -> paid tetap ditolak", async () => {
+      const { data: order2 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDA-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order2 ?? [])[0]?.result_order_id as string;
+      await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", orderId);
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "paid",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("payment_workflow_required");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("invoiced");
+    });
+
+    it("Guard B: order yang sudah 'paid' dibekukan -- percobaan paid -> confirmed ditolak (paid_locked), row tidak tersentuh, tidak ada audit sukses baru", async () => {
+      const { data: order3 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDB-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order3 ?? [])[0]?.result_order_id as string;
+      // Setup fixture SAJA: set status paid langsung di tabel (bukan lewat RPC)
+      // untuk mensimulasikan legacy/existing paid record yang harus dibekukan.
+      await supabase.from("sales_orders").update({ status: "paid" }).eq("id", orderId);
+
+      const { count: before } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "confirmed",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("paid_locked");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("paid");
+
+      const { count: after } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+      expect(after ?? 0).toBe(before ?? 0);
+    });
+
+    it("Cross-tenant tetap ditolak (forbidden) -- tidak diperlemah oleh guard baru", async () => {
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: otherCompanyId, p_actor_id: ownerAuthId, p_order_id: createdOrderId, p_new_status: "confirmed",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("forbidden");
+    });
+
+    it("Transisi legal non-payment tetap berjalan normal setelah guard ditambahkan (draft -> confirmed -> processing)", async () => {
+      const { data: order4 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-LEGAL-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order4 ?? [])[0]?.result_order_id as string;
+
+      const step1 = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "confirmed",
+      });
+      expect((step1.data ?? [])[0]?.result_outcome).toBe("updated");
+
+      const step2 = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "processing",
+      });
+      expect((step2.data ?? [])[0]?.result_outcome).toBe("updated");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("processing");
+    });
+  });
 });
