@@ -1144,4 +1144,322 @@ describeIfDb("Gate 2H.1: Customer Credit Ledger & Refund (DB-backed, Postgres ny
     expect(error).not.toBeNull();
     expect(error!.message).toMatch(/FORBIDDEN|TENANT_CONTEXT_MISMATCH/);
   });
+
+  // =======================================================================
+  // Gate 2H.2 -- Hardening & regression tambahan (test matrix gap coverage).
+  // =======================================================================
+
+  // ---------------------------------------------------------------------
+  // 29. Matrix §5 -- beberapa partial refund berurutan dari source SAMA.
+  // ---------------------------------------------------------------------
+  it("29. Beberapa partial refund berurutan dari source yang sama membentuk baris ledger terpisah, saldo berkurang bertahap", async () => {
+    const cn = await makeCreditNote(`${runTag}-SEQPARTIAL`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 }); // customer_credit=5000
+
+    const { data: r1 } = await requestRefund(ownerUser.userId, cn.creditNoteId, 2000);
+    const refund1 = (r1 as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refund1, "approve");
+    let bal = await ccBalanceOf(cn.creditNoteId);
+    expect(Number(bal!.available_balance)).toBe(3000);
+
+    const { data: r2 } = await requestRefund(ownerUser.userId, cn.creditNoteId, 1500);
+    const refund2 = (r2 as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refund2, "approve");
+    bal = await ccBalanceOf(cn.creditNoteId);
+    expect(Number(bal!.available_balance)).toBe(1500);
+
+    expect(refund1).not.toBe(refund2);
+    const { count } = await supabase
+      .from("customer_credit_ledger").select("id", { count: "exact", head: true }).eq("credit_note_id", cn.creditNoteId).eq("entry_type", "refund");
+    expect(count).toBe(2);
+  });
+
+  // ---------------------------------------------------------------------
+  // 30. Matrix §6 -- exact remaining-balance refund (batas <=, bukan <).
+  // ---------------------------------------------------------------------
+  it("30. Exact remaining-balance refund diterima tepat di batas (<=), bukan ditolak", async () => {
+    const cn = await makeCreditNote(`${runTag}-EXACTBOUND`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 4 }); // customer_credit=4000
+    const { data: reqData, error } = await requestRefund(ownerUser.userId, cn.creditNoteId, 4000); // persis saldo penuh
+    expect(error).toBeNull();
+    const refundId = (reqData as RequestRefundRow[])[0].out_refund_id;
+    const { error: apprErr } = await approveRefund(ownerUser.userId, refundId, "approve");
+    expect(apprErr).toBeNull();
+
+    const bal = await ccBalanceOf(cn.creditNoteId);
+    expect(Number(bal!.available_balance)).toBe(0);
+    expect(Number(bal!.ledger_balance)).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // 31. Matrix §14 Action B -- manager/admin/super_admin ditolak (refund.
+  //     request LEBIH SEMPIT dari return.request yang mengizinkan role ini).
+  // ---------------------------------------------------------------------
+  it("31. Role manager/admin/super_admin ditolak mengajukan refund (FORBIDDEN) -- refund.request LEBIH SEMPIT dari return.request", async () => {
+    const cn = await makeCreditNote(`${runTag}-ROLEDENY`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+    for (const roleName of ["manager", "admin", "super_admin"]) {
+      const actor = await createActor(companyId, `${runTag}-${roleName}`, roleName);
+      const { error } = await requestRefund(actor.userId, cn.creditNoteId, 100);
+      expect(error, `role ${roleName} seharusnya ditolak`).not.toBeNull();
+      expect(error!.message).toMatch(/FORBIDDEN/);
+    }
+  });
+
+  // ---------------------------------------------------------------------
+  // 32. Concurrency real -- approve vs reject pada refund yang SAMA.
+  // ---------------------------------------------------------------------
+  it("32. Concurrent approve vs reject pada refund yang SAMA -- tepat satu keputusan menang, TIDAK ADA double ledger/double audit", async () => {
+    const cn = await makeCreditNote(`${runTag}-RACEAPPRREJ`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+    const { data: reqData } = await requestRefund(ownerUser.userId, cn.creditNoteId, 1000);
+    const refundId = (reqData as RequestRefundRow[])[0].out_refund_id;
+
+    const [approveRes, rejectRes] = await Promise.allSettled([
+      approveRefund(ownerUser.userId, refundId, "approve"),
+      approveRefund(ownerUser.userId, refundId, "reject"),
+    ]);
+    const results = [approveRes, rejectRes].map((r) => (r.status === "fulfilled" ? r.value : { data: null, error: { message: String(r.reason) } }));
+    const succeeded = results.filter((r) => !r.error);
+    const failed = results.filter((r) => r.error);
+    expect(succeeded.length).toBe(1);
+    expect(failed.length).toBe(1);
+    expect(String(failed[0].error!.message)).toMatch(/REFUND_ALREADY_RESOLVED/);
+
+    const { data: finalRow } = await supabase.from("refund_requests").select("status").eq("id", refundId).single();
+    const finalStatus = (finalRow as { status: string }).status;
+    expect(["approved", "rejected"]).toContain(finalStatus);
+
+    const { count: ledgerCount } = await supabase.from("customer_credit_ledger").select("id", { count: "exact", head: true }).eq("refund_id", refundId);
+    expect(ledgerCount).toBe(finalStatus === "approved" ? 1 : 0);
+
+    const { count: apprAuditCount } = await supabase
+      .from("audit_logs").select("id", { count: "exact", head: true }).eq("action", "customer_credit.refund_approved").eq("entity_id", refundId);
+    const { count: rejAuditCount } = await supabase
+      .from("audit_logs").select("id", { count: "exact", head: true }).eq("action", "customer_credit.refund_rejected").eq("entity_id", refundId);
+    expect(apprAuditCount).toBe(finalStatus === "approved" ? 1 : 0);
+    expect(rejAuditCount).toBe(finalStatus === "rejected" ? 1 : 0);
+  });
+
+  // ---------------------------------------------------------------------
+  // 33. Concurrency real -- reversal vs refund request pada credit_note
+  //     yang SAMA (kontrak §6 poin 1/2 diserialisasi lock credit_notes).
+  // ---------------------------------------------------------------------
+  it("33. Concurrent reversal vs refund request pada credit_note yang SAMA -- invariant konsisten, tidak ada race window", async () => {
+    const cn = await makeCreditNote(`${runTag}-RACEREVREQ`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 6 }); // customer_credit=6000, belum pernah disentuh Gate 2H
+    const [reqRes, revRes] = await Promise.allSettled([
+      requestRefund(ownerUser.userId, cn.creditNoteId, 1000),
+      reverseCreditNote(ownerUser.userId, cn.creditNoteId),
+    ]);
+    const req = reqRes.status === "fulfilled" ? reqRes.value : { data: null, error: { message: String(reqRes.reason) } };
+    const rev = revRes.status === "fulfilled" ? revRes.value : { data: null, error: { message: String(revRes.reason) } };
+
+    if (!req.error && !rev.error) {
+      throw new Error("Kedua operasi tidak boleh sama-sama sukses tanpa salah satu menolak yang lain -- race window terdeteksi");
+    }
+
+    if (!rev.error) {
+      // Reversal menang lock duluan -- request refund berikutnya pada CN
+      // yang sudah direverse HARUS ditolak.
+      expect(req.error).not.toBeNull();
+      expect(String(req.error!.message)).toMatch(/CREDIT_NOTE_REVERSED/);
+    } else {
+      // Request menang lock duluan -- reversal berikutnya HARUS ditolak
+      // karena masih ada refund requested aktif.
+      expect(req.error).toBeNull();
+      expect(String(rev.error!.message)).toMatch(/PENDING_REFUND_EXISTS/);
+    }
+
+    // Invariant payung: origin credit tetap TEPAT SATU baris, tidak pernah dobel.
+    const { count: originCount } = await supabase
+      .from("customer_credit_ledger").select("id", { count: "exact", head: true }).eq("credit_note_id", cn.creditNoteId).eq("entry_type", "credit_note_origin");
+    expect(originCount).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------
+  // 34. Matrix §13 Action C -- cross-tenant SELECT via RLS (bukan error,
+  //     baris tidak muncul).
+  // ---------------------------------------------------------------------
+  it("34. Cross-tenant SELECT via RLS mengembalikan 0 baris (bukan error) untuk refund_requests/customer_credit_ledger milik company lain", async () => {
+    const cn = await makeCreditNote(`${runTag}-RLSHIDE`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+    const { data: reqData } = await requestRefund(ownerUser.userId, cn.creditNoteId, 1000);
+    const refundId = (reqData as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refundId, "approve");
+
+    const authClient = createClient(env!.url, env!.anonKey);
+    const { error: signInErr } = await authClient.auth.signInWithPassword({ email: otherOwnerUser.email, password: otherOwnerUser.password });
+    expect(signInErr).toBeNull();
+
+    const { data: refundRows, error: refundSelErr } = await authClient.from("refund_requests").select("id").eq("id", refundId);
+    expect(refundSelErr).toBeNull();
+    expect(refundRows).toEqual([]);
+
+    const { data: ledgerRows, error: ledgerSelErr } = await authClient.from("customer_credit_ledger").select("id").eq("refund_id", refundId);
+    expect(ledgerSelErr).toBeNull();
+    expect(ledgerRows).toEqual([]);
+
+    await authClient.auth.signOut();
+  });
+
+  // ---------------------------------------------------------------------
+  // 35. Matrix §15 Action A/C -- direct mutation oleh authenticated (bukan
+  //     hanya anon) ditolak GRANT.
+  // ---------------------------------------------------------------------
+  it("35. Direct INSERT/UPDATE oleh authenticated (bukan anon) pada refund_requests/customer_credit_ledger ditolak GRANT", async () => {
+    const authClient = createClient(env!.url, env!.anonKey);
+    const { error: signInErr } = await authClient.auth.signInWithPassword({ email: ownerUser.email, password: ownerUser.password });
+    expect(signInErr).toBeNull();
+
+    const insertRes = await authClient.from("refund_requests").insert({
+      company_id: companyId, credit_note_id: randomUUID(), customer_id: randomUUID(), amount: 100,
+      method: "cash", proof_reference: "x", transaction_date: "2026-08-01", requested_by: ownerUser.userId, request_payload: {},
+    });
+    expect(insertRes.error).not.toBeNull();
+
+    const cn = await makeCreditNote(`${runTag}-AUTHUPDATE`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+    const { data: reqData } = await requestRefund(ownerUser.userId, cn.creditNoteId, 1000);
+    const refundId = (reqData as RequestRefundRow[])[0].out_refund_id;
+
+    const updateRes = await authClient.from("refund_requests").update({ amount: 1 }).eq("id", refundId);
+    expect(updateRes.error).not.toBeNull();
+
+    const insertLedgerRes = await authClient.from("customer_credit_ledger").insert({
+      company_id: companyId, credit_note_id: cn.creditNoteId, customer_id: randomUUID(), entry_type: "credit_note_origin", direction: "credit", amount: 100, created_by: ownerUser.userId,
+    });
+    expect(insertLedgerRes.error).not.toBeNull();
+
+    await authClient.auth.signOut();
+  });
+
+  // ---------------------------------------------------------------------
+  // 36. Instruksi eksplisit poin 4 -- RPC internal/service-role-only tidak
+  //     dapat dipanggil langsung oleh authenticated ataupun anon.
+  // ---------------------------------------------------------------------
+  it("36. RPC canonical (request/approve/reverse) tidak dapat dipanggil langsung oleh anon maupun authenticated -- HANYA service_role", async () => {
+    const cn = await makeCreditNote(`${runTag}-RPCDENY`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+
+    const anonClient = createClient(env!.url, env!.anonKey);
+    const anonReq = await anonClient.rpc("request_refund_atomic", {
+      p_company_id: companyId, p_actor_id: ownerUser.userId, p_credit_note_id: cn.creditNoteId, p_amount: 100,
+      p_method: "cash", p_proof_reference: "x", p_transaction_date: "2026-08-01", p_idempotency_key: null,
+    });
+    expect(anonReq.error).not.toBeNull();
+    expect(anonReq.error!.message).toMatch(/permission denied/i);
+
+    const authClient = createClient(env!.url, env!.anonKey);
+    const { error: signInErr } = await authClient.auth.signInWithPassword({ email: ownerUser.email, password: ownerUser.password });
+    expect(signInErr).toBeNull();
+
+    const authReq = await authClient.rpc("request_refund_atomic", {
+      p_company_id: companyId, p_actor_id: ownerUser.userId, p_credit_note_id: cn.creditNoteId, p_amount: 100,
+      p_method: "cash", p_proof_reference: "x", p_transaction_date: "2026-08-01", p_idempotency_key: null,
+    });
+    expect(authReq.error).not.toBeNull();
+    expect(authReq.error!.message).toMatch(/permission denied/i);
+
+    const { data: reqData } = await requestRefund(ownerUser.userId, cn.creditNoteId, 500); // via service_role, valid
+    const refundId = (reqData as RequestRefundRow[])[0].out_refund_id;
+
+    const authApprove = await authClient.rpc("approve_refund_atomic", {
+      p_company_id: companyId, p_actor_id: ownerUser.userId, p_refund_id: refundId, p_decision: "approve",
+    });
+    expect(authApprove.error).not.toBeNull();
+    expect(authApprove.error!.message).toMatch(/permission denied/i);
+
+    const authReverse = await authClient.rpc("reverse_credit_note_atomic", {
+      p_company_id: companyId, p_actor_id: ownerUser.userId, p_credit_note_id: cn.creditNoteId, p_reason: "x", p_idempotency_key: null,
+    });
+    expect(authReverse.error).not.toBeNull();
+    expect(authReverse.error!.message).toMatch(/permission denied/i);
+
+    await authClient.auth.signOut();
+  });
+
+  // ---------------------------------------------------------------------
+  // 37. Idempotency key retry pada request_refund_atomic (belum pernah
+  //     dibuktikan DB-backed sebelumnya -- hanya approve yang diuji).
+  // ---------------------------------------------------------------------
+  it("37. Idempotency key retry pada request_refund_atomic tidak menggandakan refund/audit; payload mismatch ditolak", async () => {
+    const cn = await makeCreditNote(`${runTag}-IDEMPREQ`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 5 });
+    const idempotencyKey = `${runTag}-idem-1`;
+    const proofReference = `storage://refund-proofs/${randomUUID()}.jpg`;
+    const transactionDate = "2026-08-01";
+
+    const first = await requestRefund(ownerUser.userId, cn.creditNoteId, 1000, { idempotencyKey, proofReference, transactionDate });
+    expect(first.error).toBeNull();
+    const firstRow = (first.data as RequestRefundRow[])[0];
+    expect(firstRow.out_already_exists).toBe(false);
+
+    // Retry HARUS mengirim payload identik (proofReference/transactionDate
+    // ikut membentuk request_payload snapshot idempotency) -- payload
+    // berbeda pada idempotency_key yang sama adalah pelanggaran kontrak
+    // pemanggil, bukan retry murni (lihat percobaan mismatch di bawah).
+    const retry = await requestRefund(ownerUser.userId, cn.creditNoteId, 1000, { idempotencyKey, proofReference, transactionDate });
+    expect(retry.error).toBeNull();
+    const retryRow = (retry.data as RequestRefundRow[])[0];
+    expect(retryRow.out_already_exists).toBe(true);
+    expect(retryRow.out_refund_id).toBe(firstRow.out_refund_id);
+
+    const { count: refundCount } = await supabase.from("refund_requests").select("id", { count: "exact", head: true }).eq("credit_note_id", cn.creditNoteId);
+    expect(refundCount).toBe(1);
+    const { count: auditCount } = await supabase
+      .from("audit_logs").select("id", { count: "exact", head: true }).eq("action", "customer_credit.refund_requested").eq("entity_id", firstRow.out_refund_id);
+    expect(auditCount).toBe(1);
+
+    const mismatched = await requestRefund(ownerUser.userId, cn.creditNoteId, 2000, { idempotencyKey });
+    expect(mismatched.error).not.toBeNull();
+    expect(mismatched.error!.message).toMatch(/IDEMPOTENCY_KEY_PAYLOAD_MISMATCH/);
+  });
+
+  // ---------------------------------------------------------------------
+  // 38. Isolasi domain lain juga berlaku pada JALUR GAGAL (bukan hanya
+  //     sukses seperti test 24).
+  // ---------------------------------------------------------------------
+  it("38. Refund request yang GAGAL (over-refund) TIDAK mengubah invoice/receivable_ledger/order apa pun", async () => {
+    const cn = await makeCreditNote(`${runTag}-FAILISOLATION`, { quantity: 10, unitPrice: 1000, payBefore: 9000, returnQuantity: 5 }); // outstanding 1000, applied=1000, customer_credit=4000
+
+    const invoiceBefore = await balanceOf(cn.inv.invoiceId);
+    const { data: orderBefore } = await supabase.from("sales_orders").select("status").eq("id", cn.inv.orderId).single();
+    const { count: ledgerCountBefore } = await supabase.from("receivable_ledger").select("id", { count: "exact", head: true }).eq("invoice_id", cn.inv.invoiceId);
+
+    const { error } = await requestRefund(ownerUser.userId, cn.creditNoteId, 999999); // melebihi saldo tersedia 4000
+    expect(error).not.toBeNull();
+    expect(error!.message).toMatch(/REFUND_EXCEEDS_AVAILABLE_BALANCE/);
+
+    const invoiceAfter = await balanceOf(cn.inv.invoiceId);
+    expect(invoiceAfter.outstanding_balance).toBe(invoiceBefore.outstanding_balance);
+    const { data: orderAfter } = await supabase.from("sales_orders").select("status").eq("id", cn.inv.orderId).single();
+    expect((orderAfter as { status: string }).status).toBe((orderBefore as { status: string }).status);
+    const { count: ledgerCountAfter } = await supabase.from("receivable_ledger").select("id", { count: "exact", head: true }).eq("invoice_id", cn.inv.invoiceId);
+    expect(ledgerCountAfter).toBe(ledgerCountBefore);
+
+    const { count: refundCount } = await supabase.from("refund_requests").select("id", { count: "exact", head: true }).eq("credit_note_id", cn.creditNoteId);
+    expect(refundCount).toBe(0);
+  });
+
+  // ---------------------------------------------------------------------
+  // 39. Matrix §22 -- reconciliation invariant lintas beberapa aksi
+  //     berurutan pada satu credit note, saldo tidak pernah negatif.
+  // ---------------------------------------------------------------------
+  it("39. Reconciliation invariant: saldo_ledger == customer_credit_amount - SUM(refund approved), tidak pernah negatif, di beberapa titik waktu", async () => {
+    const cn = await makeCreditNote(`${runTag}-RECONCILE`, { quantity: 10, unitPrice: 1000, payBefore: 10000, returnQuantity: 8 }); // customer_credit=8000
+
+    async function assertReconcile(expectedApprovedTotal: number) {
+      const bal = await ccBalanceOf(cn.creditNoteId);
+      expect(Number(bal!.ledger_balance)).toBe(cn.customerCreditAmount - expectedApprovedTotal);
+      expect(Number(bal!.ledger_balance)).toBeGreaterThanOrEqual(0);
+      expect(Number(bal!.available_balance)).toBeGreaterThanOrEqual(0);
+    }
+
+    const { data: r1 } = await requestRefund(ownerUser.userId, cn.creditNoteId, 2000);
+    const refund1 = (r1 as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refund1, "approve"); // origin lazy-created di sini
+    await assertReconcile(2000);
+
+    const { data: r2 } = await requestRefund(ownerUser.userId, cn.creditNoteId, 1500);
+    const refund2 = (r2 as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refund2, "reject");
+    await assertReconcile(2000); // rejected tidak mengubah saldo ledger
+
+    const { data: r3 } = await requestRefund(ownerUser.userId, cn.creditNoteId, 3000);
+    const refund3 = (r3 as RequestRefundRow[])[0].out_refund_id;
+    await approveRefund(ownerUser.userId, refund3, "approve");
+    await assertReconcile(5000);
+  });
 });
