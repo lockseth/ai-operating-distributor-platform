@@ -56,3 +56,36 @@ describe("Active-state prefix logic tidak ambigu", () => {
     expect(matches.some(isImportRelated)).toBe(false);
   });
 });
+
+describe("Sidebar — Activity & Audit Log (Gate 1D-A)", () => {
+  it("menu 'Activity & Audit Log' ada di section Sistem, tepat sebelum 'Automation'", () => {
+    const sistemSection = NAV_SECTIONS.find((s) => s.title === "Sistem");
+    expect(sistemSection).toBeDefined();
+    const labels = sistemSection!.items.map((i) => i.label);
+    const activityIdx = labels.indexOf("Activity & Audit Log");
+    const automationIdx = labels.indexOf("Automation");
+    expect(activityIdx).toBeGreaterThan(-1);
+    expect(automationIdx).toBeGreaterThan(-1);
+    expect(activityIdx).toBe(automationIdx - 1);
+  });
+
+  it("hanya role owner yang bisa melihat menu ini -- bukan manager/admin/super_admin", () => {
+    const item = allItems().find((i) => i.label === "Activity & Audit Log");
+    expect(item?.roles).toEqual(["owner"]);
+    expect(item?.permission).toBeUndefined();
+  });
+
+  it("href menunjuk ke halaman owner-only /dashboard/owner/activity-log", () => {
+    const item = allItems().find((i) => i.label === "Activity & Audit Log");
+    expect(item?.href).toBe("/dashboard/owner/activity-log");
+  });
+
+  it("tidak mengubah item 'Automation' atau 'Automation Outbox (n8n)' existing", () => {
+    const automation = allItems().find((i) => i.label === "Automation");
+    const outbox = allItems().find((i) => i.label === "Automation Outbox (n8n)");
+    expect(automation?.href).toBe("/dashboard/automation");
+    expect(automation?.permission).toBe("settings.view");
+    expect(outbox?.href).toBe("/dashboard/automation/outbox");
+    expect(outbox?.roles).toEqual(["owner", "manager", "super_admin"]);
+  });
+});

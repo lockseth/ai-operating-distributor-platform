@@ -110,6 +110,13 @@ function IconImport() {
     </svg>
   );
 }
+function IconActivity() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
 function IconAutomation() {
   return (
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -163,6 +170,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     title: "Sistem",
     items: [
+      { label: "Activity & Audit Log", href: "/dashboard/owner/activity-log", icon: <IconActivity />, roles: ["owner"] },
       { label: "Automation",  href: "/dashboard/automation",      icon: <IconAutomation />, permission: "settings.view" },
       { label: "Automation Outbox (n8n)", href: "/dashboard/automation/outbox", icon: <IconAutomation />, roles: ["owner", "manager", "super_admin"] },
       { label: "Pengguna",    href: "/dashboard/users",           icon: <IconUserCog />,    permission: "users.view" },
