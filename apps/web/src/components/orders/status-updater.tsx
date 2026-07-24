@@ -5,23 +5,26 @@ import { updateOrderStatusAction } from "@/lib/orders/actions";
 import type { OrderStatus } from "@/lib/orders/actions";
 import { ChevronRight, Loader2 } from "lucide-react";
 
-// Status paid TIDAK ditawarkan sebagai transisi generik -- lihat migration
-// 20260824000001. Menandai order paid hanya boleh lewat payment workflow
-// terverifikasi (belum ada di aplikasi ini, gate mendatang), bukan klik
-// status generik ini, termasuk untuk owner sekalipun.
+// Status paid & invoiced TIDAK ditawarkan sebagai transisi generik -- lihat
+// migration 20260824000001 (paid) & 20260825000001 (invoiced). Menandai
+// order paid hanya boleh lewat payment workflow terverifikasi; menandai
+// invoiced hanya boleh lewat jalur issuance invoice canonical (keduanya
+// belum ada di aplikasi ini, gate mendatang) -- bukan klik status generik
+// ini, termasuk untuk owner sekalipun.
 export const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   draft:      ["confirmed", "cancelled"],
   confirmed:  ["processing", "cancelled"],
   processing: ["delivering", "cancelled"],
   delivering: ["delivered"],
-  delivered:  ["invoiced"],
+  delivered:  [],
   invoiced:   [],
   paid:       [],
   cancelled:  [],
 };
 
-// "paid" tidak pernah muncul sebagai target transisi (lihat TRANSITIONS di
-// atas) -- label ini hanya menjaga Record tetap type-complete per OrderStatus.
+// "paid" & "invoiced" tidak pernah muncul sebagai target transisi (lihat
+// TRANSITIONS di atas) -- label ini hanya menjaga Record tetap type-complete
+// per OrderStatus.
 const STATUS_LABELS: Record<OrderStatus, string> = {
   draft:      "Draft",
   confirmed:  "Konfirmasi",
@@ -45,6 +48,13 @@ export function StatusUpdater({ orderId, currentStatus }: StatusUpdaterProps) {
   const nextStatuses = TRANSITIONS[currentStatus] ?? [];
 
   if (nextStatuses.length === 0) {
+    if (currentStatus === "delivered") {
+      return (
+        <p className="text-xs text-gray-500">
+          Penerbitan invoice terverifikasi belum tersedia di modul ini.
+        </p>
+      );
+    }
     if (currentStatus === "invoiced") {
       return (
         <p className="text-xs text-gray-500">

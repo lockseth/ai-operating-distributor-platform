@@ -1,7 +1,6 @@
 import { getAuthUser } from "@/lib/auth/get-user";
 import { redirect } from "next/navigation";
 import { DashboardShell, StatCard, AlertCard } from "@/components/layout/dashboard-shell";
-import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Finance Dashboard — AODP" };
 
@@ -15,48 +14,26 @@ export default async function FinanceDashboardPage() {
     redirect("/dashboard");
   }
 
-  const supabase = await createClient();
-
-  // Catatan (Payment Status Integrity Containment Gate): sales_orders.status
-  // = 'paid' BUKAN fakta pembayaran -- lihat migration 20260824000001 dan
-  // Payment Proof Discovery Gate. Payment ledger terverifikasi belum ada,
-  // jadi kartu "Pembayaran Diterima" TIDAK dihitung dari status ini lagi.
-  const { data: invoicedData } = await supabase
-    .from("sales_orders")
-    .select("final_amount")
-    .eq("company_id", user.company_id)
-    .eq("status", "invoiced");
-
-  const invoiced = ((invoicedData ?? []) as { final_amount: number }[]).reduce(
-    (s, r) => s + (r.final_amount ?? 0),
-    0
-  );
-
-  function formatIDR(v: number) {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      maximumFractionDigits: 0,
-    }).format(v);
-  }
+  // Catatan (Payment/Invoiced Status Integrity Containment Gate):
+  // sales_orders.status = 'paid'/'invoiced' BUKAN fakta pembayaran/invoice --
+  // lihat migration 20260824000001 (paid) & 20260825000001 (invoiced), serta
+  // Payment Proof Discovery Gate dan Collection Receivable-Invoice-Payment
+  // Boundary Discovery Gate. Payment ledger & receivable/invoice ledger
+  // terverifikasi belum ada, jadi kartu finansial di dashboard ini TIDAK
+  // dihitung dari status order sama sekali -- tidak diganti sumber lain
+  // apa pun sampai ledger canonical dibangun pada gate mendatang.
 
   return (
     <DashboardShell
       title={`Selamat datang, ${user.email}`}
       subtitle={`${user.company.name} — Finance Dashboard`}
     >
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4">
         <StatCard
           label="Pembayaran Terverifikasi"
           value="Belum tersedia"
           description="Payment ledger belum aktif — status order 'paid' tidak dihitung sebagai pembayaran diterima"
           accent="amber"
-        />
-        <StatCard
-          label="Piutang Invoice"
-          value={formatIDR(invoiced)}
-          description="Belum dibayar — status: invoiced"
-          accent={invoiced > 10_000_000 ? "red" : "amber"}
         />
       </div>
       <div className="mt-6">

@@ -106,4 +106,40 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
 
     await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/payment workflow terverifikasi/i);
   });
+
+  it("menolak target 'invoiced' SEBELUM admin.rpc() dipanggil sama sekali", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "invoiced")).rejects.toThrow(
+      /issuance invoice canonical/i
+    );
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("owner sekalipun tidak bisa melewati guard invoiced -- guard tidak bergantung role", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ roles: ["owner"], permissions: ["orders.update", "orders.manage"] }));
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "invoiced")).rejects.toThrow(
+      /issuance invoice canonical/i
+    );
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("outcome RPC 'invoiced_locked' diterjemahkan jadi error eksplisit (bukan silent success)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "invoiced_locked" }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/sudah berstatus invoiced/i);
+  });
+
+  it("outcome RPC 'invoice_issuance_required' tetap diterjemahkan jadi error eksplisit, bukan silent success", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "invoice_issuance_required" }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/issuance invoice canonical/i);
+  });
 });

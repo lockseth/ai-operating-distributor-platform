@@ -255,14 +255,19 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
       expect(after ?? 0).toBe(before ?? 0);
     });
 
-    it("Guard A: pemilik/owner sekalipun tidak bisa melewati -- invoiced -> paid tetap ditolak", async () => {
+    it("Guard A: pemilik/owner sekalipun tidak bisa melewati -- confirmed -> paid tetap ditolak", async () => {
+      // Fixture pakai 'confirmed' (bukan 'invoiced') supaya test ini murni
+      // menguji Guard A (target=paid) tanpa bersinggungan dengan Guard D
+      // (invoiced dibekukan) yang ditambahkan Invoiced Status Integrity
+      // Containment Gate -- interaksi invoiced->paid diuji terpisah & eksplisit
+      // di "Guard D: percobaan keluar dari invoiced ke paid ..." di bawah.
       const { data: order2 } = await supabase.rpc("create_sales_order_atomic", {
         p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDA-${runTag}`,
         p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
         p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
       });
       const orderId = (order2 ?? [])[0]?.result_order_id as string;
-      await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", orderId);
+      await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId);
 
       const { data } = await supabase.rpc("update_sales_order_status_atomic", {
         p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "paid",
@@ -270,7 +275,7 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
       expect((data ?? [])[0]?.result_outcome).toBe("payment_workflow_required");
 
       const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
-      expect((orderRow as { status: string }).status).toBe("invoiced");
+      expect((orderRow as { status: string }).status).toBe("confirmed");
     });
 
     it("Guard B: order yang sudah 'paid' dibekukan -- percobaan paid -> confirmed ditolak (paid_locked), row tidak tersentuh, tidak ada audit sukses baru", async () => {
@@ -327,6 +332,153 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
 
       const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
       expect((orderRow as { status: string }).status).toBe("processing");
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Invoiced Status Integrity Containment Gate (migration 20260825000001)
+  // ---------------------------------------------------------------------
+  describe("update_sales_order_status_atomic: guard invoiced (containment gate)", () => {
+    it("Guard C: order berstatus 'confirmed' -- percobaan -> invoiced ditolak (invoice_issuance_required), order tidak berubah, tidak ada audit sukses baru", async () => {
+      const { data: order5 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDC-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order5 ?? [])[0]?.result_order_id as string;
+      await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId);
+
+      const { count: before } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "invoiced",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("invoice_issuance_required");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("confirmed");
+
+      const { count: after } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+      expect(after ?? 0).toBe(before ?? 0);
+    });
+
+    it("Guard C: pemilik/owner sekalipun tidak bisa melewati -- delivered -> invoiced tetap ditolak", async () => {
+      const { data: order6 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDC2-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order6 ?? [])[0]?.result_order_id as string;
+      await supabase.from("sales_orders").update({ status: "delivered" }).eq("id", orderId);
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "invoiced",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("invoice_issuance_required");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("delivered");
+    });
+
+    it("Guard D: order yang sudah 'invoiced' dibekukan -- percobaan invoiced -> confirmed ditolak (invoiced_locked), row tidak tersentuh, tidak ada audit sukses baru", async () => {
+      const { data: order7 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDD-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order7 ?? [])[0]?.result_order_id as string;
+      // Setup fixture SAJA: set status invoiced langsung di tabel (bukan lewat
+      // RPC) untuk mensimulasikan legacy/existing invoiced record yang harus
+      // dibekukan.
+      await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", orderId);
+
+      const { count: before } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "confirmed",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("invoiced_locked");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("invoiced");
+
+      const { count: after } = await supabase.from("audit_logs").select("id", { count: "exact", head: true })
+        .eq("entity_id", orderId).eq("action", "order.status_update");
+      expect(after ?? 0).toBe(before ?? 0);
+    });
+
+    it("Guard D: percobaan keluar dari invoiced ke paid ditolak sebagai invoiced_locked (bukan payment_workflow_required) -- tidak tercampur semantik", async () => {
+      const { data: order8 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-GUARDD2-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order8 ?? [])[0]?.result_order_id as string;
+      await supabase.from("sales_orders").update({ status: "invoiced" }).eq("id", orderId);
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "paid",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("invoiced_locked");
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("invoiced");
+    });
+
+    it("guard paid tetap utuh setelah containment invoiced ditambahkan -- paid_locked & payment_workflow_required tidak diregresi", async () => {
+      const { data: order9 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-REGRESSPAID-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order9 ?? [])[0]?.result_order_id as string;
+
+      const attemptPaid = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "paid",
+      });
+      expect((attemptPaid.data ?? [])[0]?.result_outcome).toBe("payment_workflow_required");
+
+      await supabase.from("sales_orders").update({ status: "paid" }).eq("id", orderId);
+      const attemptFromPaid = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "confirmed",
+      });
+      expect((attemptFromPaid.data ?? [])[0]?.result_outcome).toBe("paid_locked");
+    });
+
+    it("Cross-tenant tetap ditolak (forbidden) -- tidak diperlemah oleh guard invoiced baru", async () => {
+      const { data: order10 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-XTENANT-INV-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order10 ?? [])[0]?.result_order_id as string;
+
+      const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+        p_company_id: otherCompanyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "invoiced",
+      });
+      expect((data ?? [])[0]?.result_outcome).toBe("forbidden");
+    });
+
+    it("Transisi legal non-invoice tetap berjalan normal (draft -> confirmed -> processing -> delivering)", async () => {
+      const { data: order11 } = await supabase.rpc("create_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_number: `SO-LEGALINV-${runTag}`,
+        p_customer_id: customerId, p_sales_id: null, p_notes: null, p_delivery_date: null,
+        p_discount_amount: 0, p_items: [{ product_id: productId, quantity: 1, unit_price: 10000, discount_amount: 0, total_amount: 10000, notes: null }],
+      });
+      const orderId = (order11 ?? [])[0]?.result_order_id as string;
+
+      for (const status of ["confirmed", "processing", "delivering"]) {
+        const step = await supabase.rpc("update_sales_order_status_atomic", {
+          p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: status,
+        });
+        expect((step.data ?? [])[0]?.result_outcome).toBe("updated");
+      }
+
+      const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", orderId).single();
+      expect((orderRow as { status: string }).status).toBe("delivering");
     });
   });
 });

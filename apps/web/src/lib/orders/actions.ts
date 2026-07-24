@@ -200,12 +200,18 @@ export async function updateOrderStatusAction(
     throw new Error("Tidak punya akses");
   }
   // Defense-in-depth: enforcement utama ada di RPC (guard di database, lihat
-  // migration 20260824000001). Tidak ada role -- termasuk owner -- yang bisa
-  // melewati ini lewat action generik; status paid hanya lewat payment
-  // workflow terverifikasi (belum ada, gate mendatang).
+  // migration 20260824000001 & 20260825000001). Tidak ada role -- termasuk
+  // owner -- yang bisa melewati ini lewat action generik; status paid hanya
+  // lewat payment workflow terverifikasi, status invoiced hanya lewat jalur
+  // issuance canonical (keduanya belum ada, gate mendatang).
   if (newStatus === "paid") {
     throw new Error(
       "Status paid hanya dapat diubah melalui payment workflow terverifikasi, belum tersedia di aplikasi ini."
+    );
+  }
+  if (newStatus === "invoiced") {
+    throw new Error(
+      "Status invoiced hanya dapat diubah melalui jalur issuance invoice canonical, belum tersedia di aplikasi ini."
     );
   }
 
@@ -234,6 +240,12 @@ export async function updateOrderStatusAction(
     case "payment_workflow_required":
       throw new Error(
         "Status paid hanya dapat diubah melalui payment workflow terverifikasi, belum tersedia di aplikasi ini."
+      );
+    case "invoiced_locked":
+      throw new Error("Order ini sudah berstatus invoiced dan tidak dapat diubah lewat aksi ini.");
+    case "invoice_issuance_required":
+      throw new Error(
+        "Status invoiced hanya dapat diubah melalui jalur issuance invoice canonical, belum tersedia di aplikasi ini."
       );
     default:
       throw new Error(`Gagal mengubah status order: ${row.result_outcome}`);
