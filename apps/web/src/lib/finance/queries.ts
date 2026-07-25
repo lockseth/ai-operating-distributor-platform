@@ -590,3 +590,799 @@ export async function getFinanceActionQueue(
 
   return { items: sortActionQueueItems(items), failedCategories };
 }
+
+// =============================================================================
+// Gate 2I.2 -- Invoice & Piutang (read-only, kontrak §5.1/§6). Tidak ada
+// tombol issuance di sini -- issue_invoice_atomic dipicu alur Delivery
+// Verification, bukan workspace ini. Outstanding SELALU dari
+// invoice_receivable_balances, tidak pernah dihitung ulang di sini.
+// =============================================================================
+
+async function fetchPromiseStatusMap(
+  supabase: SupabaseClient,
+  invoiceIds: string[]
+): Promise<Map<string, "open" | "broken">> {
+  if (invoiceIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("promises_to_pay")
+    .select("invoice_id, status, created_at")
+    .in("invoice_id", invoiceIds)
+    .in("status", ["open", "broken"])
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`promise_status_map: ${error.message}`);
+  const map = new Map<string, "open" | "broken">();
+  for (const row of (data ?? []) as { invoice_id: string; status: "open" | "broken" }[]) {
+    if (!map.has(row.invoice_id)) map.set(row.invoice_id, row.status);
+  }
+  return map;
+}
+
+export interface InvoiceListItem {
+  id: string;
+  invoiceNumber: string;
+  customerName: string;
+  issuedAt: string;
+  dueDate: string | null;
+  totalAmount: number;
+  outstandingBalance: number;
+  financialStatus: string;
+  ageDays: number | null;
+  promiseStatus: "open" | "broken" | null;
+}
+
+export interface InvoiceListResult {
+  items: InvoiceListItem[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+const INVOICE_LIST_PAGE_SIZE = 20;
+
+export async function getInvoiceList(
+  companyId: string,
+  opts: { financialStatus?: string; page?: number } = {},
+  client?: SupabaseClient
+): Promise<InvoiceListResult> {
+  const supabase = client ?? (await createClient());
+  const pageSize = INVOICE_LIST_PAGE_SIZE;
+  const page = Math.max(1, opts.page ?? 1);
+
+  const { data: balanceRows, error: balErr } = await supabase
+    .from("invoice_receivable_balances")
+    .select("invoice_id, outstanding_balance, financial_status")
+    .eq("company_id", companyId);
+  if (balErr) throw new Error(`invoice_list balances: ${balErr.message}`);
+  const balanceMap = new Map(
+    ((balanceRows ?? []) as { invoice_id: string; outstanding_balance: number; financial_status: string }[]).map(
+      (b) => [b.invoice_id, b]
+    )
+  );
+
+  let filteredIds: string[] | null = null;
+  if (opts.financialStatus) {
+    filteredIds = [...balanceMap.entries()]
+      .filter(([, b]) => b.financial_status === opts.financialStatus)
+      .map(([id]) => id);
+    if (filteredIds.length === 0) {
+      return { items: [], totalCount: 0, page, pageSize };
+    }
+  }
+
+  let query = supabase
+    .from("invoices")
+    .select("id, invoice_number, due_date, issued_at, total_amount, customers(name)", { count: "exact" })
+    .eq("company_id", companyId);
+  if (filteredIds) query = query.in("id", filteredIds);
+  query = query
+    .order("due_date", { ascending: true, nullsFirst: false })
+    .order("invoice_number", { ascending: true })
+    .range((page - 1) * pageSize, page * pageSize - 1);
+
+  const { data, count, error } = await query;
+  if (error) throw new Error(`invoice_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    invoice_number: string;
+    due_date: string | null;
+    issued_at: string;
+    total_amount: number;
+    customers: { name: string } | null;
+  }>;
+
+  const promiseMap = await fetchPromiseStatusMap(
+    supabase,
+    rows.map((r) => r.id)
+  );
+  const now = new Date();
+
+  const items: InvoiceListItem[] = rows.map((row) => {
+    const balance = balanceMap.get(row.id);
+    return {
+      id: row.id,
+      invoiceNumber: row.invoice_number,
+      customerName: row.customers?.name ?? "-",
+      issuedAt: row.issued_at,
+      dueDate: row.due_date,
+      totalAmount: row.total_amount,
+      outstandingBalance: balance?.outstanding_balance ?? row.total_amount,
+      financialStatus: balance?.financial_status ?? "outstanding",
+      ageDays: computeAgeDays(row.due_date, now),
+      promiseStatus: promiseMap.get(row.id) ?? null,
+    };
+  });
+
+  return { items, totalCount: count ?? 0, page, pageSize };
+}
+
+export interface InvoiceDetailLine {
+  id: string;
+  lineNo: number;
+  productName: string;
+  unit: string | null;
+  quantity: number;
+  unitPrice: number;
+  discountAmount: number;
+  lineTotal: number;
+}
+
+export interface InvoiceLedgerEntry {
+  id: string;
+  entryType: string;
+  direction: "debit" | "credit";
+  amount: number;
+  createdAt: string;
+}
+
+export interface InvoiceDetail {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  issuedAt: string;
+  dueDate: string | null;
+  subtotalAmount: number;
+  discountAmount: number;
+  totalAmount: number;
+  outstandingBalance: number;
+  financialStatus: string;
+  totalPaid: number;
+  creditNoteReduction: number;
+  salesOrderId: string;
+  salesOrderNumber: string;
+  deliveryId: string;
+  promiseStatus: "open" | "broken" | null;
+  lines: InvoiceDetailLine[];
+  ledger: InvoiceLedgerEntry[];
+  paymentReceiptIds: string[];
+}
+
+export async function getInvoiceDetail(
+  companyId: string,
+  invoiceId: string,
+  client?: SupabaseClient
+): Promise<InvoiceDetail | null> {
+  const supabase = client ?? (await createClient());
+
+  const { data: invoiceRow, error: invErr } = await supabase
+    .from("invoices")
+    .select(
+      "id, invoice_number, customer_id, due_date, issued_at, subtotal_amount, discount_amount, total_amount, sales_order_id, delivery_id, customers(name), sales_orders(order_number)"
+    )
+    .eq("company_id", companyId)
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (invErr) throw new Error(`invoice_detail: ${invErr.message}`);
+  if (!invoiceRow) return null;
+
+  const inv = invoiceRow as unknown as {
+    id: string;
+    invoice_number: string;
+    customer_id: string;
+    due_date: string | null;
+    issued_at: string;
+    subtotal_amount: number;
+    discount_amount: number;
+    total_amount: number;
+    sales_order_id: string;
+    delivery_id: string;
+    customers: { name: string } | null;
+    sales_orders: { order_number: string } | null;
+  };
+
+  const [linesResult, ledgerResult, balanceResult, allocResult, promiseMap] = await Promise.all([
+    supabase
+      .from("invoice_lines")
+      .select("id, line_no, product_name, unit, quantity, unit_price, discount_amount, line_total")
+      .eq("invoice_id", invoiceId)
+      .order("line_no", { ascending: true }),
+    supabase
+      .from("receivable_ledger")
+      .select("id, entry_type, direction, amount, created_at")
+      .eq("invoice_id", invoiceId)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("invoice_receivable_balances")
+      .select("outstanding_balance, financial_status")
+      .eq("invoice_id", invoiceId)
+      .maybeSingle(),
+    supabase.from("payment_allocations").select("payment_receipt_id").eq("invoice_id", invoiceId),
+    fetchPromiseStatusMap(supabase, [invoiceId]),
+  ]);
+
+  if (linesResult.error) throw new Error(`invoice_detail lines: ${linesResult.error.message}`);
+  if (ledgerResult.error) throw new Error(`invoice_detail ledger: ${ledgerResult.error.message}`);
+  if (balanceResult.error) throw new Error(`invoice_detail balance: ${balanceResult.error.message}`);
+  if (allocResult.error) throw new Error(`invoice_detail allocations: ${allocResult.error.message}`);
+
+  const ledger = ((ledgerResult.data ?? []) as unknown as Array<{
+    id: string;
+    entry_type: string;
+    direction: "debit" | "credit";
+    amount: number;
+    created_at: string;
+  }>).map((l) => ({
+    id: l.id,
+    entryType: l.entry_type,
+    direction: l.direction,
+    amount: l.amount,
+    createdAt: l.created_at,
+  }));
+
+  const totalPaid = ledger
+    .filter((l) => l.entryType === "payment_allocation" && l.direction === "credit")
+    .reduce((s, l) => s + l.amount, 0);
+  const creditNoteReduction =
+    ledger.filter((l) => l.entryType === "credit_note" && l.direction === "credit").reduce((s, l) => s + l.amount, 0) -
+    ledger
+      .filter((l) => l.entryType === "credit_note_reversal" && l.direction === "debit")
+      .reduce((s, l) => s + l.amount, 0);
+
+  const balance = balanceResult.data as { outstanding_balance: number; financial_status: string } | null;
+
+  return {
+    id: inv.id,
+    invoiceNumber: inv.invoice_number,
+    customerId: inv.customer_id,
+    customerName: inv.customers?.name ?? "-",
+    issuedAt: inv.issued_at,
+    dueDate: inv.due_date,
+    subtotalAmount: inv.subtotal_amount,
+    discountAmount: inv.discount_amount,
+    totalAmount: inv.total_amount,
+    outstandingBalance: balance?.outstanding_balance ?? inv.total_amount,
+    financialStatus: balance?.financial_status ?? "outstanding",
+    totalPaid,
+    creditNoteReduction,
+    salesOrderId: inv.sales_order_id,
+    salesOrderNumber: inv.sales_orders?.order_number ?? "-",
+    deliveryId: inv.delivery_id,
+    promiseStatus: promiseMap.get(invoiceId) ?? null,
+    lines: ((linesResult.data ?? []) as unknown as Array<{
+      id: string;
+      line_no: number;
+      product_name: string;
+      unit: string | null;
+      quantity: number;
+      unit_price: number;
+      discount_amount: number;
+      line_total: number;
+    }>).map((l) => ({
+      id: l.id,
+      lineNo: l.line_no,
+      productName: l.product_name,
+      unit: l.unit,
+      quantity: l.quantity,
+      unitPrice: l.unit_price,
+      discountAmount: l.discount_amount,
+      lineTotal: l.line_total,
+    })),
+    ledger,
+    paymentReceiptIds: [
+      ...new Set(((allocResult.data ?? []) as { payment_receipt_id: string }[]).map((a) => a.payment_receipt_id)),
+    ],
+  };
+}
+
+/** Invoice yang layak dipilih untuk membuat janji bayar/mencatat pembayaran baru -- outstanding>0. */
+export interface OutstandingInvoiceOption {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  outstandingBalance: number;
+  hasOpenPromise: boolean;
+}
+
+export async function getOutstandingInvoices(
+  companyId: string,
+  opts: { customerId?: string } = {},
+  client?: SupabaseClient
+): Promise<OutstandingInvoiceOption[]> {
+  const supabase = client ?? (await createClient());
+
+  const { data: balanceRows, error: balErr } = await supabase
+    .from("invoice_receivable_balances")
+    .select("invoice_id, outstanding_balance, financial_status")
+    .eq("company_id", companyId)
+    .in("financial_status", ["outstanding", "partially_paid"]);
+  if (balErr) throw new Error(`outstanding_invoices balances: ${balErr.message}`);
+
+  const balanceMap = new Map(
+    ((balanceRows ?? []) as { invoice_id: string; outstanding_balance: number }[]).map((b) => [
+      b.invoice_id,
+      b.outstanding_balance,
+    ])
+  );
+  const ids = [...balanceMap.keys()];
+  if (ids.length === 0) return [];
+
+  let query = supabase
+    .from("invoices")
+    .select("id, invoice_number, customer_id, customers(name)")
+    .eq("company_id", companyId)
+    .in("id", ids)
+    .order("due_date", { ascending: true });
+  if (opts.customerId) query = query.eq("customer_id", opts.customerId);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`outstanding_invoices: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    invoice_number: string;
+    customer_id: string;
+    customers: { name: string } | null;
+  }>;
+
+  const promiseMap = await fetchPromiseStatusMap(
+    supabase,
+    rows.map((r) => r.id)
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    invoiceNumber: row.invoice_number,
+    customerId: row.customer_id,
+    customerName: row.customers?.name ?? "-",
+    outstandingBalance: balanceMap.get(row.id) ?? 0,
+    hasOpenPromise: promiseMap.get(row.id) === "open",
+  }));
+}
+
+// =============================================================================
+// Gate 2I.2 -- Collection & Janji Bayar (kontrak §5.2). RPC canonical:
+// record_collection_activity, create_promise_to_pay, correct_promise_to_pay,
+// cancel_promise_to_pay, mark_promise_broken (migration 20260828000001).
+// =============================================================================
+
+export interface PromiseListItem {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerName: string;
+  promisedAmount: number;
+  promisedDate: string;
+  status: string;
+  createdAt: string;
+  previousPromiseId: string | null;
+  reason: string | null;
+}
+
+const PROMISE_STATUS_PRIORITY: Record<string, number> = { open: 0, broken: 1, corrected: 2, cancelled: 2 };
+
+export async function getPromiseList(companyId: string, client?: SupabaseClient): Promise<PromiseListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("promises_to_pay")
+    .select(
+      "id, invoice_id, promised_amount, promised_date, status, created_at, previous_promise_id, reason, invoices(invoice_number), customers(name)"
+    )
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`promise_list: ${error.message}`);
+
+  const rows = (
+    (data ?? []) as unknown as Array<{
+      id: string;
+      invoice_id: string;
+      promised_amount: number;
+      promised_date: string;
+      status: string;
+      created_at: string;
+      previous_promise_id: string | null;
+      reason: string | null;
+      invoices: { invoice_number: string } | null;
+      customers: { name: string } | null;
+    }>
+  ).map((row) => ({
+    id: row.id,
+    invoiceId: row.invoice_id,
+    invoiceNumber: row.invoices?.invoice_number ?? "-",
+    customerName: row.customers?.name ?? "-",
+    promisedAmount: row.promised_amount,
+    promisedDate: row.promised_date,
+    status: row.status,
+    createdAt: row.created_at,
+    previousPromiseId: row.previous_promise_id,
+    reason: row.reason,
+  }));
+
+  return rows.sort((a, b) => {
+    const pa = PROMISE_STATUS_PRIORITY[a.status] ?? 3;
+    const pb = PROMISE_STATUS_PRIORITY[b.status] ?? 3;
+    if (pa !== pb) return pa - pb;
+    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+  });
+}
+
+export interface CollectionActivityListItem {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerName: string;
+  channel: string;
+  activityType: string;
+  outcome: string | null;
+  reportedAmount: number | null;
+  note: string | null;
+  occurredAt: string;
+}
+
+export async function getCollectionActivityList(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<CollectionActivityListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("collection_activities")
+    .select("id, invoice_id, channel, activity_type, outcome, reported_amount, note, occurred_at, invoices(invoice_number), customers(name)")
+    .eq("company_id", companyId)
+    .order("occurred_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(`collection_activity_list: ${error.message}`);
+
+  return ((data ?? []) as unknown as Array<{
+    id: string;
+    invoice_id: string;
+    channel: string;
+    activity_type: string;
+    outcome: string | null;
+    reported_amount: number | null;
+    note: string | null;
+    occurred_at: string;
+    invoices: { invoice_number: string } | null;
+    customers: { name: string } | null;
+  }>).map((row) => ({
+    id: row.id,
+    invoiceId: row.invoice_id,
+    invoiceNumber: row.invoices?.invoice_number ?? "-",
+    customerName: row.customers?.name ?? "-",
+    channel: row.channel,
+    activityType: row.activity_type,
+    outcome: row.outcome,
+    reportedAmount: row.reported_amount,
+    note: row.note,
+    occurredAt: row.occurred_at,
+  }));
+}
+
+// =============================================================================
+// Gate 2I.2 -- Pembayaran & Verifikasi (kontrak §5.3). RPC canonical:
+// record_verified_payment_atomic (migration 20260829000001).
+// =============================================================================
+
+export interface PaymentReceiptListItem {
+  id: string;
+  customerName: string;
+  method: string;
+  amount: number;
+  transferReference: string | null;
+  receivedAt: string;
+  proofCount: number;
+  allocationCount: number;
+  isReconciled: boolean;
+  latestReconciliationClassification: string | null;
+}
+
+async function fetchLatestReconciliationMap(
+  supabase: SupabaseClient,
+  paymentReceiptIds: string[]
+): Promise<Map<string, string>> {
+  if (paymentReceiptIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from("payment_reconciliations")
+    .select("payment_receipt_id, classification, created_at")
+    .in("payment_receipt_id", paymentReceiptIds)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(`latest_reconciliation_map: ${error.message}`);
+  const map = new Map<string, string>();
+  for (const row of (data ?? []) as { payment_receipt_id: string; classification: string }[]) {
+    if (!map.has(row.payment_receipt_id)) map.set(row.payment_receipt_id, row.classification);
+  }
+  return map;
+}
+
+export async function getPaymentReceiptList(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<PaymentReceiptListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("payment_receipts")
+    .select("id, method, amount, transfer_reference, received_at, customers(name)")
+    .eq("company_id", companyId)
+    .order("received_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(`payment_receipt_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    method: string;
+    amount: number;
+    transfer_reference: string | null;
+    received_at: string;
+    customers: { name: string } | null;
+  }>;
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+
+  const [proofsResult, allocationsResult, latestReconciliationMap] = await Promise.all([
+    supabase.from("payment_proofs").select("payment_receipt_id").in("payment_receipt_id", ids),
+    supabase.from("payment_allocations").select("payment_receipt_id").in("payment_receipt_id", ids),
+    fetchLatestReconciliationMap(supabase, ids),
+  ]);
+  if (proofsResult.error) throw new Error(`payment_receipt_list proofs: ${proofsResult.error.message}`);
+  if (allocationsResult.error) throw new Error(`payment_receipt_list allocations: ${allocationsResult.error.message}`);
+
+  const countBy = (rows: { payment_receipt_id: string }[]) => {
+    const m = new Map<string, number>();
+    for (const r of rows) m.set(r.payment_receipt_id, (m.get(r.payment_receipt_id) ?? 0) + 1);
+    return m;
+  };
+  const proofCounts = countBy((proofsResult.data ?? []) as { payment_receipt_id: string }[]);
+  const allocationCounts = countBy((allocationsResult.data ?? []) as { payment_receipt_id: string }[]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    customerName: row.customers?.name ?? "-",
+    method: row.method,
+    amount: row.amount,
+    transferReference: row.transfer_reference,
+    receivedAt: row.received_at,
+    proofCount: proofCounts.get(row.id) ?? 0,
+    allocationCount: allocationCounts.get(row.id) ?? 0,
+    isReconciled: latestReconciliationMap.has(row.id),
+    latestReconciliationClassification: latestReconciliationMap.get(row.id) ?? null,
+  }));
+}
+
+export interface PaymentReceiptDetail {
+  id: string;
+  customerId: string;
+  customerName: string;
+  method: string;
+  amount: number;
+  transferReference: string | null;
+  receivedAt: string;
+  proofs: Array<{ id: string; proofType: string; objectReference: string }>;
+  allocations: Array<{ id: string; invoiceId: string; invoiceNumber: string; amount: number }>;
+  reconciliationCount: number;
+}
+
+export async function getPaymentReceiptDetail(
+  companyId: string,
+  paymentReceiptId: string,
+  client?: SupabaseClient
+): Promise<PaymentReceiptDetail | null> {
+  const supabase = client ?? (await createClient());
+
+  const { data: receiptRow, error: receiptErr } = await supabase
+    .from("payment_receipts")
+    .select("id, customer_id, method, amount, transfer_reference, received_at, customers(name)")
+    .eq("company_id", companyId)
+    .eq("id", paymentReceiptId)
+    .maybeSingle();
+  if (receiptErr) throw new Error(`payment_receipt_detail: ${receiptErr.message}`);
+  if (!receiptRow) return null;
+
+  const receipt = receiptRow as unknown as {
+    id: string;
+    customer_id: string;
+    method: string;
+    amount: number;
+    transfer_reference: string | null;
+    received_at: string;
+    customers: { name: string } | null;
+  };
+
+  const [proofsResult, allocationsResult, reconciliationCountResult] = await Promise.all([
+    supabase.from("payment_proofs").select("id, proof_type, object_reference").eq("payment_receipt_id", paymentReceiptId),
+    supabase
+      .from("payment_allocations")
+      .select("id, invoice_id, amount, invoices(invoice_number)")
+      .eq("payment_receipt_id", paymentReceiptId),
+    supabase
+      .from("payment_reconciliations")
+      .select("id", { count: "exact", head: true })
+      .eq("payment_receipt_id", paymentReceiptId),
+  ]);
+  if (proofsResult.error) throw new Error(`payment_receipt_detail proofs: ${proofsResult.error.message}`);
+  if (allocationsResult.error) throw new Error(`payment_receipt_detail allocations: ${allocationsResult.error.message}`);
+  if (reconciliationCountResult.error)
+    throw new Error(`payment_receipt_detail reconciliation count: ${reconciliationCountResult.error.message}`);
+
+  return {
+    id: receipt.id,
+    customerId: receipt.customer_id,
+    customerName: receipt.customers?.name ?? "-",
+    method: receipt.method,
+    amount: receipt.amount,
+    transferReference: receipt.transfer_reference,
+    receivedAt: receipt.received_at,
+    proofs: ((proofsResult.data ?? []) as unknown as Array<{ id: string; proof_type: string; object_reference: string }>).map(
+      (p) => ({ id: p.id, proofType: p.proof_type, objectReference: p.object_reference })
+    ),
+    allocations: ((allocationsResult.data ?? []) as unknown as Array<{
+      id: string;
+      invoice_id: string;
+      amount: number;
+      invoices: { invoice_number: string } | null;
+    }>).map((a) => ({
+      id: a.id,
+      invoiceId: a.invoice_id,
+      invoiceNumber: a.invoices?.invoice_number ?? "-",
+      amount: a.amount,
+    })),
+    reconciliationCount: reconciliationCountResult.count ?? 0,
+  };
+}
+
+export interface CustomerWithOutstandingOption {
+  id: string;
+  name: string;
+}
+
+export async function getCustomersWithOutstanding(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<CustomerWithOutstandingOption[]> {
+  const supabase = client ?? (await createClient());
+  const { data: balanceRows, error: balErr } = await supabase
+    .from("invoice_receivable_balances")
+    .select("invoice_id")
+    .eq("company_id", companyId)
+    .in("financial_status", ["outstanding", "partially_paid"]);
+  if (balErr) throw new Error(`customers_with_outstanding balances: ${balErr.message}`);
+  const invoiceIds = ((balanceRows ?? []) as { invoice_id: string }[]).map((b) => b.invoice_id);
+  if (invoiceIds.length === 0) return [];
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("customer_id, customers(name)")
+    .eq("company_id", companyId)
+    .in("id", invoiceIds);
+  if (error) throw new Error(`customers_with_outstanding: ${error.message}`);
+
+  const seen = new Map<string, string>();
+  for (const row of (data ?? []) as unknown as Array<{ customer_id: string; customers: { name: string } | null }>) {
+    if (!seen.has(row.customer_id)) seen.set(row.customer_id, row.customers?.name ?? "-");
+  }
+  return [...seen.entries()]
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// =============================================================================
+// Gate 2I.2 -- Exception Rekonsiliasi (kontrak §5.4). RPC canonical:
+// reconcile_verified_payment, correct_payment_reconciliation (migration
+// 20260830000001). List selalu dari view payment_reconciliation_exceptions
+// (latest-state projection, classification != matched) -- history penuh
+// per payment_receipt_id tetap dibaca dari payment_reconciliations (append-only).
+// =============================================================================
+
+export interface ReconciliationExceptionListItem {
+  id: string;
+  paymentReceiptId: string;
+  customerName: string;
+  classification: string;
+  paymentAmount: number;
+  totalAllocated: number;
+  unallocatedAmount: number;
+  createdAt: string;
+}
+
+export async function getReconciliationExceptionList(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<ReconciliationExceptionListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("payment_reconciliation_exceptions")
+    .select("id, payment_receipt_id, customer_id, classification, payment_amount, total_allocated, unallocated_amount, created_at")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw new Error(`reconciliation_exception_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    payment_receipt_id: string;
+    customer_id: string;
+    classification: string;
+    payment_amount: number;
+    total_allocated: number;
+    unallocated_amount: number;
+    created_at: string;
+  }>;
+  if (rows.length === 0) return [];
+
+  const customerIds = [...new Set(rows.map((r) => r.customer_id))];
+  const { data: customerRows, error: custErr } = await supabase.from("customers").select("id, name").in("id", customerIds);
+  if (custErr) throw new Error(`reconciliation_exception_list customers: ${custErr.message}`);
+  const nameMap = new Map(((customerRows ?? []) as { id: string; name: string }[]).map((c) => [c.id, c.name]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    paymentReceiptId: row.payment_receipt_id,
+    customerName: nameMap.get(row.customer_id) ?? "-",
+    classification: row.classification,
+    paymentAmount: row.payment_amount,
+    totalAllocated: row.total_allocated,
+    unallocatedAmount: row.unallocated_amount,
+    createdAt: row.created_at,
+  }));
+}
+
+export interface ReconciliationHistoryEntry {
+  id: string;
+  classification: string;
+  paymentAmount: number;
+  totalAllocated: number;
+  unallocatedAmount: number;
+  method: string;
+  previousReconciliationId: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export async function getReconciliationHistory(
+  companyId: string,
+  paymentReceiptId: string,
+  client?: SupabaseClient
+): Promise<ReconciliationHistoryEntry[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("payment_reconciliations")
+    .select(
+      "id, classification, payment_amount, total_allocated, unallocated_amount, method, previous_reconciliation_id, reason, created_at"
+    )
+    .eq("company_id", companyId)
+    .eq("payment_receipt_id", paymentReceiptId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(`reconciliation_history: ${error.message}`);
+
+  return ((data ?? []) as unknown as Array<{
+    id: string;
+    classification: string;
+    payment_amount: number;
+    total_allocated: number;
+    unallocated_amount: number;
+    method: string;
+    previous_reconciliation_id: string | null;
+    reason: string | null;
+    created_at: string;
+  }>).map((row) => ({
+    id: row.id,
+    classification: row.classification,
+    paymentAmount: row.payment_amount,
+    totalAllocated: row.total_allocated,
+    unallocatedAmount: row.unallocated_amount,
+    method: row.method,
+    previousReconciliationId: row.previous_reconciliation_id,
+    reason: row.reason,
+    createdAt: row.created_at,
+  }));
+}
