@@ -25,7 +25,11 @@ function fakeSupabaseForConfirmedOrder(row: unknown): SupabaseClient {
                 return {
                   eq() {
                     return {
-                      maybeSingle: async () => ({ data: row }),
+                      order() {
+                        return {
+                          maybeSingle: async () => ({ data: row }),
+                        };
+                      },
                     };
                   },
                 };
@@ -144,7 +148,11 @@ function fakeSupabaseForGetDelivery(row: unknown): SupabaseClient {
             return {
               eq() {
                 return {
-                  maybeSingle: async () => ({ data: row }),
+                  order() {
+                    return {
+                      maybeSingle: async () => ({ data: row }),
+                    };
+                  },
                 };
               },
             };

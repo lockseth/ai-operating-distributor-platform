@@ -277,6 +277,10 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
       )
       .eq("id", salesOrderId)
       .eq("company_id", companyId)
+      // items:sales_order_items TIDAK dijamin urutannya oleh Postgres tanpa ORDER BY
+      // eksplisit (tabel tidak punya created_at, id UUID acak) -- line_no (migration
+      // 20260903000001) merekonstruksi urutan baris asli sesuai saat baris di-INSERT.
+      .order("line_no", { referencedTable: "items" })
       .maybeSingle();
 
     if (!data) return null;
@@ -446,6 +450,9 @@ export class SupabaseDeliveryRepository implements DeliveryRepositoryInterface {
           "recipient:delivery_recipients(recipient_name, identity_note, is_expected_pic, signature_evidence_id)"
       )
       .eq("id", deliveryId)
+      // items:delivery_items TIDAK dijamin urutannya tanpa ORDER BY eksplisit --
+      // line_no (migration 20260903000001) merekonstruksi urutan baris asli.
+      .order("line_no", { referencedTable: "items" })
       .maybeSingle();
 
     if (!data) return null;
