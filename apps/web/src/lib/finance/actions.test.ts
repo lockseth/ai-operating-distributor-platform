@@ -398,6 +398,262 @@ describe("Gate 2I.2 finance actions -- out_already_exists diteruskan apa adanya 
   });
 });
 
+describe("Gate 2I.3 finance actions -- permission guard menolak sebelum RPC dipanggil (FIN-02-05/FIN-02-07/FIN-08-02/FIN-08-03)", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    revalidatePathMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("requestReturnAction menolak actor tanpa return.request", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: [] }));
+    const { requestReturnAction } = await import("./actions");
+    await expect(
+      requestReturnAction({
+        invoiceId: "inv-1",
+        items: [{ invoiceLineId: "line-1", requestedQuantity: 2 }],
+        reasonCode: "DAMAGED_GOODS",
+        proofReference: "storage://proof.jpg",
+      })
+    ).rejects.toThrow(/tidak punya akses/i);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("verifyReturnAction menolak actor Finance tanpa return.verify (FIN-02-05: Finance punya akses lihat, bukan akses verifikasi)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["receivable.view", "return.request"] }));
+    const { verifyReturnAction } = await import("./actions");
+    await expect(verifyReturnAction({ returnId: "ret-1", decision: "approve" })).rejects.toThrow(/tidak punya akses/i);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("requestRefundAction menolak actor tanpa refund.request", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: [] }));
+    const { requestRefundAction } = await import("./actions");
+    await expect(
+      requestRefundAction({
+        creditNoteId: "cn-1",
+        amount: 1000,
+        method: "cash",
+        proofReference: "storage://proof.jpg",
+        transactionDate: "2026-01-15",
+      })
+    ).rejects.toThrow(/tidak punya akses/i);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+
+  it("approveRefundAction menolak actor Finance tanpa refund.approve (FIN-02-07: Finance punya akses lihat, bukan akses approve)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["receivable.view", "refund.request"] }));
+    const { approveRefundAction } = await import("./actions");
+    await expect(approveRefundAction({ refundId: "refund-1", decision: "approve" })).rejects.toThrow(/tidak punya akses/i);
+    expect(rpcMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Gate 2I.3 finance actions -- RPC canonical dipanggil dengan nama & parameter persis migration", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    revalidatePathMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("requestReturnAction memanggil request_return_atomic dengan parameter & bentuk items persis", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["return.request"] }));
+    rpcMock.mockResolvedValue({ data: [{ out_return_id: "ret-1", out_status: "requested", out_already_exists: false }], error: null });
+    const { requestReturnAction } = await import("./actions");
+
+    await requestReturnAction({
+      invoiceId: "inv-1",
+      items: [{ invoiceLineId: "line-1", requestedQuantity: 3 }],
+      reasonCode: "DAMAGED_GOODS",
+      proofReference: "storage://return-proofs/x.jpg",
+      idempotencyKey: "key-return-1",
+    });
+
+    expect(rpcMock).toHaveBeenCalledWith("request_return_atomic", {
+      p_company_id: "company-1",
+      p_actor_id: "actor-1",
+      p_invoice_id: "inv-1",
+      p_items: [{ invoice_line_id: "line-1", requested_quantity: 3 }],
+      p_reason_code: "DAMAGED_GOODS",
+      p_proof_reference: "storage://return-proofs/x.jpg",
+      p_idempotency_key: "key-return-1",
+    });
+  });
+
+  it("verifyReturnAction memanggil verify_return_atomic dengan parameter persis (tanpa idempotency key -- RPC tidak menerimanya)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["return.verify"] }));
+    rpcMock.mockResolvedValue({
+      data: [{ out_return_id: "ret-1", out_status: "approved", out_credit_note_id: "cn-1", out_total_amount: "3000", out_applied_amount: "3000", out_customer_credit_amount: "0" }],
+      error: null,
+    });
+    const { verifyReturnAction } = await import("./actions");
+
+    await verifyReturnAction({ returnId: "ret-1", decision: "approve" });
+
+    expect(rpcMock).toHaveBeenCalledWith("verify_return_atomic", {
+      p_company_id: "company-1",
+      p_actor_id: "actor-1",
+      p_return_id: "ret-1",
+      p_decision: "approve",
+    });
+  });
+
+  it("requestRefundAction memanggil request_refund_atomic dengan parameter persis", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.request"] }));
+    rpcMock.mockResolvedValue({ data: [{ out_refund_id: "refund-1", out_status: "requested", out_already_exists: false }], error: null });
+    const { requestRefundAction } = await import("./actions");
+
+    await requestRefundAction({
+      creditNoteId: "cn-1",
+      amount: 1500,
+      method: "bank_transfer",
+      proofReference: "storage://refund-proofs/x.jpg",
+      transactionDate: "2026-01-15",
+      idempotencyKey: "key-refund-1",
+    });
+
+    expect(rpcMock).toHaveBeenCalledWith("request_refund_atomic", {
+      p_company_id: "company-1",
+      p_actor_id: "actor-1",
+      p_credit_note_id: "cn-1",
+      p_amount: 1500,
+      p_method: "bank_transfer",
+      p_proof_reference: "storage://refund-proofs/x.jpg",
+      p_transaction_date: "2026-01-15",
+      p_idempotency_key: "key-refund-1",
+    });
+  });
+
+  it("approveRefundAction memanggil approve_refund_atomic dengan parameter persis", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.approve"] }));
+    rpcMock.mockResolvedValue({
+      data: [{ out_refund_id: "refund-1", out_status: "approved", out_ledger_entry_id: "ledger-1", out_amount: "1500", out_already_exists: false }],
+      error: null,
+    });
+    const { approveRefundAction } = await import("./actions");
+
+    await approveRefundAction({ refundId: "refund-1", decision: "approve" });
+
+    expect(rpcMock).toHaveBeenCalledWith("approve_refund_atomic", {
+      p_company_id: "company-1",
+      p_actor_id: "actor-1",
+      p_refund_id: "refund-1",
+      p_decision: "approve",
+    });
+  });
+});
+
+describe("Gate 2I.3 finance actions -- error RPC dipetakan ke pesan Indonesia, kode mentah tidak bocor", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    revalidatePathMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("verifyReturnAction: RETURN_ALREADY_RESOLVED dipetakan ke pesan 'muat ulang', kode mentah tidak bocor (FIN-09-01)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["return.verify"] }));
+    rpcMock.mockResolvedValue({ data: null, error: { message: "RETURN_ALREADY_RESOLVED: return sudah approved" } });
+    const { verifyReturnAction } = await import("./actions");
+
+    await expect(verifyReturnAction({ returnId: "ret-1", decision: "reject" })).rejects.toThrow(/muat ulang/i);
+    try {
+      await verifyReturnAction({ returnId: "ret-1", decision: "reject" });
+    } catch (err) {
+      expect((err as Error).message).not.toContain("RETURN_ALREADY_RESOLVED");
+    }
+  });
+
+  it("requestRefundAction: REFUND_EXCEEDS_AVAILABLE_BALANCE dipetakan ke pesan 'muat ulang' (FIN-11-02)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.request"] }));
+    rpcMock.mockResolvedValue({ data: null, error: { message: "REFUND_EXCEEDS_AVAILABLE_BALANCE: melebihi 500000" } });
+    const { requestRefundAction } = await import("./actions");
+
+    await expect(
+      requestRefundAction({
+        creditNoteId: "cn-1",
+        amount: 999999,
+        method: "cash",
+        proofReference: "storage://x.jpg",
+        transactionDate: "2026-01-15",
+      })
+    ).rejects.toThrow(/muat ulang/i);
+  });
+
+  it("approveRefundAction: REFUND_ALREADY_RESOLVED dipetakan ke pesan 'muat ulang' (FIN-09-02)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.approve"] }));
+    rpcMock.mockResolvedValue({ data: null, error: { message: "REFUND_ALREADY_RESOLVED: refund sudah rejected" } });
+    const { approveRefundAction } = await import("./actions");
+
+    await expect(approveRefundAction({ refundId: "refund-1", decision: "approve" })).rejects.toThrow(/muat ulang/i);
+  });
+});
+
+describe("Gate 2I.3 finance actions -- out_already_exists diteruskan apa adanya untuk UI idempotent no-op (FIN-10-02)", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    revalidatePathMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("approveRefundAction retry approve->approve mengembalikan out_already_exists=true tanpa error", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.approve"] }));
+    rpcMock.mockResolvedValue({
+      data: [{ out_refund_id: "refund-1", out_status: "approved", out_ledger_entry_id: "ledger-1", out_amount: "1500", out_already_exists: true }],
+      error: null,
+    });
+    const { approveRefundAction } = await import("./actions");
+
+    const result = await approveRefundAction({ refundId: "refund-1", decision: "approve" });
+    expect(result.out_status).toBe("approved");
+    expect(result.out_already_exists).toBe(true);
+  });
+});
+
+describe("Gate 2I.3 finance actions -- revalidatePath dipanggil setelah sukses (§5 pola umum, bukan optimistic update)", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    revalidatePathMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("requestReturnAction me-revalidate /dashboard/finance/returns, /dashboard/finance/invoices/[id], dan /dashboard/finance", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["return.request"] }));
+    rpcMock.mockResolvedValue({ data: [{ out_return_id: "ret-1", out_status: "requested", out_already_exists: false }], error: null });
+    const { requestReturnAction } = await import("./actions");
+
+    await requestReturnAction({
+      invoiceId: "inv-1",
+      items: [{ invoiceLineId: "line-1", requestedQuantity: 1 }],
+      reasonCode: "DAMAGED_GOODS",
+      proofReference: "storage://x.jpg",
+    });
+
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance/returns");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance/invoices/inv-1");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance");
+  });
+
+  it("approveRefundAction me-revalidate /dashboard/finance/credit, /dashboard/finance/credit/[id], dan /dashboard/finance", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser({ permissions: ["refund.approve"] }));
+    rpcMock.mockResolvedValue({
+      data: [{ out_refund_id: "refund-1", out_status: "approved", out_ledger_entry_id: "ledger-1", out_amount: "1500", out_already_exists: false }],
+      error: null,
+    });
+    const { approveRefundAction } = await import("./actions");
+
+    await approveRefundAction({ refundId: "refund-1", decision: "approve" });
+
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance/credit");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance/credit/refund-1");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/dashboard/finance");
+  });
+});
+
 describe("Gate 2I.2 finance actions -- revalidatePath dipanggil setelah sukses (§5 pola umum, bukan optimistic update)", () => {
   afterEach(() => {
     rpcMock.mockClear();

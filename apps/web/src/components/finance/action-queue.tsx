@@ -10,8 +10,15 @@
 // terpisah) untuk menjaga batas 10 file Gate 2I.1 -- struktur tetap generic
 // (bukan per-domain) sehingga aman diekstrak terpisah di gate lanjutan tanpa
 // mengubah perilaku.
+//
+// Gate 2I.3 -- return_pending/refund_pending SEKARANG punya destination nyata
+// (/dashboard/finance/returns/[id], /dashboard/finance/credit/[id]) sehingga
+// "Lihat" untuk dua kategori ini diganti tautan aktif (deriveDetailHref).
+// cancellation_pending/invoice_void_notice TETAP disabled -- destination-nya
+// (Gate 2I.4) belum ada, jangan menghasilkan link 404 (instruksi gate §8).
 // =============================================================================
 
+import Link from "next/link";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -41,6 +48,30 @@ function DetailAffordance() {
       Lihat
     </button>
   );
+}
+
+function DetailLink({ href }: { href: string }) {
+  return (
+    <Link
+      href={href}
+      className="inline-flex items-center rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 hover:bg-blue-100"
+    >
+      Lihat
+    </Link>
+  );
+}
+
+const RETURN_PENDING_PREFIX = "return_pending:";
+const REFUND_PENDING_PREFIX = "refund_pending:";
+
+function deriveDetailHref(item: FinanceActionQueueItem): string | null {
+  if (item.category === "return_pending") {
+    return `/dashboard/finance/returns/${item.id.slice(RETURN_PENDING_PREFIX.length)}`;
+  }
+  if (item.category === "refund_pending") {
+    return `/dashboard/finance/credit/${item.id.slice(REFUND_PENDING_PREFIX.length)}`;
+  }
+  return null;
 }
 
 function OwnerOnlyMarker() {
@@ -102,7 +133,10 @@ const columns: Column<FinanceActionQueueItem>[] = [
     key: "detail",
     label: "Detail",
     align: "center",
-    render: () => <DetailAffordance />,
+    render: (row) => {
+      const href = deriveDetailHref(row);
+      return href ? <DetailLink href={href} /> : <DetailAffordance />;
+    },
   },
 ];
 
@@ -138,7 +172,10 @@ function ActionQueueCard({ item }: { item: FinanceActionQueueItem }) {
 
       <div className="mt-3 flex items-center justify-between">
         {item.ownerOnly ? <OwnerOnlyMarker /> : <span />}
-        <DetailAffordance />
+        {(() => {
+          const href = deriveDetailHref(item);
+          return href ? <DetailLink href={href} /> : <DetailAffordance />;
+        })()}
       </div>
     </li>
   );

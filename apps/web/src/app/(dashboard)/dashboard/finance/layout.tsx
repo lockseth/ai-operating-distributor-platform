@@ -7,11 +7,11 @@
 // karena Next.js layout membungkus semua children route di bawahnya.
 //
 // Ringkasan (2I.1) + Invoice & Piutang/Collection & Janji Bayar/Pembayaran &
-// Verifikasi/Exception Rekonsiliasi (2I.2) punya destination nyata. Retur &
-// Credit Note/Customer Credit & Refund/Cancellation & Invoice Void/Riwayat
-// Audit (2I.3/2I.4) tetap SENGAJA dirender non-aktif (bukan Link ke route
-// yang belum ada) sesuai instruksi gate: jangan membuat tautan berakhir 404,
-// jangan membuat halaman placeholder massal hanya untuk memenuhi link.
+// Verifikasi/Exception Rekonsiliasi (2I.2) + Retur & Credit Note/Customer
+// Credit & Refund (2I.3) punya destination nyata. Cancellation & Invoice
+// Void/Riwayat Audit (2I.4) tetap SENGAJA dirender non-aktif (bukan Link ke
+// route yang belum ada) sesuai instruksi gate: jangan membuat tautan berakhir
+// 404, jangan membuat halaman placeholder massal hanya untuk memenuhi link.
 // =============================================================================
 
 import type { ReactNode } from "react";
@@ -28,8 +28,8 @@ const FINANCE_SECTIONS: FinanceSection[] = [
   { label: "Collection & Janji Bayar", href: "/dashboard/finance/collection" },
   { label: "Pembayaran & Verifikasi", href: "/dashboard/finance/payments" },
   { label: "Exception Rekonsiliasi", href: "/dashboard/finance/reconciliation" },
-  { label: "Retur & Credit Note" },
-  { label: "Customer Credit & Refund" },
+  { label: "Retur & Credit Note", href: "/dashboard/finance/returns" },
+  { label: "Customer Credit & Refund", href: "/dashboard/finance/credit" },
   { label: "Cancellation & Invoice Void" },
   { label: "Riwayat Audit" },
 ];

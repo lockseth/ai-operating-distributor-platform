@@ -3,20 +3,28 @@
 // Cross-tenant (FIN-03-01): getInvoiceDetail() scoped company_id + RLS --
 // invoice milik company lain selalu null di sini -> notFound(), bukan data
 // company lain yang bocor.
+//
+// Gate 2I.3 -- section "Retur & Credit Note" ditambahkan di bawah (kontrak §6
+// "link ke return/credit note terkait"): invoice.lines yang sudah dimuat di
+// atas dipakai langsung oleh RequestReturnPanel, tanpa query invoice-picker
+// terpisah. Ini murni PENAMBAHAN -- struktur/behavior existing di atas tidak
+// diubah.
 // =============================================================================
 
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { getInvoiceDetail, hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
+import { hasPermission } from "@/lib/auth/permissions";
+import { getInvoiceDetail, getReturnsForInvoice, hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeader } from "@/components/ui/section-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { AlertCard } from "@/components/layout/dashboard-shell";
+import { RequestReturnPanel } from "@/components/finance/return-panels";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import { formatJakartaDateTime } from "@/lib/audit-log/format";
-import type { InvoiceDetailLine, InvoiceLedgerEntry } from "@/lib/finance/queries";
+import type { InvoiceDetailLine, InvoiceLedgerEntry, ReturnListItem } from "@/lib/finance/queries";
 
 export const metadata = { title: "Detail Invoice — AODP" };
 
@@ -82,6 +90,15 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
   const invoice = await getInvoiceDetail(user.company_id, id);
   if (!invoice) notFound();
+
+  let returns: ReturnListItem[] = [];
+  let returnsLoadError = false;
+  try {
+    returns = await getReturnsForInvoice(user.company_id, id);
+  } catch {
+    returnsLoadError = true;
+  }
+  const canRequestReturn = hasPermission(user.permissions, "return.request");
 
   return (
     <div className="space-y-5">
@@ -153,6 +170,39 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         <div className="rounded-xl border border-gray-200 bg-white">
           <DataTable<InvoiceLedgerEntry> columns={ledgerColumns} data={invoice.ledger} keyExtractor={(row) => row.id} compact />
         </div>
+      </div>
+
+      <div>
+        <SectionHeader title="Retur & Credit Note" description="Retur yang diajukan terhadap invoice ini." />
+        <div className="mb-3">
+          <RequestReturnPanel invoiceId={invoice.id} lines={invoice.lines} canRequest={canRequestReturn} />
+        </div>
+        {returnsLoadError ? (
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-xs text-red-600">
+            Gagal memuat retur untuk invoice ini.
+          </div>
+        ) : returns.length === 0 ? (
+          <p className="text-xs text-gray-400">Belum ada retur untuk invoice ini.</p>
+        ) : (
+          <ul className="space-y-2">
+            {returns.map((ret) => (
+              <li key={ret.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-3.5">
+                <div>
+                  <Link href={`/dashboard/finance/returns/${ret.id}`} className="text-xs font-semibold text-blue-600 hover:underline">
+                    {ret.reasonCode}
+                  </Link>
+                  <p className="mt-0.5 text-xs text-gray-400">{formatJakartaDateTime(ret.requestedAt)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {ret.creditNoteTotalAmount != null && (
+                    <span className="text-xs font-medium text-gray-700">{formatRupiah(ret.creditNoteTotalAmount)}</span>
+                  )}
+                  <StatusBadge status={ret.status} domain="return" />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   );

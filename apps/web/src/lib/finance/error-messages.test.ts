@@ -46,6 +46,18 @@ describe("mapFinanceRpcError", () => {
     );
   });
 
+  it("kode error Gate 2F (retur/credit note) dipetakan", () => {
+    expect(mapFinanceRpcError("RETURN_ALREADY_RESOLVED: sudah approved")).toMatch(/sudah diputuskan sebelumnya/i);
+    expect(mapFinanceRpcError("RETURN_QUANTITY_EXCEEDS_CREDITABLE: melebihi sisa")).toMatch(/muat ulang/i);
+    expect(mapFinanceRpcError("REASON_CODE_REQUIRED: kosong")).toMatch(/alasan retur wajib diisi/i);
+  });
+
+  it("kode error Gate 2H (customer credit/refund) dipetakan", () => {
+    expect(mapFinanceRpcError("REFUND_EXCEEDS_AVAILABLE_BALANCE: melebihi 500000")).toMatch(/muat ulang/i);
+    expect(mapFinanceRpcError("CREDIT_NOTE_REVERSED: sudah direverse")).toMatch(/sudah direverse/i);
+    expect(mapFinanceRpcError("REFUND_ALREADY_RESOLVED: sudah rejected")).toMatch(/sudah diputuskan sebelumnya/i);
+  });
+
   it("kode tak dikenal jatuh ke pesan default, bukan crash atau pesan kosong", () => {
     expect(mapFinanceRpcError("SOME_UNKNOWN_FUTURE_CODE: detail")).toBe("Terjadi kesalahan saat memproses permintaan.");
     expect(mapFinanceRpcError("")).toBe("Terjadi kesalahan saat memproses permintaan.");

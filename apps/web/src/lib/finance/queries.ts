@@ -1386,3 +1386,509 @@ export async function getReconciliationHistory(
     createdAt: row.created_at,
   }));
 }
+
+// =============================================================================
+// Gate 2I.3 -- Retur & Credit Note (kontrak §5.5/§6/§8). RPC canonical:
+// request_return_atomic, verify_return_atomic (migration 20260831000001).
+// Nilai retur pra-approval SELALU dihitung dari invoice_lines immutable
+// dengan formula IDENTIK verify_return_atomic (requested_quantity *
+// line_total/quantity, lalu LEAST(total, outstanding)) -- ini "preview" yang
+// kontrak §5.5 wajibkan tampil sebelum approve, BUKAN penghitungan ulang
+// alternatif (angka final pasca approval SELALU dibaca dari credit_notes,
+// tidak pernah dari preview ini).
+// =============================================================================
+
+export interface ReturnListItem {
+  id: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerName: string;
+  status: string;
+  reasonCode: string;
+  requestedAt: string;
+  decidedAt: string | null;
+  creditNoteId: string | null;
+  creditNoteTotalAmount: number | null;
+}
+
+const RETURN_STATUS_PRIORITY: Record<string, number> = { requested: 0, approved: 1, rejected: 1 };
+
+interface ReturnRowRaw {
+  id: string;
+  invoice_id: string;
+  status: string;
+  reason_code: string;
+  requested_at: string;
+  decided_at: string | null;
+  invoices: { invoice_number: string } | null;
+  customers: { name: string } | null;
+}
+
+async function mapReturnRows(supabase: SupabaseClient, rows: ReturnRowRaw[]): Promise<ReturnListItem[]> {
+  if (rows.length === 0) return [];
+  const { data: creditNoteRows, error: cnErr } = await supabase
+    .from("credit_notes")
+    .select("id, return_id, total_amount")
+    .in("return_id", rows.map((r) => r.id));
+  if (cnErr) throw new Error(`return_credit_note_map: ${cnErr.message}`);
+  const creditNoteMap = new Map(
+    ((creditNoteRows ?? []) as { id: string; return_id: string; total_amount: number }[]).map((c) => [c.return_id, c])
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    invoiceId: row.invoice_id,
+    invoiceNumber: row.invoices?.invoice_number ?? "-",
+    customerName: row.customers?.name ?? "-",
+    status: row.status,
+    reasonCode: row.reason_code,
+    requestedAt: row.requested_at,
+    decidedAt: row.decided_at,
+    creditNoteId: creditNoteMap.get(row.id)?.id ?? null,
+    creditNoteTotalAmount: creditNoteMap.get(row.id)?.total_amount ?? null,
+  }));
+}
+
+const RETURN_ROW_SELECT =
+  "id, invoice_id, status, reason_code, requested_at, decided_at, invoices(invoice_number), customers(name)";
+
+export async function getReturnList(companyId: string, client?: SupabaseClient): Promise<ReturnListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("returns")
+    .select(RETURN_ROW_SELECT)
+    .eq("company_id", companyId)
+    .order("requested_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`return_list: ${error.message}`);
+
+  const items = await mapReturnRows(supabase, (data ?? []) as unknown as ReturnRowRaw[]);
+  return items.sort((a, b) => {
+    const pa = RETURN_STATUS_PRIORITY[a.status] ?? 2;
+    const pb = RETURN_STATUS_PRIORITY[b.status] ?? 2;
+    if (pa !== pb) return pa - pb;
+    return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+  });
+}
+
+/** Retur untuk satu invoice tertentu -- dipakai section "Retur & Credit Note" di halaman detail invoice (kontrak §6 "link ke return/credit note terkait"). */
+export async function getReturnsForInvoice(
+  companyId: string,
+  invoiceId: string,
+  client?: SupabaseClient
+): Promise<ReturnListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("returns")
+    .select(RETURN_ROW_SELECT)
+    .eq("company_id", companyId)
+    .eq("invoice_id", invoiceId)
+    .order("requested_at", { ascending: false });
+  if (error) throw new Error(`returns_for_invoice: ${error.message}`);
+  return mapReturnRows(supabase, (data ?? []) as unknown as ReturnRowRaw[]);
+}
+
+export interface ReturnDetailItem {
+  id: string;
+  invoiceLineId: string;
+  productName: string;
+  unit: string | null;
+  invoicedQuantity: number;
+  requestedQuantity: number;
+  lineAmountPreview: number;
+}
+
+export interface ReturnDetail {
+  id: string;
+  status: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  reasonCode: string;
+  proofReference: string;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  outstandingBalance: number;
+  items: ReturnDetailItem[];
+  totalPreview: number;
+  appliedAmountPreview: number;
+  customerCreditAmountPreview: number;
+  creditNote: {
+    id: string;
+    totalAmount: number;
+    appliedAmount: number;
+    customerCreditAmount: number;
+    createdAt: string;
+  } | null;
+}
+
+export async function getReturnDetail(
+  companyId: string,
+  returnId: string,
+  client?: SupabaseClient
+): Promise<ReturnDetail | null> {
+  const supabase = client ?? (await createClient());
+
+  const { data: returnRow, error: returnErr } = await supabase
+    .from("returns")
+    .select(
+      "id, status, invoice_id, customer_id, reason_code, proof_reference, requested_at, decided_at, requested_by, decided_by, invoices(invoice_number), customers(name)"
+    )
+    .eq("company_id", companyId)
+    .eq("id", returnId)
+    .maybeSingle();
+  if (returnErr) throw new Error(`return_detail: ${returnErr.message}`);
+  if (!returnRow) return null;
+
+  const ret = returnRow as unknown as {
+    id: string;
+    status: string;
+    invoice_id: string;
+    customer_id: string;
+    reason_code: string;
+    proof_reference: string;
+    requested_at: string;
+    decided_at: string | null;
+    requested_by: string;
+    decided_by: string | null;
+    invoices: { invoice_number: string } | null;
+    customers: { name: string } | null;
+  };
+
+  const [itemsResult, balanceResult, creditNoteResult, actorRows] = await Promise.all([
+    supabase
+      .from("return_items")
+      .select("id, invoice_line_id, requested_quantity, invoice_lines(product_name, unit, quantity, line_total)")
+      .eq("return_id", returnId),
+    supabase.from("invoice_receivable_balances").select("outstanding_balance").eq("invoice_id", ret.invoice_id).maybeSingle(),
+    supabase
+      .from("credit_notes")
+      .select("id, total_amount, applied_amount, customer_credit_amount, created_at")
+      .eq("return_id", returnId)
+      .maybeSingle(),
+    supabase
+      .from("users")
+      .select("id, full_name")
+      .in("id", [ret.requested_by, ret.decided_by].filter((v): v is string => Boolean(v))),
+  ]);
+
+  if (itemsResult.error) throw new Error(`return_detail items: ${itemsResult.error.message}`);
+  if (balanceResult.error) throw new Error(`return_detail balance: ${balanceResult.error.message}`);
+  if (creditNoteResult.error) throw new Error(`return_detail credit_note: ${creditNoteResult.error.message}`);
+  if (actorRows.error) throw new Error(`return_detail actors: ${actorRows.error.message}`);
+
+  const nameMap = new Map(((actorRows.data ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+
+  const items: ReturnDetailItem[] = ((itemsResult.data ?? []) as unknown as Array<{
+    id: string;
+    invoice_line_id: string;
+    requested_quantity: number;
+    invoice_lines: { product_name: string; unit: string | null; quantity: number; line_total: number } | null;
+  }>).map((row) => {
+    const qty = row.invoice_lines?.quantity ?? 0;
+    const lineTotal = row.invoice_lines?.line_total ?? 0;
+    const lineAmountPreview = qty > 0 ? Math.round(row.requested_quantity * (lineTotal / qty) * 100) / 100 : 0;
+    return {
+      id: row.id,
+      invoiceLineId: row.invoice_line_id,
+      productName: row.invoice_lines?.product_name ?? "-",
+      unit: row.invoice_lines?.unit ?? null,
+      invoicedQuantity: qty,
+      requestedQuantity: row.requested_quantity,
+      lineAmountPreview,
+    };
+  });
+
+  const totalPreview = items.reduce((s, i) => s + i.lineAmountPreview, 0);
+  const outstandingBalance = (balanceResult.data as { outstanding_balance: number } | null)?.outstanding_balance ?? 0;
+  const appliedAmountPreview = Math.min(totalPreview, outstandingBalance);
+  const customerCreditAmountPreview = totalPreview - appliedAmountPreview;
+
+  const cn = creditNoteResult.data as {
+    id: string;
+    total_amount: number;
+    applied_amount: number;
+    customer_credit_amount: number;
+    created_at: string;
+  } | null;
+
+  return {
+    id: ret.id,
+    status: ret.status,
+    invoiceId: ret.invoice_id,
+    invoiceNumber: ret.invoices?.invoice_number ?? "-",
+    customerId: ret.customer_id,
+    customerName: ret.customers?.name ?? "-",
+    reasonCode: ret.reason_code,
+    proofReference: ret.proof_reference,
+    requestedByName: nameMap.get(ret.requested_by) ?? "-",
+    requestedAt: ret.requested_at,
+    decidedByName: ret.decided_by ? nameMap.get(ret.decided_by) ?? "-" : null,
+    decidedAt: ret.decided_at,
+    outstandingBalance,
+    items,
+    totalPreview,
+    appliedAmountPreview,
+    customerCreditAmountPreview,
+    creditNote: cn
+      ? {
+          id: cn.id,
+          totalAmount: cn.total_amount,
+          appliedAmount: cn.applied_amount,
+          customerCreditAmount: cn.customer_credit_amount,
+          createdAt: cn.created_at,
+        }
+      : null,
+  };
+}
+
+// =============================================================================
+// Gate 2I.3 -- Customer Credit & Refund (kontrak §5.6/§8). RPC canonical:
+// request_refund_atomic, approve_refund_atomic (migration 20260902000001).
+// Saldo SELALU dibaca dari view customer_credit_balances -- tidak pernah
+// dihitung ulang di sini (kontrak §8 "jangan membuat formula saldo
+// alternatif di frontend").
+// =============================================================================
+
+export interface CreditNoteListItem {
+  id: string;
+  returnId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  customerCreditAmount: number;
+  /**
+   * FALSE selama origin credit (customer_credit_ledger entry_type=credit_note_origin)
+   * belum dibuat LAZY oleh request_refund_atomic/reverse_credit_note_atomic (Gate 2H
+   * migration 20260902000001, bagian "G"). Ditentukan dari KEBERADAAN baris nyata di
+   * customer_credit_ledger -- BUKAN ditebak dari nilai ledgerBalance/availableBalance
+   * (keduanya sama-sama 0 baik saat belum diinisialisasi MAUPUN saat canonical zero
+   * setelah saldo habis terpakai -- dua state itu tidak bisa dibedakan dari angka view
+   * saja). Saat FALSE, ledgerBalance/pendingReserved/availableBalance di bawah berasal
+   * dari COALESCE(...,0) pada view (bukan nilai final "habis") -- UI wajib menampilkan
+   * label eksplisit "belum diinisialisasi", bukan Rp0 seolah saldo sudah terpakai.
+   */
+  isInitialized: boolean;
+  ledgerBalance: number;
+  pendingReserved: number;
+  availableBalance: number;
+  isReversed: boolean;
+  createdAt: string;
+}
+
+export async function getCreditNoteList(companyId: string, client?: SupabaseClient): Promise<CreditNoteListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data: creditNoteRows, error } = await supabase
+    .from("credit_notes")
+    .select("id, return_id, invoice_id, customer_id, customer_credit_amount, created_at, invoices(invoice_number), customers(name)")
+    .eq("company_id", companyId)
+    .gt("customer_credit_amount", 0)
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`credit_note_list: ${error.message}`);
+
+  const rows = (creditNoteRows ?? []) as unknown as Array<{
+    id: string;
+    return_id: string;
+    invoice_id: string;
+    customer_id: string;
+    customer_credit_amount: number;
+    created_at: string;
+    invoices: { invoice_number: string } | null;
+    customers: { name: string } | null;
+  }>;
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+
+  const [balancesResult, reversalsResult, ledgerExistsResult] = await Promise.all([
+    supabase.from("customer_credit_balances").select("credit_note_id, ledger_balance, pending_reserved, available_balance").in("credit_note_id", ids),
+    supabase.from("credit_note_reversals").select("credit_note_id").in("credit_note_id", ids),
+    supabase.from("customer_credit_ledger").select("credit_note_id").in("credit_note_id", ids).eq("entry_type", "credit_note_origin"),
+  ]);
+  if (balancesResult.error) throw new Error(`credit_note_list balances: ${balancesResult.error.message}`);
+  if (reversalsResult.error) throw new Error(`credit_note_list reversals: ${reversalsResult.error.message}`);
+  if (ledgerExistsResult.error) throw new Error(`credit_note_list ledger existence: ${ledgerExistsResult.error.message}`);
+
+  const balanceMap = new Map(
+    ((balancesResult.data ?? []) as { credit_note_id: string; ledger_balance: number; pending_reserved: number; available_balance: number }[]).map(
+      (b) => [b.credit_note_id, b]
+    )
+  );
+  const reversedSet = new Set(((reversalsResult.data ?? []) as { credit_note_id: string }[]).map((r) => r.credit_note_id));
+  const initializedSet = new Set(((ledgerExistsResult.data ?? []) as { credit_note_id: string }[]).map((r) => r.credit_note_id));
+
+  return rows.map((row) => {
+    const balance = balanceMap.get(row.id);
+    const isInitialized = initializedSet.has(row.id);
+    return {
+      id: row.id,
+      returnId: row.return_id,
+      invoiceId: row.invoice_id,
+      invoiceNumber: row.invoices?.invoice_number ?? "-",
+      customerId: row.customer_id,
+      customerName: row.customers?.name ?? "-",
+      customerCreditAmount: row.customer_credit_amount,
+      isInitialized,
+      ledgerBalance: balance?.ledger_balance ?? 0,
+      pendingReserved: balance?.pending_reserved ?? 0,
+      availableBalance: balance?.available_balance ?? 0,
+      isReversed: reversedSet.has(row.id),
+      createdAt: row.created_at,
+    };
+  });
+}
+
+export interface RefundListItem {
+  id: string;
+  creditNoteId: string;
+  invoiceNumber: string;
+  customerName: string;
+  amount: number;
+  method: string;
+  status: string;
+  requestedAt: string;
+  decidedAt: string | null;
+}
+
+const REFUND_STATUS_PRIORITY: Record<string, number> = { requested: 0, approved: 1, rejected: 1 };
+
+export async function getRefundList(companyId: string, client?: SupabaseClient): Promise<RefundListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("refund_requests")
+    .select("id, credit_note_id, amount, method, status, requested_at, decided_at, credit_notes(invoices(invoice_number)), customers(name)")
+    .eq("company_id", companyId)
+    .order("requested_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`refund_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    credit_note_id: string;
+    amount: number;
+    method: string;
+    status: string;
+    requested_at: string;
+    decided_at: string | null;
+    credit_notes: { invoices: { invoice_number: string } | null } | null;
+    customers: { name: string } | null;
+  }>;
+
+  return rows
+    .map((row) => ({
+      id: row.id,
+      creditNoteId: row.credit_note_id,
+      invoiceNumber: row.credit_notes?.invoices?.invoice_number ?? "-",
+      customerName: row.customers?.name ?? "-",
+      amount: row.amount,
+      method: row.method,
+      status: row.status,
+      requestedAt: row.requested_at,
+      decidedAt: row.decided_at,
+    }))
+    .sort((a, b) => {
+      const pa = REFUND_STATUS_PRIORITY[a.status] ?? 2;
+      const pb = REFUND_STATUS_PRIORITY[b.status] ?? 2;
+      if (pa !== pb) return pa - pb;
+      return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+    });
+}
+
+export interface RefundDetail {
+  id: string;
+  status: string;
+  creditNoteId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  amount: number;
+  method: string;
+  proofReference: string;
+  transactionDate: string;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  creditNoteCustomerCreditAmount: number;
+  ledgerBalance: number;
+  pendingReserved: number;
+  availableBalance: number;
+  isReversed: boolean;
+}
+
+export async function getRefundDetail(companyId: string, refundId: string, client?: SupabaseClient): Promise<RefundDetail | null> {
+  const supabase = client ?? (await createClient());
+  const { data: refundRow, error: refundErr } = await supabase
+    .from("refund_requests")
+    .select(
+      "id, status, credit_note_id, customer_id, amount, method, proof_reference, transaction_date, requested_at, decided_at, requested_by, decided_by, credit_notes(invoice_id, customer_credit_amount, invoices(invoice_number)), customers(name)"
+    )
+    .eq("company_id", companyId)
+    .eq("id", refundId)
+    .maybeSingle();
+  if (refundErr) throw new Error(`refund_detail: ${refundErr.message}`);
+  if (!refundRow) return null;
+
+  const r = refundRow as unknown as {
+    id: string;
+    status: string;
+    credit_note_id: string;
+    customer_id: string;
+    amount: number;
+    method: string;
+    proof_reference: string;
+    transaction_date: string;
+    requested_at: string;
+    decided_at: string | null;
+    requested_by: string;
+    decided_by: string | null;
+    credit_notes: { invoice_id: string; customer_credit_amount: number; invoices: { invoice_number: string } | null } | null;
+    customers: { name: string } | null;
+  };
+
+  const [balanceResult, reversalResult, actorRows] = await Promise.all([
+    supabase
+      .from("customer_credit_balances")
+      .select("ledger_balance, pending_reserved, available_balance")
+      .eq("credit_note_id", r.credit_note_id)
+      .maybeSingle(),
+    supabase.from("credit_note_reversals").select("id").eq("credit_note_id", r.credit_note_id).maybeSingle(),
+    supabase
+      .from("users")
+      .select("id, full_name")
+      .in("id", [r.requested_by, r.decided_by].filter((v): v is string => Boolean(v))),
+  ]);
+  if (balanceResult.error) throw new Error(`refund_detail balance: ${balanceResult.error.message}`);
+  if (reversalResult.error) throw new Error(`refund_detail reversal: ${reversalResult.error.message}`);
+  if (actorRows.error) throw new Error(`refund_detail actors: ${actorRows.error.message}`);
+
+  const nameMap = new Map(((actorRows.data ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+  const balance = balanceResult.data as { ledger_balance: number; pending_reserved: number; available_balance: number } | null;
+
+  return {
+    id: r.id,
+    status: r.status,
+    creditNoteId: r.credit_note_id,
+    invoiceId: r.credit_notes?.invoice_id ?? "",
+    invoiceNumber: r.credit_notes?.invoices?.invoice_number ?? "-",
+    customerId: r.customer_id,
+    customerName: r.customers?.name ?? "-",
+    amount: r.amount,
+    method: r.method,
+    proofReference: r.proof_reference,
+    transactionDate: r.transaction_date,
+    requestedByName: nameMap.get(r.requested_by) ?? "-",
+    requestedAt: r.requested_at,
+    decidedByName: r.decided_by ? nameMap.get(r.decided_by) ?? "-" : null,
+    decidedAt: r.decided_at,
+    creditNoteCustomerCreditAmount: r.credit_notes?.customer_credit_amount ?? 0,
+    ledgerBalance: balance?.ledger_balance ?? 0,
+    pendingReserved: balance?.pending_reserved ?? 0,
+    availableBalance: balance?.available_balance ?? 0,
+    isReversed: Boolean(reversalResult.data),
+  };
+}

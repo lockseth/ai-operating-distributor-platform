@@ -293,3 +293,143 @@ export async function correctPaymentReconciliationAction(input: CorrectPaymentRe
   revalidateFinanceQueue();
   return (data as Array<{ out_reconciliation_id: string; out_classification: string; out_previous_reconciliation_id: string }>)[0];
 }
+
+// ---------------------------------------------------------------------------
+// Retur & Credit Note (Gate 2F RPC -- migration 20260831000001). Credit note
+// TIDAK PERNAH dibuat manual di sini -- verify_return_atomic adalah satu-
+// satunya jalur, dan hanya menerbitkannya sebagai side effect approve.
+// ---------------------------------------------------------------------------
+
+export interface RequestReturnItemInput {
+  invoiceLineId: string;
+  requestedQuantity: number;
+}
+
+export interface RequestReturnInput {
+  invoiceId: string;
+  items: RequestReturnItemInput[];
+  reasonCode: string;
+  proofReference: string;
+  idempotencyKey?: string;
+}
+
+export async function requestReturnAction(input: RequestReturnInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "return.request", "Tidak punya akses untuk mengajukan retur");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("request_return_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_invoice_id: input.invoiceId,
+    p_items: input.items.map((i) => ({ invoice_line_id: i.invoiceLineId, requested_quantity: i.requestedQuantity })),
+    p_reason_code: input.reasonCode,
+    p_proof_reference: input.proofReference,
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/returns");
+  revalidatePath(`/dashboard/finance/invoices/${input.invoiceId}`);
+  revalidateFinanceQueue();
+  return (data as Array<{ out_return_id: string; out_status: string; out_already_exists: boolean }>)[0];
+}
+
+export interface VerifyReturnInput {
+  returnId: string;
+  decision: "approve" | "reject";
+}
+
+export async function verifyReturnAction(input: VerifyReturnInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "return.verify", "Tidak punya akses untuk memverifikasi retur");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("verify_return_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_return_id: input.returnId,
+    p_decision: input.decision,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/returns");
+  revalidatePath(`/dashboard/finance/returns/${input.returnId}`);
+  revalidatePath("/dashboard/finance/credit");
+  revalidateFinanceQueue();
+  return (data as Array<{
+    out_return_id: string;
+    out_status: string;
+    out_credit_note_id: string | null;
+    out_total_amount: string | null;
+    out_applied_amount: string | null;
+    out_customer_credit_amount: string | null;
+  }>)[0];
+}
+
+// ---------------------------------------------------------------------------
+// Customer Credit & Refund (Gate 2H RPC -- migration 20260902000001). Refund
+// TIDAK PERNAH menyentuh receivable_ledger/invoice/order/delivery -- hanya
+// customer_credit_ledger + refund_requests (kontrak §5.6/§8).
+// ---------------------------------------------------------------------------
+
+export interface RequestRefundInput {
+  creditNoteId: string;
+  amount: number;
+  method: "cash" | "bank_transfer";
+  proofReference: string;
+  transactionDate: string;
+  idempotencyKey?: string;
+}
+
+export async function requestRefundAction(input: RequestRefundInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "refund.request", "Tidak punya akses untuk mengajukan refund");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("request_refund_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_credit_note_id: input.creditNoteId,
+    p_amount: input.amount,
+    p_method: input.method,
+    p_proof_reference: input.proofReference,
+    p_transaction_date: input.transactionDate,
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/credit");
+  revalidateFinanceQueue();
+  return (data as Array<{ out_refund_id: string; out_status: string; out_already_exists: boolean }>)[0];
+}
+
+export interface ApproveRefundInput {
+  refundId: string;
+  decision: "approve" | "reject";
+}
+
+export async function approveRefundAction(input: ApproveRefundInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "refund.approve", "Tidak punya akses untuk memutuskan refund");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("approve_refund_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_refund_id: input.refundId,
+    p_decision: input.decision,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/credit");
+  revalidatePath(`/dashboard/finance/credit/${input.refundId}`);
+  revalidateFinanceQueue();
+  return (data as Array<{
+    out_refund_id: string;
+    out_status: string;
+    out_ledger_entry_id: string | null;
+    out_amount: string | null;
+    out_already_exists: boolean;
+  }>)[0];
+}
