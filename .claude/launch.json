@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@flowsales/web", "dev"],
       "port": 3000
+    },
+    {
+      "name": "aodp-web-prod",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@flowsales/web", "start", "-p", "3099"],
+      "port": 3099
     }
   ]
 }

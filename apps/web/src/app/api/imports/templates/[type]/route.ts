@@ -3,8 +3,17 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
 import { IMPORT_TYPES, type ImportType } from "@/lib/imports/types";
 import { buildImportTemplateCSV, buildImportTemplateXlsx, importTemplateFilename } from "@/lib/imports/templates";
+import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-limit";
+
+// 60 request/menit per IP -- konsisten dengan endpoint lain (lihat webhooks/telegram, webhooks/n8n).
+const RATE_LIMIT = 60;
+const RATE_WINDOW_MS = 60_000;
 
 export async function GET(req: Request, { params }: { params: Promise<{ type: string }> }) {
+  const ip = getClientIp(req);
+  const rl = checkRateLimit(`imports-templates:${ip}`, RATE_LIMIT, RATE_WINDOW_MS);
+  if (!rl.success) return buildRateLimitResponse(rl.resetAt);
+
   const user = await getAuthUser();
   if (!hasPermission(user.permissions, "imports.view")) {
     return NextResponse.json({ error: "Tidak berwenang." }, { status: 403 });
