@@ -433,3 +433,71 @@ export async function approveRefundAction(input: ApproveRefundInput) {
     out_already_exists: boolean;
   }>)[0];
 }
+
+// ---------------------------------------------------------------------------
+// Order Cancellation & Invoice Void (Gate 2G RPC -- migration 20260901000001).
+// request_order_cancellation_atomic TIDAK PERNAH menyentuh sales_orders.status/
+// invoices/receivable_ledger -- efek finansial hanya lewat approve. Approve
+// permission order_cancellation.approve HANYA owner (migration §5) -- guard
+// di sini adalah defense kedua, force-enable DOM tetap ditolak sebelum RPC
+// (FIN-02-09).
+// ---------------------------------------------------------------------------
+
+export interface RequestOrderCancellationInput {
+  salesOrderId: string;
+  reasonCode: string;
+  idempotencyKey?: string;
+  /** Opsional -- hanya dipakai untuk revalidatePath saat panel dipanggil dari halaman detail invoice (kontrak §B.4); RPC tidak menerima/butuh invoiceId. */
+  invoiceId?: string;
+}
+
+export async function requestOrderCancellationAction(input: RequestOrderCancellationInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "order_cancellation.request", "Tidak punya akses untuk mengajukan pembatalan order");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("request_order_cancellation_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_sales_order_id: input.salesOrderId,
+    p_reason_code: input.reasonCode,
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/cancellations");
+  if (input.invoiceId) revalidatePath(`/dashboard/finance/invoices/${input.invoiceId}`);
+  revalidateFinanceQueue();
+  return (data as Array<{ out_cancellation_id: string; out_status: string; out_already_exists: boolean }>)[0];
+}
+
+export interface ApproveOrderCancellationInput {
+  cancellationId: string;
+  decision: "approve" | "reject";
+}
+
+export async function approveOrderCancellationAction(input: ApproveOrderCancellationInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "order_cancellation.approve", "Tidak punya akses untuk memutuskan pembatalan order");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("approve_order_cancellation_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_cancellation_id: input.cancellationId,
+    p_decision: input.decision,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/cancellations");
+  revalidatePath(`/dashboard/finance/cancellations/${input.cancellationId}`);
+  revalidatePath("/dashboard/finance/invoices");
+  revalidateFinanceQueue();
+  return (data as Array<{
+    out_cancellation_id: string;
+    out_status: string;
+    out_order_status: string | null;
+    out_invoice_void_id: string | null;
+    out_voided_amount: string | null;
+  }>)[0];
+}

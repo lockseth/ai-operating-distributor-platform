@@ -8,10 +8,10 @@
 //
 // Ringkasan (2I.1) + Invoice & Piutang/Collection & Janji Bayar/Pembayaran &
 // Verifikasi/Exception Rekonsiliasi (2I.2) + Retur & Credit Note/Customer
-// Credit & Refund (2I.3) punya destination nyata. Cancellation & Invoice
-// Void/Riwayat Audit (2I.4) tetap SENGAJA dirender non-aktif (bukan Link ke
-// route yang belum ada) sesuai instruksi gate: jangan membuat tautan berakhir
-// 404, jangan membuat halaman placeholder massal hanya untuk memenuhi link.
+// Credit & Refund (2I.3) + Cancellation & Invoice Void/Riwayat Audit (2I.4)
+// punya destination nyata. Riwayat Audit Owner-only (RLS audit_logs_select,
+// 20260819000001) -- non-owner melihat tab non-aktif dengan disabledReason
+// eksplisit, BUKAN 404/tautan disembunyikan (kontrak Gate 2I.4 §B.1/§H).
 // =============================================================================
 
 import type { ReactNode } from "react";
@@ -22,17 +22,21 @@ import { hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
 import { TableSkeleton } from "@/components/ui/loading-state";
 import { FinanceTabNav, type FinanceSection } from "@/components/finance/finance-tab-nav";
 
-const FINANCE_SECTIONS: FinanceSection[] = [
-  { label: "Ringkasan / Perlu Tindakan", href: "/dashboard/finance" },
-  { label: "Invoice & Piutang", href: "/dashboard/finance/invoices" },
-  { label: "Collection & Janji Bayar", href: "/dashboard/finance/collection" },
-  { label: "Pembayaran & Verifikasi", href: "/dashboard/finance/payments" },
-  { label: "Exception Rekonsiliasi", href: "/dashboard/finance/reconciliation" },
-  { label: "Retur & Credit Note", href: "/dashboard/finance/returns" },
-  { label: "Customer Credit & Refund", href: "/dashboard/finance/credit" },
-  { label: "Cancellation & Invoice Void" },
-  { label: "Riwayat Audit" },
-];
+function buildFinanceSections(roles: string[]): FinanceSection[] {
+  return [
+    { label: "Ringkasan / Perlu Tindakan", href: "/dashboard/finance" },
+    { label: "Invoice & Piutang", href: "/dashboard/finance/invoices" },
+    { label: "Collection & Janji Bayar", href: "/dashboard/finance/collection" },
+    { label: "Pembayaran & Verifikasi", href: "/dashboard/finance/payments" },
+    { label: "Exception Rekonsiliasi", href: "/dashboard/finance/reconciliation" },
+    { label: "Retur & Credit Note", href: "/dashboard/finance/returns" },
+    { label: "Customer Credit & Refund", href: "/dashboard/finance/credit" },
+    { label: "Cancellation & Invoice Void", href: "/dashboard/finance/cancellations" },
+    roles.includes("owner")
+      ? { label: "Riwayat Audit", href: "/dashboard/finance/audit" }
+      : { label: "Riwayat Audit", disabledReason: "Hanya Owner yang dapat membuka Riwayat Audit" },
+  ];
+}
 
 export default async function FinanceWorkspaceLayout({ children }: { children: ReactNode }) {
   const user = await getAuthUser();
@@ -45,7 +49,7 @@ export default async function FinanceWorkspaceLayout({ children }: { children: R
     <div className="flex h-full flex-col">
       <div className="border-b border-gray-200 bg-white px-4 sm:px-6">
         <h1 className="pt-4 text-lg font-semibold text-gray-900">Finance Operations</h1>
-        <FinanceTabNav sections={FINANCE_SECTIONS} />
+        <FinanceTabNav sections={buildFinanceSections(user.roles)} />
       </div>
       {/* Suspense di sini (bukan loading.tsx terpisah) supaya boundary ini
           otomatis dipakai ulang oleh seluruh sub-route workspace masa depan

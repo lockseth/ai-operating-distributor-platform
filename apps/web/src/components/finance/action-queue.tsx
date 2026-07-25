@@ -14,8 +14,22 @@
 // Gate 2I.3 -- return_pending/refund_pending SEKARANG punya destination nyata
 // (/dashboard/finance/returns/[id], /dashboard/finance/credit/[id]) sehingga
 // "Lihat" untuk dua kategori ini diganti tautan aktif (deriveDetailHref).
-// cancellation_pending/invoice_void_notice TETAP disabled -- destination-nya
-// (Gate 2I.4) belum ada, jangan menghasilkan link 404 (instruksi gate §8).
+//
+// Gate 2I.4 -- cancellation_pending dan invoice_void_notice SUBTIPE "void"
+// diarahkan ke /dashboard/finance/cancellations/[id] (master §3 tabel item 8,
+// relasi invoice_voids -> order_cancellations, Gate 2G).
+//
+// Gate 2I.4C -- invoice_void_notice SUBTIPE "reversal" (credit_note_reversals,
+// domain Gate 2F) SEKARANG diarahkan ke /dashboard/finance/returns/[return_id]
+// -- route canonical asli, BUKAN cancellations/[id] (entity tidak cocok,
+// credit_note_reversals TIDAK punya relasi ke order_cancellations). Relasi:
+// credit_note_reversals.credit_note_id -> credit_notes.return_id -> returns.id
+// (kedua FK NOT NULL UNIQUE, migration 20260831000001 -- canonical, bukan
+// karangan). Item id sudah membawa return_id langsung dari read model
+// (fetchInvoiceVoidNotices, queries.ts) -- prefix "reversal-unlinked:" (BUKAN
+// "reversal:") dipakai bila return_id gagal di-resolve, sengaja TIDAK match
+// prefix di bawah sehingga tetap disabled dengan alasan eksplisit (ketentuan
+// gate: reversal hanya aktif bila return_id valid).
 // =============================================================================
 
 import Link from "next/link";
@@ -63,6 +77,9 @@ function DetailLink({ href }: { href: string }) {
 
 const RETURN_PENDING_PREFIX = "return_pending:";
 const REFUND_PENDING_PREFIX = "refund_pending:";
+const CANCELLATION_PENDING_PREFIX = "cancellation_pending:";
+const INVOICE_VOID_NOTICE_VOID_PREFIX = "invoice_void_notice:void:";
+const INVOICE_VOID_NOTICE_REVERSAL_PREFIX = "invoice_void_notice:reversal:";
 
 function deriveDetailHref(item: FinanceActionQueueItem): string | null {
   if (item.category === "return_pending") {
@@ -70,6 +87,15 @@ function deriveDetailHref(item: FinanceActionQueueItem): string | null {
   }
   if (item.category === "refund_pending") {
     return `/dashboard/finance/credit/${item.id.slice(REFUND_PENDING_PREFIX.length)}`;
+  }
+  if (item.category === "cancellation_pending") {
+    return `/dashboard/finance/cancellations/${item.id.slice(CANCELLATION_PENDING_PREFIX.length)}`;
+  }
+  if (item.category === "invoice_void_notice" && item.id.startsWith(INVOICE_VOID_NOTICE_VOID_PREFIX)) {
+    return `/dashboard/finance/cancellations/${item.id.slice(INVOICE_VOID_NOTICE_VOID_PREFIX.length)}`;
+  }
+  if (item.category === "invoice_void_notice" && item.id.startsWith(INVOICE_VOID_NOTICE_REVERSAL_PREFIX)) {
+    return `/dashboard/finance/returns/${item.id.slice(INVOICE_VOID_NOTICE_REVERSAL_PREFIX.length)}`;
   }
   return null;
 }

@@ -13,6 +13,8 @@ import Link from "next/link";
 export interface FinanceSection {
   label: string;
   href?: string;
+  /** Alasan spesifik kenapa tab ini non-aktif (mis. "Hanya Owner..."), menggantikan tooltip generik "tahap implementasi berikutnya" bila diisi (Gate 2I.4 kontrak §B.1). */
+  disabledReason?: string;
 }
 
 export function FinanceTabNav({ sections }: { sections: FinanceSection[] }) {
@@ -22,11 +24,12 @@ export function FinanceTabNav({ sections }: { sections: FinanceSection[] }) {
     <nav aria-label="Navigasi Finance Operations" className="mt-3 -mb-px flex gap-1 overflow-x-auto">
       {sections.map((section) => {
         if (!section.href) {
+          const reason = section.disabledReason ?? "Tersedia pada tahap implementasi berikutnya";
           return (
             <span
               key={section.label}
               aria-disabled="true"
-              title="Tersedia pada tahap implementasi berikutnya"
+              title={reason}
               className="whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm font-medium text-gray-300"
             >
               {section.label}

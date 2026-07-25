@@ -9,19 +9,31 @@
 // atas dipakai langsung oleh RequestReturnPanel, tanpa query invoice-picker
 // terpisah. Ini murni PENAMBAHAN -- struktur/behavior existing di atas tidak
 // diubah.
+//
+// Gate 2I.4 -- section "Pembatalan Order" ditambahkan (kontrak §B.4):
+// RequestCancellationPanel terikat invoice.salesOrderId yang sudah dimuat di
+// atas (BUKAN picker banyak order), plus link ke cancellation terkait bila
+// ada (kontrak CXL-11/CXL-12).
 // =============================================================================
 
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
-import { getInvoiceDetail, getReturnsForInvoice, hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
+import {
+  getCancellationForOrder,
+  getInvoiceDetail,
+  getOrderCancellationEligibility,
+  getReturnsForInvoice,
+  hasFinanceWorkspaceAccess,
+} from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeader } from "@/components/ui/section-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { AlertCard } from "@/components/layout/dashboard-shell";
 import { RequestReturnPanel } from "@/components/finance/return-panels";
+import { RequestCancellationPanel } from "@/components/finance/cancellation-panels";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import { formatJakartaDateTime } from "@/lib/audit-log/format";
 import type { InvoiceDetailLine, InvoiceLedgerEntry, ReturnListItem } from "@/lib/finance/queries";
@@ -99,6 +111,19 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     returnsLoadError = true;
   }
   const canRequestReturn = hasPermission(user.permissions, "return.request");
+
+  let relatedCancellation: Awaited<ReturnType<typeof getCancellationForOrder>> = null;
+  let eligibleBlockedReason: string | null = null;
+  let cancellationLoadError = false;
+  try {
+    [relatedCancellation, { blockedReason: eligibleBlockedReason }] = await Promise.all([
+      getCancellationForOrder(user.company_id, invoice.salesOrderId),
+      getOrderCancellationEligibility(user.company_id, invoice.salesOrderId),
+    ]);
+  } catch {
+    cancellationLoadError = true;
+  }
+  const canRequestCancellation = hasPermission(user.permissions, "order_cancellation.request");
 
   return (
     <div className="space-y-5">
@@ -202,6 +227,33 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
               </li>
             ))}
           </ul>
+        )}
+      </div>
+
+      <div>
+        <SectionHeader title="Pembatalan Order" description="Mengajukan pembatalan akan menunggu keputusan Owner. Order dan invoice tidak berubah sampai disetujui." />
+        <div className="mb-3">
+          <RequestCancellationPanel
+            salesOrderId={invoice.salesOrderId}
+            invoiceId={invoice.id}
+            canRequest={canRequestCancellation}
+            eligibleBlockedReason={eligibleBlockedReason}
+          />
+        </div>
+        {cancellationLoadError ? (
+          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-xs text-red-600">
+            Gagal memuat data pembatalan untuk order ini.
+          </div>
+        ) : relatedCancellation ? (
+          <Link
+            href={`/dashboard/finance/cancellations/${relatedCancellation.id}`}
+            className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-3.5"
+          >
+            <span className="text-xs font-semibold text-blue-600 hover:underline">Lihat pengajuan pembatalan order ini</span>
+            <StatusBadge status={relatedCancellation.status} domain="cancellation" />
+          </Link>
+        ) : (
+          <p className="text-xs text-gray-400">Belum ada pengajuan pembatalan untuk order ini.</p>
         )}
       </div>
     </div>

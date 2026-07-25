@@ -7,6 +7,11 @@
 // konfirmasi generic (ConfirmDialog) dipakai untuk semua aksi yang mengubah
 // status -- idempotency key di-generate SEKALI saat dialog dibuka (state
 // komponen ini), bukan di-generate ulang tiap klik submit (kontrak §5).
+//
+// Gate 2I.4 -- responsive hardening (kontrak §I/FIN-13-01/02): kedua DataTable
+// (janji bayar, aktivitas) dibungkus hidden md:block + card-list mobile
+// ditambahkan, aksi (Koreksi/Batalkan/Tandai Wanprestasi) tetap tersedia di
+// card lewat handler yang sama dengan kolom desktop.
 // =============================================================================
 
 import { useState, useTransition } from "react";
@@ -328,13 +333,74 @@ export function CollectionPanel({ promises, activities, outstandingInvoices, can
             </button>
           )}
         </SectionHeader>
-        <div className="rounded-xl border border-gray-200 bg-white">
-          {promises.length === 0 ? (
+        {promises.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white">
             <EmptyState title="Belum ada janji bayar" description="Janji bayar akan muncul di sini setelah dibuat." />
-          ) : (
-            <DataTable<PromiseListItem> columns={promiseColumns} data={promises} keyExtractor={(row) => row.id} />
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden rounded-xl border border-gray-200 bg-white md:block">
+              <DataTable<PromiseListItem> columns={promiseColumns} data={promises} keyExtractor={(row) => row.id} />
+            </div>
+            <ul className="space-y-2 md:hidden">
+              {promises.map((row) => {
+                const isDue = new Date(row.promisedDate) <= new Date();
+                return (
+                  <li key={row.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-xs font-semibold text-gray-900">{row.invoiceNumber}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">{row.customerName}</p>
+                      </div>
+                      <StatusBadge status={row.status} domain="promise" />
+                    </div>
+                    <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                      <div>
+                        <dt className="text-gray-400">Nominal</dt>
+                        <dd className="font-semibold text-gray-900">{formatRupiah(row.promisedAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-gray-400">Tgl. Janji</dt>
+                        <dd className="text-gray-700">{formatJakartaDateTime(row.promisedDate)}</dd>
+                      </div>
+                    </dl>
+                    {row.status === "open" && (
+                      <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-gray-100 pt-3">
+                        {!canPromise ? (
+                          <span title="Bukan kewenangan Anda" className="text-xs text-gray-300">
+                            Tidak tersedia
+                          </span>
+                        ) : (
+                          <>
+                            {isDue && (
+                              <button
+                                type="button"
+                                onClick={() => openDialog({ type: "broken", promise: row })}
+                                className="text-xs font-medium text-red-600 hover:underline"
+                              >
+                                Tandai Wanprestasi
+                              </button>
+                            )}
+                            <button type="button" onClick={() => openCorrect(row)} className="text-xs font-medium text-blue-600 hover:underline">
+                              Koreksi
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openDialog({ type: "cancel", promise: row })}
+                              className="text-xs font-medium text-gray-500 hover:underline"
+                            >
+                              Batalkan
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
       </div>
 
       <div>
@@ -350,13 +416,48 @@ export function CollectionPanel({ promises, activities, outstandingInvoices, can
             </button>
           )}
         </SectionHeader>
-        <div className="rounded-xl border border-gray-200 bg-white">
-          {activities.length === 0 ? (
+        {activities.length === 0 ? (
+          <div className="rounded-xl border border-gray-200 bg-white">
             <EmptyState title="Belum ada aktivitas collection" />
-          ) : (
-            <DataTable<CollectionActivityListItem> columns={activityColumns} data={activities} keyExtractor={(row) => row.id} compact />
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="hidden rounded-xl border border-gray-200 bg-white md:block">
+              <DataTable<CollectionActivityListItem> columns={activityColumns} data={activities} keyExtractor={(row) => row.id} compact />
+            </div>
+            <ul className="space-y-2 md:hidden">
+              {activities.map((row) => (
+                <li key={row.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-semibold text-gray-900">{row.invoiceNumber}</p>
+                      <p className="mt-0.5 text-xs text-gray-500">{row.customerName}</p>
+                    </div>
+                    <span className="text-xs text-gray-500">{CHANNEL_LABEL_MAP[row.channel] ?? row.channel}</span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                    <div>
+                      <dt className="text-gray-400">Waktu</dt>
+                      <dd className="text-gray-700">{formatJakartaDateTime(row.occurredAt)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-400">Hasil</dt>
+                      <dd className="text-gray-700">
+                        {row.activityType === "attempt" ? "Percobaan hubungi" : OUTCOME_LABEL_MAP[row.outcome ?? ""] ?? row.outcome}
+                      </dd>
+                    </div>
+                    {row.reportedAmount != null && (
+                      <div className="col-span-2">
+                        <dt className="text-gray-400">Nominal Klaim</dt>
+                        <dd className="font-semibold text-gray-900">{formatRupiah(row.reportedAmount)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </div>
 
       <ConfirmDialog

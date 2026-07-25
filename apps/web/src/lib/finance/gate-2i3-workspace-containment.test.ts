@@ -156,8 +156,9 @@ describe("§8 UI/containment: route Gate 2I.3 tersedia, action queue memakai lin
     const layoutSrc = readSrc("../../app/(dashboard)/dashboard/finance/layout.tsx");
     expect(layoutSrc).toContain('{ label: "Retur & Credit Note", href: "/dashboard/finance/returns" }');
     expect(layoutSrc).toContain('{ label: "Customer Credit & Refund", href: "/dashboard/finance/credit" }');
-    // Cancellation & Invoice Void TETAP non-aktif (2I.4, bukan scope gate ini).
-    expect(layoutSrc).toContain('{ label: "Cancellation & Invoice Void" }');
+    // Cancellation & Invoice Void diaktifkan Gate 2I.4 -- lihat
+    // gate-2i4-workspace-containment.test.ts untuk assertion lengkap.
+    expect(layoutSrc).toContain('href: "/dashboard/finance/cancellations"');
   });
 
   it("action-queue.tsx mengarahkan return_pending/refund_pending ke route nyata (deriveDetailHref), TIDAK mengubah cancellation_pending/invoice_void_notice (masih disabled -- 2I.4)", () => {

@@ -226,7 +226,7 @@ interface ReversalRow {
   id: string;
   reversed_amount: number;
   created_at: string;
-  credit_notes: { invoices: { invoice_number: string } | null; customers: { name: string } | null } | null;
+  credit_notes: { return_id: string; invoices: { invoice_number: string } | null; customers: { name: string } | null } | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -510,7 +510,7 @@ async function fetchInvoiceVoidNotices(
       .limit(QUEUE_LIMIT_PER_CATEGORY),
     supabase
       .from("credit_note_reversals")
-      .select("id, reversed_amount, created_at, credit_notes(invoices(invoice_number), customers(name))")
+      .select("id, reversed_amount, created_at, credit_notes(return_id, invoices(invoice_number), customers(name))")
       .eq("company_id", companyId)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
@@ -535,20 +535,29 @@ async function fetchInvoiceVoidNotices(
     roleNote: FINANCE_ACTION_CATEGORY_META.invoice_void_notice.roleNote,
   }));
 
-  const reversalItems = ((reversalsResult.data ?? []) as unknown as ReversalRow[]).map((row) => ({
-    id: `invoice_void_notice:reversal:${row.id}`,
-    category: "invoice_void_notice" as const,
-    categoryLabel: FINANCE_ACTION_CATEGORY_META.invoice_void_notice.label,
-    entityLabel: row.credit_notes?.customers?.name ?? "-",
-    referenceNumber: row.credit_notes?.invoices?.invoice_number ?? "-",
-    amount: row.reversed_amount,
-    statusCode: "reversed",
-    statusDomain: "invoice_void" as const,
-    eventDate: row.created_at,
-    ageDays: computeAgeDays(row.created_at, now),
-    ownerOnly: false,
-    roleNote: FINANCE_ACTION_CATEGORY_META.invoice_void_notice.roleNote,
-  }));
+  const reversalItems = ((reversalsResult.data ?? []) as unknown as ReversalRow[]).map((row) => {
+    // credit_notes.return_id NOT NULL UNIQUE (migration 20260831000001) -- relasi
+    // canonical credit_note_reversals -> credit_notes -> returns dijamin struktural.
+    // Tetap dicek defensif (Gate 2I.4C ketentuan 6): bila embed gagal/kosong, id
+    // memakai penanda "reversal-unlinked" (BUKAN prefix "reversal:") supaya
+    // deriveDetailHref (action-queue.tsx) tidak pernah menghasilkan link ke
+    // return_id kosong/tak valid -- tetap disabled dengan alasan eksplisit.
+    const returnId = row.credit_notes?.return_id;
+    return {
+      id: returnId ? `invoice_void_notice:reversal:${returnId}` : `invoice_void_notice:reversal-unlinked:${row.id}`,
+      category: "invoice_void_notice" as const,
+      categoryLabel: FINANCE_ACTION_CATEGORY_META.invoice_void_notice.label,
+      entityLabel: row.credit_notes?.customers?.name ?? "-",
+      referenceNumber: row.credit_notes?.invoices?.invoice_number ?? "-",
+      amount: row.reversed_amount,
+      statusCode: "reversed",
+      statusDomain: "invoice_void" as const,
+      eventDate: row.created_at,
+      ageDays: computeAgeDays(row.created_at, now),
+      ownerOnly: false,
+      roleNote: FINANCE_ACTION_CATEGORY_META.invoice_void_notice.roleNote,
+    };
+  });
 
   return [...voidItems, ...reversalItems];
 }
@@ -1891,4 +1900,529 @@ export async function getRefundDetail(companyId: string, refundId: string, clien
     availableBalance: balance?.available_balance ?? 0,
     isReversed: Boolean(reversalResult.data),
   };
+}
+
+// =============================================================================
+// Gate 2I.4 -- Cancellation & Invoice Void (kontrak §B.2/§B.3/§C/§E). RPC
+// canonical: request_order_cancellation_atomic, approve_order_cancellation_atomic
+// (migration 20260901000001). Preview dampak (§E) READ-ONLY, formula IDENTIK
+// precondition RPC (migration §7 bagian D), BUKAN authority -- RPC selalu
+// memvalidasi ulang di dalam row lock saat approve. Angka final pasca-approve
+// (invoice_voids/receivable_ledger) SELALU dibaca canonical, tidak pernah
+// dihitung ulang di client.
+// =============================================================================
+
+const CANCELLATION_LIST_STATUS_PRIORITY: Record<string, number> = { requested: 0, approved: 1, rejected: 1 };
+
+export interface CancellationListItem {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  status: string;
+  reasonCode: string;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+}
+
+interface CancellationRowRaw {
+  id: string;
+  sales_order_id: string;
+  status: string;
+  reason_code: string;
+  requested_by: string;
+  requested_at: string;
+  decided_by: string | null;
+  decided_at: string | null;
+  sales_orders: { order_number: string; customers: { name: string } | null } | null;
+}
+
+async function mapCancellationRows(supabase: SupabaseClient, rows: CancellationRowRaw[]): Promise<CancellationListItem[]> {
+  if (rows.length === 0) return [];
+  const actorIds = [...new Set(rows.flatMap((r) => [r.requested_by, r.decided_by]).filter((v): v is string => Boolean(v)))];
+  const { data: actorRows, error } = await supabase.from("users").select("id, full_name").in("id", actorIds);
+  if (error) throw new Error(`cancellation_list actors: ${error.message}`);
+  const nameMap = new Map(((actorRows ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+  return rows.map((row) => ({
+    id: row.id,
+    orderId: row.sales_order_id,
+    orderNumber: row.sales_orders?.order_number ?? "-",
+    customerName: row.sales_orders?.customers?.name ?? "-",
+    status: row.status,
+    reasonCode: row.reason_code,
+    requestedByName: nameMap.get(row.requested_by) ?? "-",
+    requestedAt: row.requested_at,
+    decidedByName: row.decided_by ? nameMap.get(row.decided_by) ?? "-" : null,
+    decidedAt: row.decided_at,
+  }));
+}
+
+const CANCELLATION_ROW_SELECT =
+  "id, sales_order_id, status, reason_code, requested_by, requested_at, decided_by, decided_at, sales_orders(order_number, customers(name))";
+
+/** Daftar seluruh cancellation (semua status) -- BUKAN action queue yang membatasi ke status='requested' (kontrak §B.2). */
+export async function getCancellationList(companyId: string, client?: SupabaseClient): Promise<CancellationListItem[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("order_cancellations")
+    .select(CANCELLATION_ROW_SELECT)
+    .eq("company_id", companyId)
+    .order("requested_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(`cancellation_list: ${error.message}`);
+
+  const items = await mapCancellationRows(supabase, (data ?? []) as unknown as CancellationRowRaw[]);
+  return items.sort((a, b) => {
+    const pa = CANCELLATION_LIST_STATUS_PRIORITY[a.status] ?? 2;
+    const pb = CANCELLATION_LIST_STATUS_PRIORITY[b.status] ?? 2;
+    if (pa !== pb) return pa - pb;
+    return new Date(b.requestedAt).getTime() - new Date(a.requestedAt).getTime();
+  });
+}
+
+export interface OrderCancellationEligibility {
+  eligible: boolean;
+  orderStatus: string;
+  /** Alasan UX saja -- RPC (request_order_cancellation_atomic) tetap authority final. */
+  blockedReason: string | null;
+}
+
+/** Eligibility UX-only untuk SATU order (dipakai RequestCancellationPanel di halaman detail invoice, kontrak §B.4/§C) -- bukan picker banyak order karena panel selalu terikat invoice/order yang sedang dibuka. */
+export async function getOrderCancellationEligibility(
+  companyId: string,
+  salesOrderId: string,
+  client?: SupabaseClient
+): Promise<OrderCancellationEligibility> {
+  const supabase = client ?? (await createClient());
+
+  const { data: orderRow, error: orderErr } = await supabase
+    .from("sales_orders")
+    .select("status")
+    .eq("company_id", companyId)
+    .eq("id", salesOrderId)
+    .maybeSingle();
+  if (orderErr) throw new Error(`order_cancellation_eligibility order: ${orderErr.message}`);
+  const orderStatus = (orderRow as { status: string } | null)?.status ?? "unknown";
+
+  if (orderStatus === "cancelled") {
+    return { eligible: false, orderStatus, blockedReason: "Order ini sudah berstatus dibatalkan." };
+  }
+
+  const { count, error: cxlErr } = await supabase
+    .from("order_cancellations")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", companyId)
+    .eq("sales_order_id", salesOrderId)
+    .eq("status", "requested");
+  if (cxlErr) throw new Error(`order_cancellation_eligibility active: ${cxlErr.message}`);
+
+  if ((count ?? 0) > 0) {
+    return { eligible: false, orderStatus, blockedReason: "Order ini sudah memiliki pengajuan pembatalan yang belum diputuskan." };
+  }
+
+  return { eligible: true, orderStatus, blockedReason: null };
+}
+
+/** Cabang preview dampak (kontrak §E tabel) -- formula IDENTIK precondition approve_order_cancellation_atomic (migration §7 bagian D), pure function supaya diuji tanpa DB. */
+export type CancellationPreviewBranch =
+  | "eligible_no_invoice"
+  | "delivery_reversal_required"
+  | "eligible_full_void"
+  | "settlement_exists"
+  | "invoice_record_missing"
+  | "multiple_invoices_unsupported"
+  | "invalid_order_status";
+
+export function computeCancellationPreviewBranch(input: {
+  orderStatus: string;
+  invoiceCount: number;
+  hasPaymentAllocation: boolean;
+  hasCreditNote: boolean;
+  outstandingBalance: number;
+  totalAmount: number;
+}): CancellationPreviewBranch {
+  if (["draft", "confirmed", "processing", "delivering"].includes(input.orderStatus)) {
+    return "eligible_no_invoice";
+  }
+  if (input.orderStatus === "delivered") {
+    return "delivery_reversal_required";
+  }
+  if (input.orderStatus === "invoiced" || input.orderStatus === "paid") {
+    if (input.invoiceCount === 0) return "invoice_record_missing";
+    if (input.invoiceCount > 1) return "multiple_invoices_unsupported";
+    if (input.hasPaymentAllocation || input.hasCreditNote || input.outstandingBalance !== input.totalAmount) {
+      return "settlement_exists";
+    }
+    return "eligible_full_void";
+  }
+  return "invalid_order_status";
+}
+
+export interface CancellationInvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  financialStatus: string;
+  totalAmount: number;
+  outstandingBalance: number;
+  hasPaymentAllocation: boolean;
+  hasCreditNote: boolean;
+}
+
+export interface CancellationInvoiceVoidSummary {
+  id: string;
+  voidedAmount: number;
+  receivableLedgerId: string;
+  approvedByName: string;
+  createdAt: string;
+}
+
+export interface CancellationDetail {
+  id: string;
+  status: string;
+  reasonCode: string;
+  requestedByName: string;
+  requestedAt: string;
+  decidedByName: string | null;
+  decidedAt: string | null;
+  orderId: string;
+  orderNumber: string;
+  orderStatus: string;
+  customerName: string;
+  invoice: CancellationInvoiceSummary | null;
+  previewBranch: CancellationPreviewBranch;
+  invoiceVoid: CancellationInvoiceVoidSummary | null;
+}
+
+function fetchCancellationRow(supabase: SupabaseClient, companyId: string, cancellationId: string) {
+  return supabase
+    .from("order_cancellations")
+    .select(
+      "id, status, reason_code, requested_by, requested_at, decided_by, decided_at, sales_order_id, sales_orders(order_number, status, customers(name))"
+    )
+    .eq("company_id", companyId)
+    .eq("id", cancellationId)
+    .maybeSingle();
+}
+
+/**
+ * Cross-tenant: cancellation milik company lain -> null (RLS + .eq("company_id", companyId), pola identik getReturnDetail) -> notFound() di page.
+ *
+ * idParam menerima DUA bentuk id: order_cancellations.id (jalur normal, list/detail)
+ * ATAU invoice_voids.id (deep link action-queue "invoice_void_notice" subtipe void,
+ * master §3 tabel item 8 -- item queue itu memakai invoice_voids.id sebagai id, BUKAN
+ * order_cancellation_id, karena fetchInvoiceVoidNotices adalah fungsi existing Gate
+ * 2I.1 yang tidak diubah gate ini, kontrak §"Rencana File" larangan refactor). Fallback
+ * ini me-resolve invoice_voids.id -> order_cancellation_id (UNIQUE 1:1) di sini supaya
+ * deep link tetap valid tanpa menyentuh fetcher existing.
+ */
+export async function getCancellationDetail(
+  companyId: string,
+  idParam: string,
+  client?: SupabaseClient
+): Promise<CancellationDetail | null> {
+  const supabase = client ?? (await createClient());
+
+  const firstAttempt = await fetchCancellationRow(supabase, companyId, idParam);
+  if (firstAttempt.error) throw new Error(`cancellation_detail: ${firstAttempt.error.message}`);
+  let cxlRow = firstAttempt.data;
+
+  if (!cxlRow) {
+    const { data: voidRow, error: voidErr } = await supabase
+      .from("invoice_voids")
+      .select("order_cancellation_id")
+      .eq("company_id", companyId)
+      .eq("id", idParam)
+      .maybeSingle();
+    if (voidErr) throw new Error(`cancellation_detail invoice_void fallback: ${voidErr.message}`);
+    if (!voidRow) return null;
+
+    const resolved = await fetchCancellationRow(
+      supabase,
+      companyId,
+      (voidRow as { order_cancellation_id: string }).order_cancellation_id
+    );
+    if (resolved.error) throw new Error(`cancellation_detail: ${resolved.error.message}`);
+    if (!resolved.data) return null;
+    cxlRow = resolved.data;
+  }
+
+  const cxl = cxlRow as unknown as {
+    id: string;
+    status: string;
+    reason_code: string;
+    requested_by: string;
+    requested_at: string;
+    decided_by: string | null;
+    decided_at: string | null;
+    sales_order_id: string;
+    sales_orders: { order_number: string; status: string; customers: { name: string } | null } | null;
+  };
+
+  const orderStatus = cxl.sales_orders?.status ?? "unknown";
+
+  const [invoiceRowsResult, invoiceVoidResult, actorRowsResult] = await Promise.all([
+    supabase
+      .from("invoices")
+      .select("id, invoice_number, total_amount")
+      .eq("company_id", companyId)
+      .eq("sales_order_id", cxl.sales_order_id),
+    supabase
+      .from("invoice_voids")
+      .select("id, voided_amount, receivable_ledger_id, approved_by, created_at")
+      .eq("company_id", companyId)
+      .eq("order_cancellation_id", cxl.id)
+      .maybeSingle(),
+    supabase
+      .from("users")
+      .select("id, full_name")
+      .in("id", [cxl.requested_by, cxl.decided_by].filter((v): v is string => Boolean(v))),
+  ]);
+  if (invoiceRowsResult.error) throw new Error(`cancellation_detail invoices: ${invoiceRowsResult.error.message}`);
+  if (invoiceVoidResult.error) throw new Error(`cancellation_detail invoice_void: ${invoiceVoidResult.error.message}`);
+  if (actorRowsResult.error) throw new Error(`cancellation_detail actors: ${actorRowsResult.error.message}`);
+
+  const invoiceRows = (invoiceRowsResult.data ?? []) as unknown as Array<{ id: string; invoice_number: string; total_amount: number }>;
+  const nameMap = new Map(((actorRowsResult.data ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+
+  let invoice: CancellationInvoiceSummary | null = null;
+  let hasPaymentAllocation = false;
+  let hasCreditNote = false;
+  let outstandingBalance = 0;
+  let totalAmount = 0;
+
+  if (invoiceRows.length === 1 && (orderStatus === "invoiced" || orderStatus === "paid")) {
+    const inv = invoiceRows[0];
+    const [balanceResult, paymentResult, creditNoteResult] = await Promise.all([
+      supabase
+        .from("invoice_receivable_balances")
+        .select("outstanding_balance, financial_status")
+        .eq("invoice_id", inv.id)
+        .maybeSingle(),
+      supabase
+        .from("receivable_ledger")
+        .select("id", { count: "exact", head: true })
+        .eq("invoice_id", inv.id)
+        .eq("entry_type", "payment_allocation"),
+      supabase.from("credit_notes").select("id", { count: "exact", head: true }).eq("invoice_id", inv.id),
+    ]);
+    if (balanceResult.error) throw new Error(`cancellation_detail balance: ${balanceResult.error.message}`);
+    if (paymentResult.error) throw new Error(`cancellation_detail payment: ${paymentResult.error.message}`);
+    if (creditNoteResult.error) throw new Error(`cancellation_detail credit_note: ${creditNoteResult.error.message}`);
+
+    const balance = balanceResult.data as { outstanding_balance: number; financial_status: string } | null;
+    outstandingBalance = balance?.outstanding_balance ?? 0;
+    totalAmount = inv.total_amount;
+    hasPaymentAllocation = (paymentResult.count ?? 0) > 0;
+    hasCreditNote = (creditNoteResult.count ?? 0) > 0;
+
+    invoice = {
+      id: inv.id,
+      invoiceNumber: inv.invoice_number,
+      financialStatus: balance?.financial_status ?? "outstanding",
+      totalAmount,
+      outstandingBalance,
+      hasPaymentAllocation,
+      hasCreditNote,
+    };
+  }
+
+  const previewBranch = computeCancellationPreviewBranch({
+    orderStatus,
+    invoiceCount: invoiceRows.length,
+    hasPaymentAllocation,
+    hasCreditNote,
+    outstandingBalance,
+    totalAmount,
+  });
+
+  const voidRow = invoiceVoidResult.data as {
+    id: string;
+    voided_amount: number;
+    receivable_ledger_id: string;
+    approved_by: string;
+    created_at: string;
+  } | null;
+
+  let invoiceVoid: CancellationInvoiceVoidSummary | null = null;
+  if (voidRow) {
+    const { data: approverRow, error: approverErr } = await supabase
+      .from("users")
+      .select("full_name")
+      .eq("id", voidRow.approved_by)
+      .maybeSingle();
+    if (approverErr) throw new Error(`cancellation_detail void approver: ${approverErr.message}`);
+    invoiceVoid = {
+      id: voidRow.id,
+      voidedAmount: voidRow.voided_amount,
+      receivableLedgerId: voidRow.receivable_ledger_id,
+      approvedByName: (approverRow as { full_name: string } | null)?.full_name ?? "-",
+      createdAt: voidRow.created_at,
+    };
+  }
+
+  return {
+    id: cxl.id,
+    status: cxl.status,
+    reasonCode: cxl.reason_code,
+    requestedByName: nameMap.get(cxl.requested_by) ?? "-",
+    requestedAt: cxl.requested_at,
+    decidedByName: cxl.decided_by ? nameMap.get(cxl.decided_by) ?? "-" : null,
+    decidedAt: cxl.decided_at,
+    orderId: cxl.sales_order_id,
+    orderNumber: cxl.sales_orders?.order_number ?? "-",
+    orderStatus,
+    customerName: cxl.sales_orders?.customers?.name ?? "-",
+    invoice,
+    previewBranch,
+    invoiceVoid,
+  };
+}
+
+/** Cancellation terkait satu invoice tertentu (kontrak §B.4 "link ke cancellation terkait" -- via sales_order_id invoice tsb, TIDAK ADA FK langsung invoice_id di order_cancellations). Mengembalikan yang terbaru bila lebih dari satu (seharusnya maks satu requested + histori rejected). */
+export async function getCancellationForOrder(
+  companyId: string,
+  salesOrderId: string,
+  client?: SupabaseClient
+): Promise<{ id: string; status: string } | null> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("order_cancellations")
+    .select("id, status")
+    .eq("company_id", companyId)
+    .eq("sales_order_id", salesOrderId)
+    .order("requested_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`cancellation_for_order: ${error.message}`);
+  return (data as { id: string; status: string } | null) ?? null;
+}
+
+// =============================================================================
+// Gate 2I.4 -- Riwayat Audit Finance (kontrak §B.5/§H). RLS "audit_logs_select"
+// (20260819000001) HANYA mengizinkan SELECT untuk role 'owner' aktif pada
+// tenant yang sama -- non-owner mendapat baris kosong dari RLS itu sendiri,
+// BUKAN dari filter di sini (defense pertama). Page menerapkan guard kedua
+// eksplisit (§B.5). module='finance' filter TETAP (kontrak §H "scoped
+// module=finance"), bukan pengganti RLS owner-only.
+// =============================================================================
+
+export interface FinanceAuditListFilters {
+  from?: string;
+  to?: string;
+  actor?: string;
+  action?: string;
+  entity?: string;
+  /** Exact match entity_id -- dipakai deep link dari cancellations/[id] (kontrak §B.5 "?entity=...&entity_id=..."). */
+  entityId?: string;
+  page?: number;
+}
+
+export interface FinanceAuditLogRow {
+  id: string;
+  userId: string | null;
+  actorType: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  oldData: unknown;
+  newData: unknown;
+  outcome: string | null;
+  createdAt: string;
+  actorName: string | null;
+}
+
+export interface FinanceAuditListResult {
+  items: FinanceAuditLogRow[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
+const FINANCE_AUDIT_PAGE_SIZE = 20;
+
+export async function getFinanceAuditList(
+  companyId: string,
+  filters: FinanceAuditListFilters = {},
+  client?: SupabaseClient
+): Promise<FinanceAuditListResult> {
+  const supabase = client ?? (await createClient());
+  const page = Math.max(1, filters.page ?? 1);
+  const pageSize = FINANCE_AUDIT_PAGE_SIZE;
+  const offset = (page - 1) * pageSize;
+
+  let query = supabase
+    .from("audit_logs")
+    .select(
+      "id, user_id, actor_type, action, entity_type, entity_id, old_data, new_data, outcome, created_at, users(full_name)",
+      { count: "exact" }
+    )
+    .eq("company_id", companyId)
+    .eq("module", "finance")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
+  if (filters.from) query = query.gte("created_at", `${filters.from}T00:00:00+07:00`);
+  if (filters.to) query = query.lte("created_at", `${filters.to}T23:59:59+07:00`);
+  if (filters.actor) query = query.eq("user_id", filters.actor);
+  if (filters.action) query = query.ilike("action", `%${filters.action}%`);
+  if (filters.entity) query = query.ilike("entity_type", `%${filters.entity}%`);
+  if (filters.entityId) query = query.eq("entity_id", filters.entityId);
+
+  const { data, count, error } = await query;
+  if (error) throw new Error(`finance_audit_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    user_id: string | null;
+    actor_type: string | null;
+    action: string;
+    entity_type: string;
+    entity_id: string | null;
+    old_data: unknown;
+    new_data: unknown;
+    outcome: string | null;
+    created_at: string;
+    users: { full_name: string } | null;
+  }>;
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      actorType: row.actor_type,
+      action: row.action,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      oldData: row.old_data,
+      newData: row.new_data,
+      outcome: row.outcome,
+      createdAt: row.created_at,
+      actorName: row.users?.full_name ?? null,
+    })),
+    totalCount: count ?? 0,
+    page,
+    pageSize,
+  };
+}
+
+export interface FinanceAuditActorOption {
+  id: string;
+  fullName: string;
+}
+
+/** Daftar user tenant untuk dropdown filter actor (kontrak §B.5 "minimal filter actor") -- pola identik activity-log/page.tsx, di sini diekstrak sebagai fungsi read model supaya konsisten boundary read Gate 2I. */
+export async function getFinanceAuditActorOptions(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<FinanceAuditActorOption[]> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .from("users")
+    .select("id, full_name")
+    .eq("company_id", companyId)
+    .order("full_name", { ascending: true });
+  if (error) throw new Error(`finance_audit_actor_options: ${error.message}`);
+  return ((data ?? []) as { id: string; full_name: string }[]).map((u) => ({ id: u.id, fullName: u.full_name }));
 }

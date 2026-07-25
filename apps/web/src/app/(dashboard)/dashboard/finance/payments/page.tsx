@@ -1,5 +1,8 @@
 // =============================================================================
 // Gate 2I.2 -- Pembayaran & Verifikasi: list (kontrak §5.3).
+// Gate 2I.4 -- responsive hardening (kontrak §I/FIN-13-01/02): DataTable
+// dibungkus hidden md:block + card-list mobile inline ditambahkan, pola
+// identik returns/page.tsx. Tidak ada perubahan behavior/data di atasnya.
 // =============================================================================
 
 import Link from "next/link";
@@ -57,6 +60,40 @@ const columns: Column<PaymentReceiptListItem>[] = [
   },
 ];
 
+function PaymentReceiptCard({ item }: { item: PaymentReceiptListItem }) {
+  return (
+    <li className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <Link href={`/dashboard/finance/payments/${item.id}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline">
+            {item.id.slice(0, 8)}…
+          </Link>
+          <p className="mt-0.5 text-xs text-gray-500">{item.customerName}</p>
+        </div>
+        <StatusBadge status={item.latestReconciliationClassification ?? "pending_verification"} domain="payment_reconciliation" />
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+        <div>
+          <dt className="text-gray-400">Metode</dt>
+          <dd className="text-gray-700">{METHOD_LABELS[item.method] ?? item.method}</dd>
+        </div>
+        <div>
+          <dt className="text-gray-400">Nominal</dt>
+          <dd className="font-semibold text-gray-900">{formatRupiah(item.amount)}</dd>
+        </div>
+        <div>
+          <dt className="text-gray-400">Diterima</dt>
+          <dd className="text-gray-700">{formatJakartaDateTime(item.receivedAt)}</dd>
+        </div>
+        <div>
+          <dt className="text-gray-400">Alokasi</dt>
+          <dd className="text-gray-700">{item.allocationCount}</dd>
+        </div>
+      </dl>
+    </li>
+  );
+}
+
 export default async function PaymentListPage() {
   const user = await getAuthUser();
 
@@ -104,9 +141,16 @@ export default async function PaymentListPage() {
       ) : receipts.length === 0 ? (
         <EmptyState title="Belum ada pembayaran tercatat" description="Pembayaran akan muncul di sini setelah dicatat." />
       ) : (
-        <div className="rounded-xl border border-gray-200 bg-white">
-          <DataTable<PaymentReceiptListItem> columns={columns} data={receipts} keyExtractor={(row) => row.id} />
-        </div>
+        <>
+          <div className="hidden rounded-xl border border-gray-200 bg-white md:block">
+            <DataTable<PaymentReceiptListItem> columns={columns} data={receipts} keyExtractor={(row) => row.id} />
+          </div>
+          <ul className="space-y-2 md:hidden">
+            {receipts.map((item) => (
+              <PaymentReceiptCard key={item.id} item={item} />
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

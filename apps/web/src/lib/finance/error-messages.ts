@@ -55,6 +55,18 @@ export const FINANCE_ERROR_MESSAGES: Record<string, string> = {
     "Nominal refund melebihi saldo tersedia pada credit note ini. Data mungkin sudah berubah, silakan muat ulang.",
   REFUND_ALREADY_RESOLVED: "Refund ini sudah diputuskan sebelumnya. Muat ulang halaman untuk melihat status terbaru.",
   REFUND_NOT_FOUND: "Refund tidak ditemukan.",
+
+  // Gate 2G -- Order Cancellation & Invoice Void (request_order_cancellation_atomic/approve_order_cancellation_atomic).
+  ORDER_NOT_FOUND: "Order tidak ditemukan.",
+  ORDER_ALREADY_CANCELLED: "Order ini sudah berstatus dibatalkan.",
+  ORDER_CANCELLATION_ALREADY_REQUESTED: "Order ini sudah memiliki pengajuan pembatalan yang belum diputuskan.",
+  ORDER_CANCELLATION_NOT_FOUND: "Pengajuan pembatalan tidak ditemukan.",
+  ORDER_CANCELLATION_ALREADY_RESOLVED: "Pengajuan ini sudah diputuskan sebelumnya. Muat ulang halaman untuk melihat status terbaru.",
+  DELIVERY_REVERSAL_REQUIRED: "Order sudah terkirim — pembatalan memerlukan reversal delivery terlebih dahulu (belum didukung).",
+  INVOICE_RECORD_MISSING: "Order ini tidak memiliki data invoice yang valid untuk diproses.",
+  MULTIPLE_INVOICES_UNSUPPORTED: "Order ini memiliki lebih dari satu invoice — belum didukung.",
+  INVOICE_SETTLEMENT_EXISTS: "Invoice sudah memiliki pembayaran atau credit note aktif — pembatalan dengan invoice void tidak dapat dilakukan.",
+  INVALID_ORDER_STATUS_FOR_CANCELLATION: "Status order saat ini tidak dapat diproses untuk pembatalan.",
 };
 
 const DEFAULT_FINANCE_ERROR_MESSAGE = "Terjadi kesalahan saat memproses permintaan.";
