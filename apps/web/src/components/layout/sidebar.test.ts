@@ -39,6 +39,29 @@ describe("Sidebar — single canonical Import Data menu", () => {
   });
 });
 
+describe("Sidebar — Finance Operations (Gate 2I.1, FIN-01)", () => {
+  it("FIN-01-01/02/03: item 'Finance Operations' ada, mengarah /dashboard/finance, gate permission receivable.view (owner/manager/admin/super_admin/finance otomatis lolos)", () => {
+    const item = allItems().find((i) => i.label === "Finance Operations");
+    expect(item).toBeDefined();
+    expect(item?.href).toBe("/dashboard/finance");
+    expect(item?.permission).toBe("receivable.view");
+  });
+
+  it("FIN-01-04: tidak memakai roles override yang bisa memberi akses ke sales/warehouse/driver tanpa permission receivable.view", () => {
+    const item = allItems().find((i) => i.label === "Finance Operations");
+    // roles harus undefined -- visibility HANYA lewat permission (migration
+    // Gate 2A hanya grant receivable.view ke owner/manager/admin/super_admin/
+    // finance, sales/warehouse/driver tidak pernah mendapatkannya).
+    expect(item?.roles).toBeUndefined();
+  });
+
+  it("tidak menghapus/mengubah item 'Collection' existing yang sudah ada sebelum Finance Operations", () => {
+    const collection = allItems().find((i) => i.label === "Collection");
+    expect(collection?.href).toBe("/dashboard/collection");
+    expect(collection?.roles).toEqual(["super_admin", "owner", "manager", "admin", "finance"]);
+  });
+});
+
 describe("Active-state prefix logic tidak ambigu", () => {
   it("10. /dashboard/imports, /dashboard/imports/new, /dashboard/imports/[id] semua match prefix item", () => {
     const [item] = allItems().filter(isImportRelated);

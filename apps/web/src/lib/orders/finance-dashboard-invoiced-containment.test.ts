@@ -39,9 +39,10 @@ describe("Invoiced Status Integrity Containment -- Finance Dashboard", () => {
     expect(financePage).not.toContain("legacy_ar_invoices");
   });
 
-  it("kartu 'Pembayaran Terverifikasi' (containment paid, gate sebelumnya) tetap ada dan tidak diregresi", () => {
-    expect(financePage).toContain("Pembayaran Terverifikasi");
-    expect(financePage).toContain("Belum tersedia");
+  it("Gate 2I.1: placeholder 'Pembayaran Terverifikasi'/'Belum tersedia' sudah diganti Finance Operations Workspace (kontrak §2.1) -- halaman wajib delegasi ke read model canonical (getFinanceActionQueue), bukan copy hardcoded lama", () => {
+    expect(financePage).not.toContain("Pembayaran Terverifikasi");
+    expect(financePage).not.toContain("Belum tersedia");
+    expect(financePage).toContain("getFinanceActionQueue");
   });
 
   it("tidak lagi query sales_orders dengan status='paid' juga (regresi containment sebelumnya)", () => {
