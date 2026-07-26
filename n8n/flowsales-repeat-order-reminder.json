@@ -43,8 +43,8 @@
               }
             },
             {
-              "id": "cond-sales-phone",
-              "leftValue": "={{ $json.trigger_data.sales_phone }}",
+              "id": "cond-telegram-chat-id",
+              "leftValue": "={{ $json.trigger_data.telegram_chat_id }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
@@ -69,14 +69,14 @@
           "assignments": [
             {
               "id": "assign-message",
-              "name": "whatsapp_message",
+              "name": "telegram_message",
               "value": "={{ \"Halo \" + $json.trigger_data.sales_name + \",\\n\\nPelanggan *\" + $json.trigger_data.customer_name + \"* diprediksi akan melakukan order dalam *\" + $json.trigger_data.days_ahead + \" hari* ke depan berdasarkan pola historis.\\n\\n📅 Order terakhir: \" + $json.trigger_data.last_order_date + \"\\n🎯 Prediksi order: \" + $json.trigger_data.predicted_order_date + \"\\n📞 Kontak pelanggan: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nSegera lakukan follow-up untuk mempertahankan loyalitas pelanggan ini.\\n\\n_Dikirim otomatis oleh FlowSales AI_\" }}",
               "type": "string"
             },
             {
               "id": "assign-to",
-              "name": "whatsapp_to",
-              "value": "={{ $json.trigger_data.sales_phone }}",
+              "name": "telegram_chat_id",
+              "value": "={{ $json.trigger_data.telegram_chat_id }}",
               "type": "string"
             },
             {
@@ -102,7 +102,7 @@
         "options": {}
       },
       "id": "11111111-aaaa-4000-8000-000000000003",
-      "name": "Format Pesan WhatsApp",
+      "name": "Format Pesan Telegram",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [720, 200]
@@ -110,41 +110,24 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.whatsapp-provider.example.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.whatsapp_message }}\"\n  }\n}",
+        "jsonBody": "={\n  \"chat_id\": {{ Number($json.telegram_chat_id) }},\n  \"text\": \"{{ $json.telegram_message }}\",\n  \"parse_mode\": \"Markdown\"\n}",
         "options": {
           "timeout": 10000
         }
       },
       "id": "11111111-aaaa-4000-8000-000000000004",
-      "name": "Kirim WhatsApp",
+      "name": "Kirim Telegram ke Sales",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
       "position": [960, 200],
-      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda. Tambahkan credential di bagian Authentication.",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "whatsapp-api-cred",
-          "name": "WhatsApp API Key"
-        }
-      }
+      "notes": "Kanal Sales = Telegram (bukan WhatsApp), sesuai aturan kanonik channel-routing. Token bot via env TELEGRAM_BOT_TOKEN (sama seperti apps/web/src/lib/telegram/client.ts) -- TIDAK di-hardcode di file ini."
     },
     {
       "parameters": {
-        "jsCode": "// Hitung HMAC-SHA256 untuk callback ke FlowSales AI\nconst crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $input.first().json.rule_id,\n  rule_name: $input.first().json.rule_name,\n  status: 'success',\n  whatsapp_sent_to: $input.first().json.whatsapp_to,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+        "jsCode": "// Hitung HMAC-SHA256 untuk callback ke FlowSales AI\nconst crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $input.first().json.rule_id,\n  rule_name: $input.first().json.rule_name,\n  status: 'success',\n  telegram_sent_to: $input.first().json.telegram_chat_id,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
       },
       "id": "11111111-aaaa-4000-8000-000000000005",
       "name": "Hitung HMAC Callback",
@@ -201,7 +184,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data.customer_name, trigger_data.sales_phone\" }",
+        "responseBody": "={ \"ok\": false, \"error\": \"Payload tidak valid. Field wajib: event, trigger_data.customer_name, trigger_data.telegram_chat_id\" }",
         "options": {
           "responseCode": 400
         }
@@ -229,7 +212,7 @@
       "main": [
         [
           {
-            "node": "Format Pesan WhatsApp",
+            "node": "Format Pesan Telegram",
             "type": "main",
             "index": 0
           }
@@ -243,18 +226,18 @@
         ]
       ]
     },
-    "Format Pesan WhatsApp": {
+    "Format Pesan Telegram": {
       "main": [
         [
           {
-            "node": "Kirim WhatsApp",
+            "node": "Kirim Telegram ke Sales",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Kirim WhatsApp": {
+    "Kirim Telegram ke Sales": {
       "main": [
         [
           {
@@ -298,7 +281,7 @@
   "tags": [
     { "name": "flowsales" },
     { "name": "repeat-order" },
-    { "name": "whatsapp" }
+    { "name": "telegram" }
   ],
   "triggerCount": 1,
   "updatedAt": "2026-06-27T00:00:00.000Z",

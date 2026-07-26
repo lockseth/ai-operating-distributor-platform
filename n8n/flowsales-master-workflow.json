@@ -139,15 +139,21 @@
         "assignments": {
           "assignments": [
             {
+              "id": "rr-channel",
+              "name": "channel",
+              "value": "telegram",
+              "type": "string"
+            },
+            {
               "id": "rr-msg",
-              "name": "whatsapp_message",
+              "name": "message_text",
               "value": "={{ \"Halo \" + ($json.trigger_data.sales_name ?? \"Sales\") + \",\\n\\nPelanggan *\" + ($json.trigger_data.customer_name ?? \"-\") + \"* diprediksi akan order dalam *\" + ($json.trigger_data.days_ahead ?? \"?\") + \" hari*.\\n\\n📞 Kontak: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nSegera lakukan follow-up!\\n\\n_FlowSales AI_\" }}",
               "type": "string"
             },
             {
               "id": "rr-to",
-              "name": "whatsapp_to",
-              "value": "={{ $json.trigger_data.sales_phone ?? '' }}",
+              "name": "recipient",
+              "value": "={{ $json.trigger_data.telegram_chat_id ?? '' }}",
               "type": "string"
             },
             {
@@ -170,46 +176,17 @@
       "name": "Format: Repeat Order",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [960, 120]
+      "position": [960, 120],
+      "notes": "Kanal Sales = Telegram (bukan WhatsApp), sesuai aturan kanonik channel-routing."
     },
     {
       "parameters": {
-        "mode": "manual",
-        "duplicateItem": false,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "cr-msg",
-              "name": "whatsapp_message",
-              "value": "={{ \"⚠️ *CHURN RISK*\\n\\nPelanggan *\" + ($json.trigger_data.customer_name ?? \"-\") + \"* tidak order selama *\" + ($json.trigger_data.days_inactive ?? \"?\") + \" hari*.\\n\\nSales: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n📞 \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n\\nSegera eskalasi!\\n\\n_FlowSales AI_\" }}",
-              "type": "string"
-            },
-            {
-              "id": "cr-to",
-              "name": "whatsapp_to",
-              "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? $json.trigger_data.sales_phone ?? '' }}",
-              "type": "string"
-            },
-            {
-              "id": "cr-rule",
-              "name": "rule_name",
-              "value": "={{ $json.rule_name }}",
-              "type": "string"
-            },
-            {
-              "id": "cr-rule-id",
-              "name": "rule_id",
-              "value": "={{ $json.rule_id }}",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "// churn_risk operasional -> SELALU Telegram ke Sales.\n// Eskalasi WhatsApp ke Owner/Manager HANYA bila risiko serius\n// (days_inactive > 45, sejalan ambang HIGH churn risk di\n// lib/ai/features/churn-prediction.ts & lib/ai/features/executive-summary.ts).\n// TIDAK PERNAH fallback ke sales_phone/nomor Sales untuk node WhatsApp.\nconst data = $json.trigger_data ?? {};\nconst ruleName = $json.rule_name;\nconst ruleId = $json.rule_id;\nconst daysInactive = Number(data.days_inactive ?? 0);\nconst isSerious = daysInactive > 45;\n\nconst items = [\n  {\n    json: {\n      channel: 'telegram',\n      recipient: data.telegram_chat_id ?? '',\n      message_text: \"⚠️ *CHURN RISK*\\n\\nPelanggan *\" + (data.customer_name ?? '-') + \"* tidak order selama *\" + daysInactive + \" hari*.\\n\\nSales: \" + (data.sales_name ?? '-') + \"\\n📞 \" + (data.customer_phone ?? '-') + \"\\n\\nSegera follow-up!\\n\\n_FlowSales AI_\",\n      rule_name: ruleName,\n      rule_id: ruleId,\n    },\n  },\n];\n\nif (isSerious) {\n  items.push({\n    json: {\n      channel: 'whatsapp',\n      recipient: data.owner_phone ?? data.manager_phone ?? '',\n      message_text: \"🚨 *ESKALASI CHURN RISK — ACTION REQUIRED*\\n\\nPelanggan *\" + (data.customer_name ?? '-') + \"* belum order selama *\" + daysInactive + \" hari*.\\n\\nSales PIC: \" + (data.sales_name ?? '-') + \"\\n📞 \" + (data.customer_phone ?? '-') + \"\\n\\n_FlowSales AI_\",\n      rule_name: ruleName,\n      rule_id: ruleId,\n    },\n  });\n}\n\nreturn items;\n"
       },
       "id": "55555555-eeee-4000-8000-000000000005",
       "name": "Format: Churn Risk",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [960, 280]
     },
     {
@@ -219,14 +196,20 @@
         "assignments": {
           "assignments": [
             {
+              "id": "lo-channel",
+              "name": "channel",
+              "value": "whatsapp",
+              "type": "string"
+            },
+            {
               "id": "lo-msg",
-              "name": "whatsapp_message",
+              "name": "message_text",
               "value": "={{ \"🎉 *ORDER BESAR MASUK!*\\n\\nPelanggan: *\" + ($json.trigger_data.customer_name ?? \"-\") + \"*\\nNilai: *Rp \" + Number($json.trigger_data.order_amount ?? 0).toLocaleString('id-ID') + \"*\\nSales: \" + ($json.trigger_data.sales_name ?? \"-\") + \"\\n\\nPastikan stok & pengiriman siap!\\n\\n_FlowSales AI_\" }}",
               "type": "string"
             },
             {
               "id": "lo-to",
-              "name": "whatsapp_to",
+              "name": "recipient",
               "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? '' }}",
               "type": "string"
             },
@@ -259,14 +242,20 @@
         "assignments": {
           "assignments": [
             {
+              "id": "ds-channel",
+              "name": "channel",
+              "value": "whatsapp",
+              "type": "string"
+            },
+            {
               "id": "ds-msg",
-              "name": "whatsapp_message",
+              "name": "message_text",
               "value": "={{ \"📊 *LAPORAN HARIAN*\\n\" + new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' }) + \"\\n\\n💰 Order hari ini: \" + ($json.trigger_data.total_orders_today ?? 0) + \"\\nNilai: Rp \" + Number($json.trigger_data.total_revenue_today ?? 0).toLocaleString('id-ID') + \"\\n👥 Dormant: \" + ($json.trigger_data.dormant_customers ?? \"-\") + \" pelanggan\\n⚠️ Churn risk: \" + ($json.trigger_data.churn_risk_count ?? \"-\") + \" pelanggan\\n\\n\" + ($json.trigger_data.ai_summary ?? \"\") + \"\\n\\n_FlowSales AI_\" }}",
               "type": "string"
             },
             {
               "id": "ds-to",
-              "name": "whatsapp_to",
+              "name": "recipient",
               "value": "={{ $json.trigger_data.owner_phone ?? '' }}",
               "type": "string"
             },
@@ -294,13 +283,59 @@
     },
     {
       "parameters": {
-        "jsCode": "// Merge semua branch ke satu item untuk dikirim ke WhatsApp\nconst item = $input.first();\nreturn [{ json: item.json }];\n"
+        "jsCode": "// Teruskan SEMUA item dari branch manapun (churn_risk bisa menghasilkan\n// 2 item: telegram-sales + whatsapp-owner). Jangan pakai $input.first()\n// -- itu akan menghilangkan item eskalasi owner.\nreturn $input.all().map((item) => ({ json: item.json }));\n"
       },
       "id": "55555555-eeee-4000-8000-000000000008",
       "name": "Gabung Branch",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1200, 360]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-channel-telegram",
+              "leftValue": "={{ $json.channel }}",
+              "rightValue": "telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000015",
+      "name": "Channel Telegram?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1440, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={\n  \"chat_id\": {{ Number($json.recipient) }},\n  \"text\": \"{{ $json.message_text }}\",\n  \"parse_mode\": \"Markdown\"\n}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "55555555-eeee-4000-8000-000000000016",
+      "name": "Kirim Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1680, 280],
+      "notes": "Sales (repeat_order_due, churn_risk operasional) SELALU lewat Telegram. Token bot via env TELEGRAM_BOT_TOKEN, TIDAK di-hardcode."
     },
     {
       "parameters": {
@@ -319,7 +354,7 @@
         },
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.whatsapp_message }}\"\n  }\n}",
+        "jsonBody": "={\n  \"to\": \"{{ $json.recipient }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.message_text }}\"\n  }\n}",
         "options": {
           "timeout": 10000
         }
@@ -328,8 +363,8 @@
       "name": "Kirim WhatsApp",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1440, 360],
-      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda. Tambahkan credential.",
+      "position": [1680, 440],
+      "notes": "Owner/Manager saja (large_order, daily_summary, eskalasi serius churn_risk). GANTI url dengan endpoint WhatsApp API provider Anda. Tambahkan credential.",
       "credentials": {
         "httpHeaderAuth": {
           "id": "whatsapp-api-cred",
@@ -339,13 +374,13 @@
     },
     {
       "parameters": {
-        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Gabung Branch').item.json.rule_id,\n  rule_name: $('Gabung Branch').item.json.rule_name,\n  status: 'success',\n  sent_to: $('Gabung Branch').item.json.whatsapp_to,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+        "jsCode": "// Ambil rule_id/rule_name/channel/recipient dari node 'Gabung Branch'\n// (BUKAN dari $json) -- output HTTP Request node Kirim Telegram/Kirim\n// WhatsApp menimpa $json dengan response body provider, jadi field custom\n// hilang kalau dibaca langsung dari $json di sini.\nconst crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\nconst source = $('Gabung Branch').item.json;\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: source.rule_id,\n  rule_name: source.rule_name,\n  status: 'success',\n  channel: source.channel,\n  sent_to: source.recipient,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
       },
       "id": "55555555-eeee-4000-8000-000000000010",
       "name": "Hitung HMAC Callback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1680, 360]
+      "position": [1920, 360]
     },
     {
       "parameters": {
@@ -376,7 +411,7 @@
       "name": "Callback ke FlowSales",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1920, 360]
+      "position": [2160, 360]
     },
     {
       "parameters": {
@@ -390,7 +425,7 @@
       "name": "Response OK",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [2160, 360]
+      "position": [2400, 360]
     },
     {
       "parameters": {
@@ -538,7 +573,36 @@
       "main": [
         [
           {
+            "node": "Channel Telegram?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Channel Telegram?": {
+      "main": [
+        [
+          {
+            "node": "Kirim Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Kirim WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Telegram": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
             "type": "main",
             "index": 0
           }
@@ -589,11 +653,12 @@
   "tags": [
     { "name": "flowsales" },
     { "name": "master" },
-    { "name": "whatsapp" }
+    { "name": "telegram" },
+    { "name": "whatsapp-escalation" }
   ],
   "triggerCount": 1,
   "updatedAt": "2026-06-27T00:00:00.000Z",
-  "versionId": "flowsales-master-v1",
+  "versionId": "flowsales-master-v2",
   "meta": {
     "templateCredsSetupCompleted": false,
     "instanceId": "flowsales-template"

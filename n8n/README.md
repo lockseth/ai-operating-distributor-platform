@@ -51,15 +51,30 @@ Setiap workflow menerima trigger dari FlowSales AI, memformat pesan Bahasa Indon
 
 ## Daftar Workflow
 
-| File | Event | Penerima WA |
-|------|-------|------------|
-| `flowsales-repeat-order-reminder.json` | `repeat_order_due` | Sales PIC |
-| `flowsales-churn-risk-alert.json`      | `churn_risk`       | Sales + Owner/Manager |
-| `flowsales-large-order-alert.json`     | `large_order`      | Owner/Manager |
-| `flowsales-daily-owner-summary.json`   | `daily_summary`    | Owner |
-| `flowsales-master-workflow.json`       | Semua event di atas | Sesuai event |
+**Channel routing kanonik (diperbaiki 2026-07-26, lihat Gate 3A Domain 5 di
+`docs/product/readiness/AODP_GATE_3A_TEST_MATRIX.md`):** notifikasi ke Sales
+SELALU lewat **Telegram** (`trigger_data.telegram_chat_id`), TIDAK PERNAH
+WhatsApp/`sales_phone`. Notifikasi ke Owner/Manager tetap WhatsApp. Untuk
+`churn_risk`, eskalasi WhatsApp ke Owner hanya terjadi bila risiko serius
+(`days_inactive > 45`, sejalan ambang HIGH churn risk di
+`lib/ai/features/churn-prediction.ts`) — di luar itu, Sales cukup menerima
+notifikasi operasional via Telegram.
+
+| File | Event | Penerima Sales | Penerima Owner/Manager |
+|------|-------|-----------------|-------------------------|
+| `flowsales-repeat-order-reminder.json` | `repeat_order_due` | Telegram (`telegram_chat_id`) | — |
+| `flowsales-churn-risk-alert.json`      | `churn_risk`       | Telegram (`telegram_chat_id`), selalu | WhatsApp, HANYA bila `days_inactive > 45` |
+| `flowsales-large-order-alert.json`     | `large_order`      | — | WhatsApp (`owner_phone`/`manager_phone`) |
+| `flowsales-daily-owner-summary.json`   | `daily_summary`    | — | WhatsApp (`owner_phone`) |
+| `flowsales-master-workflow.json`       | Semua event di atas | Sesuai event (Telegram utk Sales) | Sesuai event (WhatsApp utk Owner) |
 
 > **Rekomendasi:** Gunakan `flowsales-master-workflow.json` jika ingin satu webhook URL untuk semua event. Gunakan workflow individual jika ingin kontrol penuh per event.
+>
+> **Kredensial Telegram:** node "Kirim Telegram..." memakai Bot API langsung
+> (`https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage`),
+> token dari environment variable n8n `TELEGRAM_BOT_TOKEN` (sama seperti yang
+> dipakai `apps/web/src/lib/telegram/client.ts`) — TIDAK di-hardcode di file
+> manapun di folder ini.
 
 ---
 
@@ -200,7 +215,7 @@ FlowSales AI mengirim payload berikut saat memanggil webhook n8n:
     "customer_area": "Jakarta Selatan",
     "sales_id": "uuid-sales",
     "sales_name": "Eko Prasetyo",
-    "sales_phone": "08129876543",
+    "telegram_chat_id": "123456789",
     "days_ahead": 3,
     "last_order_date": "2026-06-01",
     "predicted_order_date": "2026-06-30"
@@ -224,7 +239,7 @@ FlowSales AI mengirim payload berikut saat memanggil webhook n8n:
     "last_order_amount": 2500000,
     "days_inactive": 46,
     "sales_name": "Fitri Handayani",
-    "sales_phone": "08129876544",
+    "telegram_chat_id": "123456789",
     "owner_phone": "08129876540",
     "manager_phone": "08129876541"
   },
@@ -359,7 +374,8 @@ curl -X POST "https://n8n.yourcompany.com/webhook-test/flowsales-repeat-order" \
 | `401 Unauthorized` di Kirim WhatsApp | Token WhatsApp salah | Cek credential di n8n Settings |
 | `403 Forbidden` di Callback ke FlowSales | HMAC tidak cocok | Samakan `N8N_WEBHOOK_SECRET` di n8n dan `.env` FlowSales |
 | `400 Bad Request` di Callback | Body tidak valid | Pastikan `bodyContentType: raw` dan `Content-Type: application/json` |
-| Pesan WA tidak terkirim | `whatsapp_to` kosong | Pastikan field `sales_phone` / `owner_phone` ada di `trigger_data` |
+| Pesan WA tidak terkirim | `recipient`/`whatsapp_to_owner` kosong | Pastikan field `owner_phone`/`manager_phone` ada di `trigger_data` (Sales TIDAK dikirim via WhatsApp -- lihat `telegram_chat_id`) |
+| Pesan Telegram tidak terkirim | `telegram_chat_id` kosong/salah | Pastikan field `trigger_data.telegram_chat_id` terisi dan `TELEGRAM_BOT_TOKEN` diset di n8n environment |
 | Workflow tidak trigger | URL webhook salah | Gunakan **Production URL** (bukan Test URL) di production |
 
 ---

@@ -62,6 +62,7 @@ diperbaiki, P3=minor. Status akhir semua baris: **PASS**.
 | 5.7 | n8n retry/backoff/dead-letter | PASS | - | `lib/n8n-automation/repository.ts` — exponential backoff, max_attempts=5, DEAD_LETTER | - | - | - |
 | 5.8 | Redaction | PASS | - | `telegram/client.ts` — hanya log response body, bukan URL/token | - | - | - |
 | 5.9 | WhatsApp status | PASS | - | Grep menyeluruh — 0 implementasi live send, eksplisit dry-run/mock | - | - | - |
+| 5.10 | **Channel-routing kanonik (Sales vs Owner)** | PASS | **P1** | Audit seluruh `n8n/*.json` (11 file, bukan hanya master workflow) via `rg` + baca manual tiap node HTTP Request/Set/Code | `flowsales-repeat-order-reminder.json`, `flowsales-churn-risk-alert.json`, `flowsales-master-workflow.json` mengirim WhatsApp ke `trigger_data.sales_phone` (repeat-order & churn-risk-sales-branch) dan `flowsales-master-workflow.json` churn-risk branch fallback ke `sales_phone` bila owner/manager phone kosong — melanggar aturan kanonik (Sales = Telegram, Owner = WhatsApp) | Repeat-order & churn-risk-sales sekarang SELALU Telegram (`trigger_data.telegram_chat_id`, Bot API via env `TELEGRAM_BOT_TOKEN`, tidak hardcode). Churn-risk eskalasi WhatsApp ke Owner HANYA bila `days_inactive > 45` (sejalan ambang HIGH churn risk `lib/ai/features/churn-prediction.ts`), tidak pernah fallback ke sales_phone. Master workflow direstrukturisasi jadi per-item `{channel, recipient, message_text}` + IF routing Telegram/WhatsApp; `Gabung Branch` diperbaiki dari `$input.first()` (drop item eskalasi) jadi `$input.all()`. `large_order`/`daily_owner_summary` sudah patuh sejak awal, tidak diubah. Health/retry/dead-letter tetap no-op (tidak diarahkan ke channel apa pun) | Regression test baru `apps/web/src/lib/n8n-automation/workflow-channel-routing.test.ts` — 78/78 PASS, mencakup SELURUH file `.json` di `n8n/` (assert directory listing, cegah exclusion diam-diam), verifikasi tidak ada `.sales_phone` di node WhatsApp manapun, eskalasi churn-risk ter-gate IF node, `active:false` seluruh workflow, tidak ada credential id selain placeholder kanonik. Full suite tetap 1685+/1685+ PASS (lihat Ringkasan verifikasi akhir) |
 
 ## Domain 6 — Observability
 
@@ -117,12 +118,14 @@ diperbaiki, P3=minor. Status akhir semua baris: **PASS**.
 
 | Pemeriksaan | Command | Hasil |
 |---|---|---|
-| Canonical repo-wide test | `npx vitest run` (apps/web) / `npx turbo test` (root) — TANPA flag manual | **1685/1685 PASS** |
+| Canonical repo-wide test | `pnpm test` (root, TANPA flag manual) | **1763/1763 PASS** (baseline 1685 + 78 test baru `workflow-channel-routing.test.ts`, Gate 3A Domain 5.10) |
+| Targeted (n8n-automation) | `npx vitest run src/lib/n8n-automation/` (apps/web) | 144/144 PASS |
 | Typecheck | `npx tsc --noEmit` | 0 error |
 | Lint | `npx eslint` (file berubah) | 0 error/warning |
 | Production build | `npx next build` | Exit 0 |
 | Production boot | `next start` (preview) | Bersih |
 | Migrations | `supabase migration up --local` | Bersih |
 | Dependency audit | `pnpm audit --prod` | 17→8 (sisa transitive, accepted) |
+| n8n workflow JSON importability | Parse + validasi `nodes`/`connections`/`active:false` seluruh `n8n/*.json` (11 file) | 11/11 valid, 11/11 `active:false` |
 
-**Total baris matrix**: 44. **PASS**: 44. **Terbuka**: 0.
+**Total baris matrix**: 45. **PASS**: 45. **Terbuka**: 0.

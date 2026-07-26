@@ -69,7 +69,7 @@
           "assignments": [
             {
               "id": "assign-msg-sales",
-              "name": "message_sales",
+              "name": "telegram_message_sales",
               "value": "={{ \"⚠️ *PERINGATAN CHURN RISK*\\n\\nHalo \" + ($json.trigger_data.sales_name ?? \"Sales\") + \",\\n\\nPelanggan *\" + $json.trigger_data.customer_name + \"* telah *tidak melakukan order selama \" + $json.trigger_data.days_inactive + \" hari*.\\n\\nSegera hubungi pelanggan ini sebelum mereka beralih ke kompetitor.\\n\\n📞 Kontak: \" + ($json.trigger_data.customer_phone ?? \"-\") + \"\\n🏢 Area: \" + ($json.trigger_data.customer_area ?? \"-\") + \"\\n💰 Nilai order terakhir: Rp \" + ($json.trigger_data.last_order_amount ?? \"-\") + \"\\n\\n_Dikirim otomatis oleh FlowSales AI_\" }}",
               "type": "string"
             },
@@ -81,8 +81,8 @@
             },
             {
               "id": "assign-to-sales",
-              "name": "whatsapp_to_sales",
-              "value": "={{ $json.trigger_data.sales_phone ?? '' }}",
+              "name": "telegram_chat_id_sales",
+              "value": "={{ $json.trigger_data.telegram_chat_id ?? '' }}",
               "type": "string"
             },
             {
@@ -90,6 +90,12 @@
               "name": "whatsapp_to_owner",
               "value": "={{ $json.trigger_data.owner_phone ?? $json.trigger_data.manager_phone ?? '' }}",
               "type": "string"
+            },
+            {
+              "id": "assign-serious",
+              "name": "is_serious_escalation",
+              "value": "={{ Number($json.trigger_data.days_inactive ?? 0) > 45 }}",
+              "type": "boolean"
             },
             {
               "id": "assign-rule",
@@ -108,7 +114,7 @@
         "options": {}
       },
       "id": "22222222-bbbb-4000-8000-000000000003",
-      "name": "Format Pesan WhatsApp",
+      "name": "Format Pesan Notifikasi",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
       "position": [720, 200]
@@ -116,37 +122,48 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.whatsapp-provider.example.com/v1/messages",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "Content-Type",
-              "value": "application/json"
-            }
-          ]
-        },
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "={\n  \"to\": \"{{ $json.whatsapp_to_sales }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $json.message_sales }}\"\n  }\n}",
+        "jsonBody": "={\n  \"chat_id\": {{ Number($json.telegram_chat_id_sales) }},\n  \"text\": \"{{ $json.telegram_message_sales }}\",\n  \"parse_mode\": \"Markdown\"\n}",
         "options": {
           "timeout": 10000
         }
       },
       "id": "22222222-bbbb-4000-8000-000000000004",
-      "name": "Kirim WA ke Sales",
+      "name": "Kirim Telegram ke Sales",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [960, 160],
-      "notes": "GANTI url dengan endpoint WhatsApp API provider Anda.",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "whatsapp-api-cred",
-          "name": "WhatsApp API Key"
+      "position": [960, 120],
+      "notes": "Notifikasi operasional churn_risk ke Sales SELALU lewat Telegram (bukan WhatsApp), sesuai aturan kanonik channel-routing. Token bot via env TELEGRAM_BOT_TOKEN, TIDAK di-hardcode."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-serious",
+              "leftValue": "={{ $json.is_serious_escalation }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
         }
-      }
+      },
+      "id": "22222222-bbbb-4000-8000-00000000000a",
+      "name": "Eskalasi Serius? (>45 hari)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [960, 320]
     },
     {
       "parameters": {
@@ -165,17 +182,17 @@
         },
         "sendBody": true,
         "bodyContentType": "json",
-        "jsonBody": "={\n  \"to\": \"{{ $('Format Pesan WhatsApp').item.json.whatsapp_to_owner }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $('Format Pesan WhatsApp').item.json.message_owner }}\"\n  }\n}",
+        "jsonBody": "={\n  \"to\": \"{{ $('Format Pesan Notifikasi').item.json.whatsapp_to_owner }}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"{{ $('Format Pesan Notifikasi').item.json.message_owner }}\"\n  }\n}",
         "options": {
           "timeout": 10000
         }
       },
       "id": "22222222-bbbb-4000-8000-000000000005",
-      "name": "Kirim WA ke Owner",
+      "name": "Kirim WA ke Owner (Eskalasi Serius)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [960, 320],
-      "notes": "Eskalasi ke Owner/Manager. GANTI url dengan endpoint WhatsApp API provider Anda.",
+      "position": [1200, 260],
+      "notes": "HANYA jalan bila eskalasi serius (days_inactive > 45, sejalan ambang HIGH churn risk lib/ai/features/churn-prediction.ts). Eskalasi ke Owner/Manager -- TIDAK PERNAH ke sales_phone. GANTI url dengan endpoint WhatsApp API provider Anda.",
       "credentials": {
         "httpHeaderAuth": {
           "id": "whatsapp-api-cred",
@@ -184,8 +201,16 @@
       }
     },
     {
+      "parameters": {},
+      "id": "22222222-bbbb-4000-8000-00000000000b",
+      "name": "Tidak Eskalasi (Risiko Belum Serius)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1200, 400]
+    },
+    {
       "parameters": {
-        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: $('Format Pesan WhatsApp').item.json.rule_id,\n  rule_name: $('Format Pesan WhatsApp').item.json.rule_name,\n  status: 'success',\n  notifications_sent: ['sales', 'owner'],\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
+        "jsCode": "const crypto = require('crypto');\n\nconst secret = $env['N8N_WEBHOOK_SECRET'] ?? 'GANTI_DENGAN_SECRET_ANDA';\n\nconst format = $('Format Pesan Notifikasi').item.json;\nconst notificationsSent = ['sales_telegram'];\nif (format.is_serious_escalation) notificationsSent.push('owner_whatsapp_escalation');\n\nconst payload = {\n  event: 'webhook_processed',\n  source: 'n8n',\n  rule_id: format.rule_id,\n  rule_name: format.rule_name,\n  status: 'success',\n  notifications_sent: notificationsSent,\n  processed_at: new Date().toISOString()\n};\n\nconst bodyString = JSON.stringify(payload);\nconst signature = crypto\n  .createHmac('sha256', secret)\n  .update(bodyString)\n  .digest('hex');\n\nreturn [{\n  json: {\n    callbackPayload: payload,\n    callbackBody: bodyString,\n    callbackSignature: `sha256=${signature}`\n  }\n}];\n"
       },
       "id": "22222222-bbbb-4000-8000-000000000006",
       "name": "Hitung HMAC Callback",
@@ -227,7 +252,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={ \"ok\": true, \"message\": \"Alert churn risk berhasil dikirim ke sales dan owner\", \"event\": \"churn_risk\" }",
+        "responseBody": "={ \"ok\": true, \"message\": \"Alert churn risk dikirim ke sales via Telegram; eskalasi WhatsApp ke owner hanya jika risiko serius (>45 hari)\", \"event\": \"churn_risk\" }",
         "options": {
           "responseCode": 200
         }
@@ -269,7 +294,7 @@
       "main": [
         [
           {
-            "node": "Format Pesan WhatsApp",
+            "node": "Format Pesan Notifikasi",
             "type": "main",
             "index": 0
           }
@@ -283,23 +308,41 @@
         ]
       ]
     },
-    "Format Pesan WhatsApp": {
+    "Format Pesan Notifikasi": {
       "main": [
         [
           {
-            "node": "Kirim WA ke Sales",
+            "node": "Kirim Telegram ke Sales",
             "type": "main",
             "index": 0
           },
           {
-            "node": "Kirim WA ke Owner",
+            "node": "Eskalasi Serius? (>45 hari)",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Kirim WA ke Owner": {
+    "Eskalasi Serius? (>45 hari)": {
+      "main": [
+        [
+          {
+            "node": "Kirim WA ke Owner (Eskalasi Serius)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Tidak Eskalasi (Risiko Belum Serius)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim WA ke Owner (Eskalasi Serius)": {
       "main": [
         [
           {
@@ -310,7 +353,18 @@
         ]
       ]
     },
-    "Kirim WA ke Sales": {
+    "Tidak Eskalasi (Risiko Belum Serius)": {
+      "main": [
+        [
+          {
+            "node": "Hitung HMAC Callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kirim Telegram ke Sales": {
       "main": [
         [
           {
@@ -354,7 +408,8 @@
   "tags": [
     { "name": "flowsales" },
     { "name": "churn-risk" },
-    { "name": "whatsapp" }
+    { "name": "telegram" },
+    { "name": "whatsapp-escalation" }
   ],
   "triggerCount": 1,
   "updatedAt": "2026-06-27T00:00:00.000Z",
