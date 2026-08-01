@@ -132,6 +132,18 @@ export async function getAuthUser(): Promise<AuthUser> {
     roleNames.push(...((rolesData ?? []) as { name: string }[]).map((r) => r.name));
   }
 
+  // Gate 3C — shared boundary: user dengan profile aktif tapi TANPA baris
+  // user_roles (tidak ada canonical membership sama sekali) sebelumnya lolos
+  // ke sini dengan roles=[], lalu getPrimaryRole([]) diam-diam fallback ke
+  // "sales" -- mengarahkan user tanpa membership ke /dashboard/sales, yang
+  // menolaknya lagi ke /dashboard, yang mengarahkannya balik ke
+  // /dashboard/sales (redirect loop tanpa akhir). Gagal-tutup di sini,
+  // konsisten dengan gate is_active di atas.
+  if (roleNames.length === 0) {
+    await supabase.auth.signOut();
+    redirect("/login");
+  }
+
   // Permission IDs via role_permissions
   const permissionNames: string[] = [];
   if (roleIds.length > 0) {

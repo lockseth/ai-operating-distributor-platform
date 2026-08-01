@@ -36,3 +36,13 @@ describe("Users page Telegram pairing control gating (Gate 1C)", () => {
     expect(page).toContain('const { data: coverageData } = canManageTelegram');
   });
 });
+
+describe("Users page Tambah Salesman link gating (Gate 3C)", () => {
+  it("tombol/link Tambah Salesman hanya dirender untuk isOwner, bukan canManageTelegram -- halaman tujuannya (/dashboard/users/new) owner-only", () => {
+    const start = page.indexOf('href="/dashboard/users/new"');
+    expect(start).toBeGreaterThan(-1);
+    const precedingCondition = page.slice(Math.max(0, start - 200), start);
+    expect(precedingCondition).toContain("isOwner ?");
+    expect(precedingCondition).not.toContain("canManageTelegram ?");
+  });
+});

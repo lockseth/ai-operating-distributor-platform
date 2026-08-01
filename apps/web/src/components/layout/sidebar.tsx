@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { AuthUser } from "@/lib/auth/get-user";
@@ -148,6 +149,14 @@ function IconTarget() {
   );
 }
 
+function IconMenu() {
+  return (
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+    </svg>
+  );
+}
+
 export interface NavSection {
   title?: string;
   items: NavItem[];
@@ -192,6 +201,7 @@ export const NAV_SECTIONS: NavSection[] = [
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const dashboardHref = getDashboardHref(user.roles);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const canSee = (item: NavItem) => {
     const roleOk = item.roles ? item.roles.some((r) => user.roles.includes(r)) : false;
@@ -212,7 +222,31 @@ export function Sidebar({ user }: SidebarProps) {
   const branding = resolveCompanyBranding(user.company);
 
   return (
-    <aside className="flex h-screen w-60 flex-col border-r border-gray-200 bg-white">
+    <>
+      {/* Mobile hamburger trigger -- selalu dirender di luar <aside> supaya
+          tetap terlihat walau drawer sedang tertutup (translate-x-full). */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Buka menu navigasi"
+        className="fixed left-3 top-3 z-50 rounded-md border border-gray-200 bg-white p-2 text-gray-600 shadow-sm lg:hidden"
+      >
+        <IconMenu />
+      </button>
+
+      {mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+          className="fixed inset-0 z-30 bg-black/30 lg:hidden"
+        />
+      )}
+
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 flex-col border-r border-gray-200 bg-white transition-transform duration-200 lg:static lg:z-auto lg:w-60 lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
       {/* Logo */}
       <div className="flex h-14 items-center gap-2.5 border-b border-gray-200 px-5">
         {branding.logoUrl ? (
@@ -247,7 +281,13 @@ export function Sidebar({ user }: SidebarProps) {
       )}
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3">
+      {/* onClick di sini menutup drawer mobile saat tap link mana pun di
+          dalamnya (event bubbling dari Link) -- tanpa perlu effect terpisah
+          yang memicu setState sinkron di luar interaksi user. */}
+      <nav
+        className="flex-1 overflow-y-auto px-3 py-3"
+        onClick={() => setMobileOpen(false)}
+      >
         <ul className="space-y-0.5">
           {/* Dashboard — dynamic href per role */}
           <li>
@@ -317,6 +357,7 @@ export function Sidebar({ user }: SidebarProps) {
         </div>
         <p className="mt-1 px-2 text-center text-[10px] text-gray-300">Powered by AODP</p>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

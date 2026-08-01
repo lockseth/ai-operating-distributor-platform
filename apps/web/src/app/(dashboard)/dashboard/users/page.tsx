@@ -108,7 +108,9 @@ export default async function UsersPage() {
   // canManageTelegram, supaya manager/admin/super_admin tidak menerima data
   // ini lewat RSC props sama sekali (bukan sekadar disembunyikan di render).
   // canManageTelegram tetap dipertahankan untuk fitur lain yang tidak
-  // berubah di gate ini (mis. tombol Tambah Salesman/Gate 1A).
+  // berubah di gate ini (mis. query coverage di bawah). Tombol Tambah
+  // Salesman sendiri sudah digate ke isOwner sejak Gate 3C, konsisten
+  // dengan halaman tujuannya (/dashboard/users/new) yang owner-only.
   const { data: telegramData } = isOwner
     ? await supabase
         .from("telegram_identities")
@@ -186,7 +188,7 @@ export default async function UsersPage() {
             Kelola Wilayah
           </Link>
         ) : null}
-        {canManageTelegram ? (
+        {isOwner ? (
           <Link
             href="/dashboard/users/new"
             className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -205,7 +207,7 @@ export default async function UsersPage() {
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">

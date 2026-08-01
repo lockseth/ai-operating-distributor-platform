@@ -31,7 +31,7 @@ export function Header({ title, user }: HeaderProps) {
   const greeting = greetingFor(user.roles);
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white px-6">
+    <header className="flex h-14 items-center justify-between border-b border-gray-200 bg-white pl-14 pr-4 lg:px-6">
       {title && (
         <h1 className="text-sm font-semibold text-gray-900">{title}</h1>
       )}
