@@ -3,15 +3,21 @@
 // NYATA (bukan mock). Membuktikan migration
 // 20260906000001_gate_3d_b1_single_owner_enforcement.sql terhadap kontrak
 // docs/product/auth/AODP_GATE_3D_A_ONBOARDING_PROVISIONING_CONTRACT.md
-// (G1, FROZEN Gate 3D-A1) -- BEFORE INSERT trigger pada public.user_roles
-// yang menolak owner kedua untuk company_id yang sama, race-safe, dan tidak
-// bisa dilewati oleh service-role/RPC-style write mana pun.
+// (G1, FROZEN Gate 3D-A1; UPDATE-bypass closure Gate 3D-B1-R1) -- BEFORE
+// INSERT OR UPDATE OF role_id, company_id trigger pada public.user_roles
+// yang menolak owner kedua untuk company_id yang sama lewat INSERT ATAU
+// UPDATE, race-safe, dan tidak bisa dilewati oleh service-role/RPC-style
+// write mana pun.
 //
-// Semua insert di sini sengaja lewat client SERVICE-ROLE (bypass total RLS)
-// -- persis meniru jalur RPC/service-role/"direct write" nyata (createSalesman
-// workflow, future first-owner RPC). Pembuktian "tidak bisa dilewati" bukan
-// dari RLS (trigger tabel selalu jalan untuk peran apa pun, termasuk
-// service_role) melainkan dari trigger itu sendiri.
+// Tes 1-8 membuktikan sisi INSERT (Gate 3D-B1 asli). Tes 9-14 (Gate 3D-B1-R1)
+// membuktikan sisi UPDATE: promote role_id ke owner, pindah company_id owner,
+// update tak terkait tidak terganggu, dan race UPDATE+INSERT konkuren.
+//
+// Semua insert/update di sini sengaja lewat client SERVICE-ROLE (bypass total
+// RLS) -- persis meniru jalur RPC/service-role/"direct write" nyata
+// (createSalesman workflow, future first-owner RPC). Pembuktian "tidak bisa
+// dilewati" bukan dari RLS (trigger tabel selalu jalan untuk peran apa pun,
+// termasuk service_role) melainkan dari trigger itu sendiri.
 //
 // Skip graceful jika kredensial Supabase lokal tidak tersedia -- pola identik
 // dengan gate-3b-role-permission-matrix.integration.test.ts.
@@ -55,20 +61,23 @@ if (!env) {
   console.warn("Gate 3D-B1 integration test skipped: Supabase URL is not loopback/local (or credentials unavailable).");
 }
 
-describeIfDb("Gate 3D-B1: single-owner-per-company DB enforcement (BEFORE INSERT trigger, Postgres nyata)", () => {
+describeIfDb("Gate 3D-B1 (+R1): single-owner-per-company DB enforcement (BEFORE INSERT OR UPDATE trigger, Postgres nyata)", () => {
   let service: SupabaseClient;
   const runTag = `itest-g3db1-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
   const companyA = randomUUID(); // owner pertama sukses, owner kedua ditolak
   const companyB = randomUUID(); // tenant berbeda -- owner tetap sukses
   const companyRace = randomUUID(); // dua insert owner konkuren
+  const companyC = randomUUID(); // sudah punya owner -- target UPDATE company_id yang harus ditolak
+  const companyMoveSource = randomUUID(); // owner yang akan di-UPDATE company_id-nya ke companyC (ditolak)
+  const companyUpdateRace = randomUUID(); // UPDATE promote vs INSERT owner konkuren, company tanpa owner
 
   let ownerRoleId = "";
   let adminRoleId = "";
   let salesRoleId = "";
 
   const authIds: Record<string, string> = {};
-  const allCompanyIds = [companyA, companyB, companyRace];
+  const allCompanyIds = [companyA, companyB, companyRace, companyC, companyMoveSource, companyUpdateRace];
 
   async function makeAuthAndProfileUser(key: string, companyId: string, spoofedMetadataRole?: string): Promise<string> {
     const email = `${runTag}-${key}@itest.test`;
@@ -219,6 +228,178 @@ describeIfDb("Gate 3D-B1: single-owner-per-company DB enforcement (BEFORE INSERT
       .from("user_roles")
       .select("id, user_id")
       .eq("company_id", companyRace)
+      .eq("role_id", ownerRoleId);
+    expect(ownerRows ?? []).toHaveLength(1);
+  }, 30000);
+
+  // ---------------------------------------------------------------------
+  // Gate 3D-B1-R1 -- UPDATE-bypass closure. companyA already has an owner
+  // (from test 1) at this point in the suite.
+  // ---------------------------------------------------------------------
+
+  it("9. UPDATE role_id admin/sales -> owner pada company yang SUDAH punya owner DITOLAK oleh trigger", async () => {
+    const userId = await makeAuthAndProfileUser("adminA2-promote", companyA);
+    const { data: inserted, error: insertErr } = await service
+      .from("user_roles")
+      .insert({ user_id: userId, company_id: companyA, role_id: adminRoleId })
+      .select("id")
+      .single();
+    expect(insertErr).toBeNull();
+
+    const { error: updateErr } = await service
+      .from("user_roles")
+      .update({ role_id: ownerRoleId })
+      .eq("id", (inserted as { id: string }).id);
+    expect(updateErr).not.toBeNull();
+    expect(updateErr!.message).toContain("AODP_SINGLE_OWNER_VIOLATION");
+    expect(updateErr!.code).toBe("23505");
+
+    // Baris tetap admin -- update ditolak sepenuhnya, bukan partial.
+    const { data: row } = await service
+      .from("user_roles")
+      .select("role_id")
+      .eq("id", (inserted as { id: string }).id)
+      .single();
+    expect((row as { role_id: string }).role_id).toBe(adminRoleId);
+  });
+
+  it("10. UPDATE company_id memindahkan owner ke company yang SUDAH punya owner DITOLAK oleh trigger", async () => {
+    // companyC harus sudah punya owner sendiri sebelum percobaan pindah.
+    const targetOwnerUserId = await makeAuthAndProfileUser("ownerC-existing", companyC);
+    const { error: targetOwnerErr } = await service
+      .from("user_roles")
+      .insert({ user_id: targetOwnerUserId, company_id: companyC, role_id: ownerRoleId });
+    expect(targetOwnerErr).toBeNull();
+
+    // Owner di companyMoveSource yang akan dicoba dipindah ke companyC.
+    const moverUserId = await makeAuthAndProfileUser("ownerMoveSource", companyMoveSource);
+    const { data: moverRow, error: moverInsertErr } = await service
+      .from("user_roles")
+      .insert({ user_id: moverUserId, company_id: companyMoveSource, role_id: ownerRoleId })
+      .select("id")
+      .single();
+    expect(moverInsertErr).toBeNull();
+
+    const { error: moveErr } = await service
+      .from("user_roles")
+      .update({ company_id: companyC })
+      .eq("id", (moverRow as { id: string }).id);
+    expect(moveErr).not.toBeNull();
+    expect(moveErr!.message).toContain("AODP_SINGLE_OWNER_VIOLATION");
+    expect(moveErr!.code).toBe("23505");
+
+    // Owner asli tetap di companyMoveSource -- pindah gagal total, tidak partial.
+    const { data: row } = await service
+      .from("user_roles")
+      .select("company_id")
+      .eq("id", (moverRow as { id: string }).id)
+      .single();
+    expect((row as { company_id: string }).company_id).toBe(companyMoveSource);
+  });
+
+  it("11. UPDATE role non-owner biasa (mis. reassign assigned_by) TETAP BERHASIL, tidak terganggu trigger", async () => {
+    const userId = await makeAuthAndProfileUser("salesA2-plain-update", companyA);
+    const { data: inserted, error: insertErr } = await service
+      .from("user_roles")
+      .insert({ user_id: userId, company_id: companyA, role_id: salesRoleId })
+      .select("id")
+      .single();
+    expect(insertErr).toBeNull();
+
+    const { error: updateErr } = await service
+      .from("user_roles")
+      .update({ assigned_by: userId })
+      .eq("id", (inserted as { id: string }).id);
+    expect(updateErr).toBeNull();
+  });
+
+  it("12. UPDATE pada owner yang SUDAH ADA tanpa mengubah role_id/company_id TIDAK RUSAK (tidak bentrok dengan dirinya sendiri)", async () => {
+    // ownerA1 (dari test 1) adalah owner companyA yang sudah ada.
+    const { data: existingOwnerRow } = await service
+      .from("user_roles")
+      .select("id, user_id")
+      .eq("company_id", companyA)
+      .eq("role_id", ownerRoleId)
+      .single();
+    const ownerRowId = (existingOwnerRow as { id: string }).id;
+    const ownerUserId = (existingOwnerRow as { user_id: string }).user_id;
+
+    // (a) update kolom tak terkait -- trigger bahkan tidak seharusnya jalan.
+    const { error: unrelatedErr } = await service
+      .from("user_roles")
+      .update({ assigned_by: ownerUserId })
+      .eq("id", ownerRowId);
+    expect(unrelatedErr).toBeNull();
+
+    // (b) update role_id ke nilai yang SAMA (owner -> owner) -- trigger jalan,
+    // tapi self-exclusion di EXISTS check harus mencegah baris bentrok dengan
+    // dirinya sendiri.
+    const { error: noopErr } = await service
+      .from("user_roles")
+      .update({ role_id: ownerRoleId })
+      .eq("id", ownerRowId);
+    expect(noopErr).toBeNull();
+
+    const { data: row } = await service
+      .from("user_roles")
+      .select("role_id, company_id")
+      .eq("id", ownerRowId)
+      .single();
+    expect((row as { role_id: string }).role_id).toBe(ownerRoleId);
+    expect((row as { company_id: string }).company_id).toBe(companyA);
+  });
+
+  it("13. Direct service-role UPDATE (bukan lewat RPC) TETAP DITOLAK -- trigger tidak punya pengecualian service-role", async () => {
+    // Semua update pada tes ini sudah lewat `service` (service-role client,
+    // bypass total RLS). Percobaan ini murni menegaskan ulang tes #9/#10
+    // secara eksplisit dari sudut pandang "direct SQL/service-role write".
+    const userId = await makeAuthAndProfileUser("salesA3-direct-update", companyA);
+    const { data: inserted, error: insertErr } = await service
+      .from("user_roles")
+      .insert({ user_id: userId, company_id: companyA, role_id: salesRoleId })
+      .select("id")
+      .single();
+    expect(insertErr).toBeNull();
+
+    const { error: updateErr } = await service
+      .from("user_roles")
+      .update({ role_id: ownerRoleId })
+      .eq("id", (inserted as { id: string }).id);
+    expect(updateErr).not.toBeNull();
+    expect(updateErr!.message).toContain("AODP_SINGLE_OWNER_VIOLATION");
+  });
+
+  it("14. UPDATE promote (owner) vs INSERT owner KONKUREN menuju company yang sama tanpa owner -- tepat SATU berhasil (race-safe UPDATE+INSERT)", async () => {
+    const [promoteUserId, insertUserId] = await Promise.all([
+      makeAuthAndProfileUser("updateRacePromote", companyUpdateRace),
+      makeAuthAndProfileUser("updateRaceInsert", companyUpdateRace),
+    ]);
+
+    const { data: promoteRow, error: preInsertErr } = await service
+      .from("user_roles")
+      .insert({ user_id: promoteUserId, company_id: companyUpdateRace, role_id: adminRoleId })
+      .select("id")
+      .single();
+    expect(preInsertErr).toBeNull();
+
+    const [updateResult, insertResult] = await Promise.all([
+      service.from("user_roles").update({ role_id: ownerRoleId }).eq("id", (promoteRow as { id: string }).id),
+      service.from("user_roles").insert({ user_id: insertUserId, company_id: companyUpdateRace, role_id: ownerRoleId }),
+    ]);
+
+    const errors = [updateResult.error, insertResult.error];
+    const successCount = errors.filter((e) => e === null).length;
+    const failureCount = errors.filter((e) => e !== null).length;
+
+    expect(successCount).toBe(1);
+    expect(failureCount).toBe(1);
+    const failedError = errors.find((e) => e !== null);
+    expect(failedError!.message).toContain("AODP_SINGLE_OWNER_VIOLATION");
+
+    const { data: ownerRows } = await service
+      .from("user_roles")
+      .select("id, user_id")
+      .eq("company_id", companyUpdateRace)
       .eq("role_id", ownerRoleId);
     expect(ownerRows ?? []).toHaveLength(1);
   }, 30000);
