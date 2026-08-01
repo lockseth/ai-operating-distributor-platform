@@ -43,8 +43,7 @@ export async function updateSession(request: NextRequest) {
   const isAuthRoute =
     pathname.startsWith("/login") ||
     pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password") ||
-    pathname.startsWith("/callback");
+    pathname.startsWith("/reset-password");
 
   // Demo mode: dev-only bypass — jangan sentuh Supabase sama sekali di jalur
   // ini, supaya demo tetap jalan walau Supabase/Docker sedang tidak aktif.
