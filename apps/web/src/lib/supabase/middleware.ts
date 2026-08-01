@@ -45,6 +45,17 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/forgot-password") ||
     pathname.startsWith("/reset-password");
 
+  // /signup sengaja BUKAN bagian dari isAuthRoute: rute lain di sana redirect
+  // authenticated user ke /dashboard, tapi /signup harus tetap bisa diakses
+  // oleh user yang SUDAH authenticated tapi BELUM diprovisi (lanjutan setelah
+  // email confirmation, atau retry setelah provisioning gagal) -- getAuthUser()
+  // akan sign-out + redirect user tanpa user_roles yang mencapai /dashboard
+  // (Gate 3C fail-closed), jadi memaksa redirect ke /dashboard di sini akan
+  // merusak sesi sebelum provisioning sempat selesai. Halaman /signup sendiri
+  // yang menentukan (client-side, via query users profil) apakah authenticated
+  // user ini sudah diprovisi dan perlu diarahkan ke /dashboard.
+  const isSignupRoute = pathname.startsWith("/signup");
+
   // Demo mode: dev-only bypass — jangan sentuh Supabase sama sekali di jalur
   // ini, supaya demo tetap jalan walau Supabase/Docker sedang tidak aktif.
   if (isDemoModeAllowed() && request.cookies.get(DEMO_MODE_COOKIE)?.value === "1") {
@@ -94,7 +105,7 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicRoute = isAuthRoute || pathname === "/";
+  const isPublicRoute = isAuthRoute || isSignupRoute || pathname === "/";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
