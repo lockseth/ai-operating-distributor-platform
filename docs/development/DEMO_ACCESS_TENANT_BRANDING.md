@@ -23,13 +23,24 @@ Dispatch, WhatsApp, atau deployment.
    memanggil Supabase Auth, hanya menandai cookie lokal. **Tidak diperluas ke
    environment Demo/staging** oleh gate ini.
 2. **Demo Access (gate ini)** — login email/password Supabase Auth **nyata**
-   terhadap project `AODP-Waluyo-Demo`, untuk dua akun tetap:
+   terhadap project `AODP-Waluyo-Demo`, untuk tiga akun tetap (Gate 3A — Demo
+   Authentication Foundation, satu per role baseline):
    - Owner: `owner.demo@waluyo.aodp.test`
+   - Admin: `admin.demo@waluyo.aodp.test`
    - Sales: `sales.demo@waluyo.aodp.test` (fixture uji RLS role sales —
      **bukan** hasil Telegram Salesman Enrollment; tidak punya status
      biometric/identity verified; tidak dinyatakan siap operasional. Model
      active/inactive salesman formal belum ada di schema — didokumentasikan
      sebagai limitation, bukan dibangun di gate ini.)
+
+   Role masing-masing akun berasal dari canonical membership
+   (`public.user_roles` → `public.roles`), sama persis dengan query yang
+   dipakai `getAuthUser()` (`apps/web/src/lib/auth/get-user.ts`) — **bukan**
+   dari `user_metadata`, yang bisa dimanipulasi. Dibuktikan lewat
+   `apps/web/src/lib/auth/demo-role-baseline-canonical-membership.integration.test.ts`
+   (local Postgres nyata, `user_metadata.role` sengaja diisi nilai salah untuk
+   membuktikan nilai itu tidak pernah dipakai) dan skenario 13 di
+   `scripts/verify-demo-auth.ts` (live, terhadap `AODP-Waluyo-Demo`).
 
 ## Tenant Demo
 
@@ -107,12 +118,14 @@ brand color tervalidasi, dan footer "Powered by AODP".
 
 ## Password Demo — stabil, tidak dirotasi
 
-Akun Owner/Sales Demo memakai kunci environment kanonik di
+Akun Owner/Admin/Sales Demo memakai kunci environment kanonik di
 `.env.demo.local` (root repo, gitignored, **tidak pernah** masuk Git):
 
 ```
 AODP_DEMO_OWNER_EMAIL
 AODP_DEMO_OWNER_PASSWORD
+AODP_DEMO_ADMIN_EMAIL
+AODP_DEMO_ADMIN_PASSWORD
 AODP_DEMO_SALES_EMAIL
 AODP_DEMO_SALES_PASSWORD
 ```
@@ -126,10 +139,12 @@ AODP_DEMO_SALES_PASSWORD
   dan harus dipanggil eksplisit:
   ```
   pnpm reset:demo-access -- --account=owner
+  pnpm reset:demo-access -- --account=admin
   pnpm reset:demo-access -- --account=sales
   ```
   Operator mengisi password baru di `AODP_DEMO_OWNER_PASSWORD_NEW` /
-  `AODP_DEMO_SALES_PASSWORD_NEW` terlebih dahulu — script **tidak pernah**
+  `AODP_DEMO_ADMIN_PASSWORD_NEW` / `AODP_DEMO_SALES_PASSWORD_NEW` terlebih
+  dahulu — script **tidak pernah**
   generate password sendiri. Fail-closed jika: target project bukan ref
   `mcbwgvtkhykrrtvbpeys`, email di luar allowlist Demo, atau kunci `*_NEW`
   kosong. Tidak membuat akun baru (hanya reset akun existing), tidak
@@ -157,9 +172,9 @@ AODP_DEMO_SALES_PASSWORD
 ## Verifikasi live (remote AODP-Waluyo-Demo)
 
 ```
-pnpm seed:demo          # idempotent, tidak merotasi password
-pnpm verify:demo-rls    # tenant isolation (8 skenario)
-pnpm verify:demo-auth   # login/session/logout/reset/branding (17 skenario)
+pnpm seed:demo          # idempotent, tidak merotasi password (owner/admin/sales)
+pnpm verify:demo-rls    # tenant isolation, termasuk admin (10 skenario)
+pnpm verify:demo-auth   # login/session/logout/reset/branding/role-baseline (23 skenario)
 ```
 
 ## Recovery procedure

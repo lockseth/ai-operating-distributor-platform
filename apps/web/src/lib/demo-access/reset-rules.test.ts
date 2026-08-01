@@ -27,12 +27,17 @@ describe("isValidDemoProjectHost", () => {
 describe("isAllowedDemoEmail", () => {
   it("true untuk pasangan account/email yang benar", () => {
     expect(isAllowedDemoEmail("owner", "owner.demo@waluyo.aodp.test")).toBe(true);
+    expect(isAllowedDemoEmail("admin", "admin.demo@waluyo.aodp.test")).toBe(true);
     expect(isAllowedDemoEmail("sales", "sales.demo@waluyo.aodp.test")).toBe(true);
   });
 
-  it("false ketika email owner dipakai untuk account sales atau sebaliknya", () => {
+  it("false ketika email satu account dipakai untuk account lain", () => {
     expect(isAllowedDemoEmail("sales", "owner.demo@waluyo.aodp.test")).toBe(false);
     expect(isAllowedDemoEmail("owner", "sales.demo@waluyo.aodp.test")).toBe(false);
+    expect(isAllowedDemoEmail("admin", "owner.demo@waluyo.aodp.test")).toBe(false);
+    expect(isAllowedDemoEmail("owner", "admin.demo@waluyo.aodp.test")).toBe(false);
+    expect(isAllowedDemoEmail("admin", "sales.demo@waluyo.aodp.test")).toBe(false);
+    expect(isAllowedDemoEmail("sales", "admin.demo@waluyo.aodp.test")).toBe(false);
   });
 
   it("false untuk email arbitrer di luar allowlist", () => {

@@ -36,11 +36,13 @@ const ANON_KEY = env.NEXT_PUBLIC_SUPABASE_DEMO_ANON_KEY;
 const SERVICE_KEY = env.SUPABASE_DEMO_SERVICE_ROLE_KEY;
 
 const DEMO_OWNER_EMAIL = "owner.demo@waluyo.aodp.test";
+const DEMO_ADMIN_EMAIL = "admin.demo@waluyo.aodp.test";
 const DEMO_SALES_EMAIL = "sales.demo@waluyo.aodp.test";
 const ISOLATION_OWNER_EMAIL = "owner.isolation@aodp.test";
 
 function pwKeyFor(email: string): string {
   if (email === DEMO_OWNER_EMAIL) return "AODP_DEMO_OWNER_PASSWORD";
+  if (email === DEMO_ADMIN_EMAIL) return "AODP_DEMO_ADMIN_PASSWORD";
   if (email === DEMO_SALES_EMAIL) return "AODP_DEMO_SALES_PASSWORD";
   return `DEMO_OWNER_PASSWORD_${email.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}`;
 }
@@ -87,6 +89,18 @@ async function main() {
   {
     const { data, error } = await ownerClient.from("products").select("id, sku").eq("company_id", demoCompany.id);
     record("2b. Owner Demo dapat membaca produk sintetis miliknya", !error && (data?.length ?? 0) >= 1, error?.message);
+  }
+
+  // 2c. Admin Demo (role baseline ketiga Gate 3A) dapat membaca tenant miliknya sendiri
+  const adminClient = await signIn(DEMO_ADMIN_EMAIL);
+  {
+    const { data, error } = await adminClient.from("companies").select("id, name").eq("id", demoCompany.id).maybeSingle();
+    record("2c. Admin Demo dapat membaca company miliknya", !error && !!data, error?.message);
+  }
+  {
+    const { data, error } = await adminClient.from("companies").select("id").eq("id", isolationCompany.id).maybeSingle();
+    const blocked = !error && !data;
+    record("2d. Admin Demo TIDAK dapat membaca company tenant lain (isolation)", blocked, error ? error.message : `data=${JSON.stringify(data)}`);
   }
 
   // 3. Tenant lain tidak dapat membaca data Demo

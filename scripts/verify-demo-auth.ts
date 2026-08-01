@@ -40,7 +40,25 @@ if (!SUPABASE_URL || !ANON_KEY) {
 }
 
 const OWNER_EMAIL = "owner.demo@waluyo.aodp.test";
+const ADMIN_EMAIL = "admin.demo@waluyo.aodp.test";
 const SALES_EMAIL = "sales.demo@waluyo.aodp.test";
+
+/** Baca role name via user_roles -> roles, PERSIS query yang dipakai getAuthUser() -- bukan user_metadata. */
+async function readRoleNamesFromDb(
+  client: ReturnType<typeof freshClient>,
+  userId: string,
+  companyId: string
+): Promise<string[]> {
+  const { data: userRolesData } = await client
+    .from("user_roles")
+    .select("role_id")
+    .eq("user_id", userId)
+    .eq("company_id", companyId);
+  const roleIds = ((userRolesData ?? []) as { role_id: string }[]).map((r) => r.role_id);
+  if (roleIds.length === 0) return [];
+  const { data: rolesData } = await client.from("roles").select("name").in("id", roleIds);
+  return ((rolesData ?? []) as { name: string }[]).map((r) => r.name);
+}
 
 const results: { name: string; pass: boolean; detail?: string }[] = [];
 function record(name: string, pass: boolean, detail?: string) {
@@ -126,6 +144,48 @@ async function main() {
     const { data, error } = await c.auth.signInWithPassword({ email: SALES_EMAIL, password: env.AODP_DEMO_SALES_PASSWORD });
     record("10. Sales Demo login berhasil dengan password tetap", !error && !!data.session, error?.message);
     await c.auth.signOut();
+  }
+
+  // 10b. Admin Demo login berhasil (Gate 3A — role baseline ketiga)
+  {
+    const c = freshClient();
+    const { data, error } = await c.auth.signInWithPassword({ email: ADMIN_EMAIL, password: env.AODP_DEMO_ADMIN_PASSWORD });
+    record("10b. Admin Demo login berhasil dengan Supabase Auth nyata", !error && !!data.session, error?.message);
+    await c.auth.signOut();
+  }
+
+  // 13. Role owner/admin/sales terbaca dari user_roles/roles (canonical membership),
+  // BUKAN dari user_metadata (yang dapat dimanipulasi client) -- query PERSIS meniru
+  // getAuthUser() (apps/web/src/lib/auth/get-user.ts). Juga membuktikan ketiganya
+  // berada di tenant demo yang SAMA.
+  {
+    const accounts: { label: string; email: string; passwordKey: string; expectedRole: string }[] = [
+      { label: "Owner", email: OWNER_EMAIL, passwordKey: "AODP_DEMO_OWNER_PASSWORD", expectedRole: "owner" },
+      { label: "Admin", email: ADMIN_EMAIL, passwordKey: "AODP_DEMO_ADMIN_PASSWORD", expectedRole: "admin" },
+      { label: "Sales", email: SALES_EMAIL, passwordKey: "AODP_DEMO_SALES_PASSWORD", expectedRole: "sales" },
+    ];
+    const companyIds: string[] = [];
+    for (const acc of accounts) {
+      const c = freshClient();
+      const { data: signInData, error: signInErr } = await c.auth.signInWithPassword({ email: acc.email, password: env[acc.passwordKey] });
+      if (signInErr || !signInData.session) {
+        record(`13. ${acc.label} Demo terbaca sebagai role '${acc.expectedRole}'`, false, signInErr?.message ?? "sign-in gagal");
+        continue;
+      }
+      const { data: userData } = await c.auth.getUser();
+      const { data: profile } = await c.from("users").select("company_id").eq("id", userData.user!.id).single();
+      const companyId = (profile as { company_id: string } | null)?.company_id;
+      const roles = companyId ? await readRoleNamesFromDb(c, userData.user!.id, companyId) : [];
+      record(
+        `13. ${acc.label} Demo terbaca sebagai role '${acc.expectedRole}' (dari user_roles/roles, bukan user_metadata)`,
+        roles.length === 1 && roles[0] === acc.expectedRole,
+        `roles=${JSON.stringify(roles)}`
+      );
+      if (companyId) companyIds.push(companyId);
+      await c.auth.signOut();
+    }
+    const sameTenant = companyIds.length === accounts.length && companyIds.every((id) => id === companyIds[0]);
+    record("13b. Owner/Admin/Sales Demo berada di tenant demo yang SAMA", sameTenant, `company_ids=${JSON.stringify(companyIds)}`);
   }
 
   // 14/15. Reset password eksplisit diuji dengan aman (Sales, risiko lebih rendah), lalu dikembalikan

@@ -10,8 +10,10 @@
  * Membuat:
  *   - Tenant demo "PT. Sumber Warna Alam Sudiada" (settings.environment = "DEMO",
  *     settings.coverage_areas = wilayah awal Cirebon Timur/Kota/Barat)
- *   - Owner demo (AODP_DEMO_OWNER_EMAIL) dan Sales demo (AODP_DEMO_SALES_EMAIL)
- *     — Sales demo adalah FIXTURE untuk uji RLS role sales, BUKAN hasil
+ *   - Owner demo (AODP_DEMO_OWNER_EMAIL), Admin demo (AODP_DEMO_ADMIN_EMAIL),
+ *     dan Sales demo (AODP_DEMO_SALES_EMAIL) — tiga akun permanen untuk Gate
+ *     3A (Demo Authentication Foundation), satu per role baseline.
+ *     Sales demo adalah FIXTURE untuk uji RLS role sales, BUKAN hasil
  *     Salesman Enrollment: tidak punya status biometric/identity verified,
  *     tidak dinyatakan siap operasional. Model active/inactive salesman
  *     belum ada di schema — limitation ini didokumentasikan, bukan dibangun
@@ -28,6 +30,9 @@
  *   SUPABASE_DEMO_SERVICE_ROLE_KEY      (input, wajib)
  *   AODP_DEMO_OWNER_EMAIL               (ditulis, non-secret)
  *   AODP_DEMO_OWNER_PASSWORD            (ditulis HANYA saat akun baru dibuat;
+ *                                         dipertahankan jika sudah ada)
+ *   AODP_DEMO_ADMIN_EMAIL               (ditulis, non-secret)
+ *   AODP_DEMO_ADMIN_PASSWORD            (ditulis HANYA saat akun baru dibuat;
  *                                         dipertahankan jika sudah ada)
  *   AODP_DEMO_SALES_EMAIL               (ditulis, non-secret)
  *   AODP_DEMO_SALES_PASSWORD            (ditulis HANYA saat akun baru dibuat;
@@ -101,6 +106,14 @@ const DEMO_OWNER = {
   phone: "0812-0000-9001",
   emailEnvKey: "AODP_DEMO_OWNER_EMAIL",
   passwordEnvKey: "AODP_DEMO_OWNER_PASSWORD",
+};
+
+const DEMO_ADMIN = {
+  email: "admin.demo@waluyo.aodp.test",
+  fullName: "Demo Admin — Waluyo",
+  phone: "0812-0000-9002",
+  emailEnvKey: "AODP_DEMO_ADMIN_EMAIL",
+  passwordEnvKey: "AODP_DEMO_ADMIN_PASSWORD",
 };
 
 const DEMO_SALES = {
@@ -243,19 +256,22 @@ async function main() {
   console.log("[2] Owner demo (Waluyo)");
   const demoOwner = await upsertUserWithRole(demoCompanyId, DEMO_OWNER, "owner");
 
-  console.log("[3] Sales demo (Waluyo) — fixture uji RLS, bukan Salesman Enrollment");
+  console.log("[3] Admin demo (Waluyo)");
+  const demoAdmin = await upsertUserWithRole(demoCompanyId, DEMO_ADMIN, "admin");
+
+  console.log("[4] Sales demo (Waluyo) — fixture uji RLS, bukan Salesman Enrollment");
   const demoSales = await upsertUserWithRole(demoCompanyId, DEMO_SALES, "sales");
 
-  console.log("[4] Produk sintetis (tenant demo)");
+  console.log("[5] Produk sintetis (tenant demo)");
   await upsertSyntheticProduct(demoCompanyId, "DEMO-SKU-001", "Produk Sintetis Demo Waluyo");
 
-  console.log("[5] Tenant sintetis kedua (untuk uji isolation)");
+  console.log("[6] Tenant sintetis kedua (untuk uji isolation)");
   const isolationCompanyId = await upsertCompany({ name: ISOLATION_COMPANY.name, slug: ISOLATION_COMPANY.slug });
 
-  console.log("[6] Owner tenant isolation");
+  console.log("[7] Owner tenant isolation");
   const isolationOwner = await upsertUserWithRole(isolationCompanyId, ISOLATION_OWNER, "owner");
 
-  console.log("[7] Produk sintetis (tenant isolation)");
+  console.log("[8] Produk sintetis (tenant isolation)");
   await upsertSyntheticProduct(isolationCompanyId, "ISO-SKU-001", "Produk Sintetis Isolation Tenant");
 
   console.log("\nSeed demo selesai. Password TIDAK dirotasi untuk akun yang sudah ada.");
@@ -265,6 +281,8 @@ async function main() {
         demo_company_id: demoCompanyId,
         demo_owner_user_id: demoOwner.userId,
         demo_owner_account_created_this_run: demoOwner.created,
+        demo_admin_user_id: demoAdmin.userId,
+        demo_admin_account_created_this_run: demoAdmin.created,
         demo_sales_user_id: demoSales.userId,
         demo_sales_account_created_this_run: demoSales.created,
         isolation_company_id: isolationCompanyId,

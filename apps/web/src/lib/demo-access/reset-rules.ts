@@ -8,10 +8,11 @@
 
 export const DEMO_PROJECT_REF = "mcbwgvtkhykrrtvbpeys";
 
-export type DemoAccount = "owner" | "sales";
+export type DemoAccount = "owner" | "admin" | "sales";
 
 export const DEMO_ALLOWED_EMAILS: Record<DemoAccount, string> = {
   owner: "owner.demo@waluyo.aodp.test",
+  admin: "admin.demo@waluyo.aodp.test",
   sales: "sales.demo@waluyo.aodp.test",
 };
 

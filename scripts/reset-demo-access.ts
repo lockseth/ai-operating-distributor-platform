@@ -9,13 +9,14 @@
  *
  * Usage:
  *   tsx scripts/reset-demo-access.ts --account=owner
+ *   tsx scripts/reset-demo-access.ts --account=admin
  *   tsx scripts/reset-demo-access.ts --account=sales
  *
  * Prasyarat di .env.demo.local (gitignored):
  *   NEXT_PUBLIC_SUPABASE_DEMO_URL        (wajib, harus project ref Demo)
  *   SUPABASE_DEMO_SERVICE_ROLE_KEY       (wajib)
- *   AODP_DEMO_OWNER_EMAIL / AODP_DEMO_SALES_EMAIL   (allowlist email)
- *   AODP_DEMO_OWNER_PASSWORD_NEW  atau  AODP_DEMO_SALES_PASSWORD_NEW
+ *   AODP_DEMO_OWNER_EMAIL / AODP_DEMO_ADMIN_EMAIL / AODP_DEMO_SALES_EMAIL   (allowlist email)
+ *   AODP_DEMO_OWNER_PASSWORD_NEW  /  AODP_DEMO_ADMIN_PASSWORD_NEW  /  AODP_DEMO_SALES_PASSWORD_NEW
  *     -> password BARU yang ingin dipasang. Operator yang menentukan
  *        nilainya (mis. isi manual di .env.demo.local); script ini TIDAK
  *        pernah generate password sendiri.
@@ -47,8 +48,8 @@ type Account = DemoAccount;
 function parseAccountArg(): Account {
   const arg = process.argv.find((a) => a.startsWith("--account="));
   const value = arg?.split("=")[1];
-  if (value !== "owner" && value !== "sales") {
-    console.error("FAIL: argumen --account=owner|sales wajib diisi eksplisit.");
+  if (value !== "owner" && value !== "admin" && value !== "sales") {
+    console.error("FAIL: argumen --account=owner|admin|sales wajib diisi eksplisit.");
     process.exit(1);
   }
   return value;
@@ -113,9 +114,14 @@ async function main() {
     process.exit(1);
   }
 
-  const emailEnvKey = account === "owner" ? "AODP_DEMO_OWNER_EMAIL" : "AODP_DEMO_SALES_EMAIL";
-  const newPasswordEnvKey = account === "owner" ? "AODP_DEMO_OWNER_PASSWORD_NEW" : "AODP_DEMO_SALES_PASSWORD_NEW";
-  const canonicalPasswordEnvKey = account === "owner" ? "AODP_DEMO_OWNER_PASSWORD" : "AODP_DEMO_SALES_PASSWORD";
+  const ACCOUNT_ENV_KEYS: Record<Account, { email: string; newPassword: string; canonicalPassword: string }> = {
+    owner: { email: "AODP_DEMO_OWNER_EMAIL", newPassword: "AODP_DEMO_OWNER_PASSWORD_NEW", canonicalPassword: "AODP_DEMO_OWNER_PASSWORD" },
+    admin: { email: "AODP_DEMO_ADMIN_EMAIL", newPassword: "AODP_DEMO_ADMIN_PASSWORD_NEW", canonicalPassword: "AODP_DEMO_ADMIN_PASSWORD" },
+    sales: { email: "AODP_DEMO_SALES_EMAIL", newPassword: "AODP_DEMO_SALES_PASSWORD_NEW", canonicalPassword: "AODP_DEMO_SALES_PASSWORD" },
+  };
+  const emailEnvKey = ACCOUNT_ENV_KEYS[account].email;
+  const newPasswordEnvKey = ACCOUNT_ENV_KEYS[account].newPassword;
+  const canonicalPasswordEnvKey = ACCOUNT_ENV_KEYS[account].canonicalPassword;
 
   // Allowlist eksplisit — hanya dua email Demo yang boleh direset, tidak ada
   // jalur untuk mereset akun lain lewat argumen ini.
