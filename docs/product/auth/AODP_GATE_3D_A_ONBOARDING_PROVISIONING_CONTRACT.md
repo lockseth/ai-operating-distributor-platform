@@ -301,20 +301,50 @@ at all; (C) is implemented for `sales` only.
 ## 7. Gaps / blockers
 
 - **G1 — No DB-level "one owner per tenant" guarantee — RESOLVED / FROZEN (Gate
-  3D-A1, 2026-08-01).** `user_roles` has no constraint today preventing a second
-  `role = 'owner'` row for the same `company_id`. Decision (no longer open):
-  - **Adopted: Option 1.** A `BEFORE INSERT` trigger on `public.user_roles` that, when
-    the inserted row's `role_id` resolves to `roles.name = 'owner'`, raises an exception
-    if an owner row already exists for that `company_id`. Defense-in-depth — protects
-    against every insert path (RPC bugs, future admin tooling, direct service-role
-    misuse), consistent with Gate 3B's "RLS/DB is the authoritative surface" precedent.
+  3D-A1, 2026-08-01; clarified Gate 3D-B1-R1, 2026-08-01).** `user_roles` has no
+  constraint today preventing a second `role = 'owner'` row for the same `company_id`.
+  Decision (no longer open):
+  - **Adopted: Option 1.** A trigger on `public.user_roles` that, when the affected
+    row's `role_id` resolves to `roles.name = 'owner'`, raises an exception if a
+    *different* owner row already exists for that `company_id`. Defense-in-depth —
+    protects against every write path (RPC bugs, future admin tooling, direct
+    service-role misuse), consistent with Gate 3B's "RLS/DB is the authoritative
+    surface" precedent.
+  - **The invariant is "at most one owner per company after every `user_roles`
+    mutation" — not "at most one owner inserted."** A `BEFORE INSERT` trigger alone is
+    the **baseline minimum**, not the full contract: it does nothing to stop an
+    existing `admin`/`sales` row from being `UPDATE`d to `role_id = owner`, nor an
+    existing owner row's `company_id` from being `UPDATE`d into a tenant that already
+    has one. Both are second-owner-producing mutations and MUST be rejected exactly
+    like a second `INSERT`. Concretely the trigger MUST fire, and re-run the same
+    "owner already exists for this `company_id`" check, on:
+    1. `INSERT` of a row whose `role_id` resolves to `owner`;
+    2. `UPDATE` of `role_id` to a value that resolves to `owner` (regardless of the
+       row's previous role);
+    3. `UPDATE` of `company_id` on a row whose (new) `role_id` resolves to `owner` —
+       i.e. moving an owner into a different tenant; rejected unless the destination
+       tenant currently has no owner;
+    4. any of the above issued by `service-role` or a direct SQL client — the trigger
+       is a table-level constraint, not an RLS policy, so it has no service-role or
+       "trusted caller" exemption of any kind;
+    5. any of the above issued concurrently — the check MUST remain race-safe (row-lock
+       the target `companies.id` before evaluating "owner already exists") for UPDATE
+       exactly as it already is for INSERT; two concurrent mutations converging on the
+       same destination `company_id` must serialize so at most one ever commits as
+       owner.
+    An `UPDATE` that does not touch `role_id`/`company_id`, or that changes them
+    without the *new* role resolving to `owner`, is unaffected and MUST continue to
+    succeed unmodified (e.g. changing `assigned_by`, or demoting an owner away from
+    `owner`).
   - Option 2 (`SELECT ... FOR UPDATE` row-lock inside the first-owner RPC) is **not** a
     substitute for Option 1 — it only protects one call site. It MAY be added later as
     belt-and-suspenders inside the RPC itself, but the trigger alone is sufficient to
     close this gap and is non-negotiable.
   - **Sequencing lock (binding for Gate 3D-B):** this trigger is implementation item
     **#1** of Gate 3D-B — before the atomic provisioning RPC (#2) and before any signup
-    UI (#3). See §7a.
+    UI (#3). See §7a. The trigger is not "done" for the purposes of that sequencing
+    lock until it covers INSERT and UPDATE as specified above — a step-1 trigger that
+    only covers INSERT does not satisfy step 1.
 - **G2 — Public self-service signup is entirely unbuilt.** No route, form, action, or
   RPC. §5.A is a target contract only. Requires explicit scoping/sprint planning
   (Gate 3D-B or later) before implementation.
@@ -370,10 +400,11 @@ Gate 3D-B MUST be implemented and merged in this exact order. Each step's own te
 (§8) must pass before the next step begins; no step may be skipped, reordered, or
 built in parallel ahead of an earlier step:
 
-1. **Database single-owner enforcement (closes G1).** The `BEFORE INSERT` trigger on
-   `public.user_roles` described in G1 (§7). Migration-only — no application code
-   depends on it yet, so it lands and is tested (§8, Gate 3D-B item 0) independently
-   and first.
+1. **Database single-owner enforcement (closes G1).** The `BEFORE INSERT OR UPDATE`
+   trigger on `public.user_roles` described in G1 (§7) — covering INSERT, UPDATE of
+   `role_id`, and UPDATE of `company_id`, race-safe, and binding on service-role/direct
+   SQL. Migration-only — no application code depends on it yet, so it lands and is
+   tested (§8, Gate 3D-B item 0) independently and first.
 2. **Atomic provisioning RPC.** The first-owner provisioning logic (§5.A.2) implemented
    as a `SECURITY DEFINER` RPC/transaction that is atomic and **fail-closed**: any
    failure after the `auth.users` row is created rolls back (deletes) both the
@@ -404,9 +435,15 @@ still require resolution before/during implementation)
 
 0. **[G1 acceptance criteria — migration-only, runs before any RPC or UI code exists,
    per §7a step 1]** Direct SQL insert of a second `user_roles` row with
-   `role = 'owner'` for a `company_id` that already has an owner → the `BEFORE INSERT`
-   trigger raises and the insert is rejected, independent of any RPC or application
-   code.
+   `role = 'owner'` for a `company_id` that already has an owner → the trigger raises
+   and the insert is rejected, independent of any RPC or application code. This
+   criterion additionally covers the UPDATE-bypass surface (Gate 3D-B1-R1): promoting
+   an existing `admin`/`sales` row to `owner` in a company that already has one, and
+   moving an existing owner's `company_id` into a company that already has one, are
+   both rejected identically; a same-row UPDATE that doesn't change the effective
+   owner/company outcome (no-op role/company update, or an unrelated column change)
+   is unaffected; and every case holds for service-role/direct SQL and under
+   concurrent UPDATE/INSERT racing toward the same destination company.
 1. Successful signup creates exactly one `companies` row, one `auth.users` row, one
    `public.users` row, and exactly one `user_roles` row with role `owner`.
 2. Role/company_id cannot be influenced by request body or `user_metadata` — attempt to
@@ -539,3 +576,33 @@ any migration, RPC, runtime code, test implementation, seed, or signup UI:
 
 G2–G6 remain open and unresolved; they stay contract-only pending Gate 3D-B+
 implementation and are not affected by this amendment.
+
+### Gate 3D-B1-R1 (2026-08-01) — Contract Clarification (UPDATE Enforcement)
+
+Founder identified that the Gate 3D-B1 `BEFORE INSERT` trigger, while satisfying the
+letter of G1's original "adopted: Option 1" text, left an UPDATE-shaped bypass of the
+same invariant: `UPDATE user_roles SET role_id = <owner>` or `UPDATE user_roles SET
+company_id = <target>` on an existing owner row could still produce a second owner for
+a company without ever going through `INSERT`. Clarified, without changing the adopted
+mechanism (still a trigger on `public.user_roles`, still `unique_violation`/23505, still
+migration-only):
+
+- The single-owner invariant is **"at most one owner per company after every
+  `user_roles` mutation,"** not merely "at most one owner inserted." `BEFORE INSERT` is
+  the baseline minimum the original text described, not a license to leave `UPDATE`
+  unguarded.
+- Enforcement is now explicitly required to cover: INSERT of an owner row; UPDATE of
+  `role_id` to `owner`; UPDATE of `company_id` that moves an owner into an
+  already-owned company; service-role/direct SQL (no exemption, ever); and concurrent
+  mutations (race-safe via the existing per-company row-lock pattern, extended to the
+  UPDATE paths).
+- No change to: the adopted mechanism (still a single trigger function, still
+  `AODP_SINGLE_OWNER_VIOLATION` / SQLSTATE 23505), the Gate 3D-B step ordering (§7a:
+  DB enforcement → atomic provisioning RPC → signup UI), or the `super_admin`
+  boundary (G7). This amendment only closes a gap in how completely step 1 of §7a
+  must be implemented before step 2 may begin.
+- See §7 (G1) and §8 (Gate 3D-B item 0) for the updated normative text and acceptance
+  criteria. Implementation repair tracked as a separate commit
+  (`fix(auth): close single-owner update bypass`) against the same migration file
+  introduced by Gate 3D-B1, per Founder instruction not to amend the already-committed
+  Gate 3D-B1 commit.
