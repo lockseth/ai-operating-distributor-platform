@@ -60,8 +60,10 @@ describe("Signup form public contract (Gate 3D-B3)", () => {
     expect(block).toContain('setPhase("check-email")');
   });
 
-  it("redirectTo/emailRedirectTo fixed same-origin, tidak pernah dari query param (obligasi test #13)", () => {
-    expect(source).toContain("emailRedirectTo: `${window.location.origin}/signup`");
+  it("redirectTo/emailRedirectTo fixed same-origin ke /auth/callback, tidak pernah dari query param (obligasi test #13, Gate 3D-B3-F1)", () => {
+    expect(source).toContain(
+      "emailRedirectTo: `${window.location.origin}/auth/callback?next=/signup`"
+    );
     expect(source).not.toMatch(/emailRedirectTo:\s*(searchParams|params|req\.|new URL)/);
   });
 

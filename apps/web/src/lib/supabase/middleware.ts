@@ -56,6 +56,12 @@ export async function updateSession(request: NextRequest) {
   // user ini sudah diprovisi dan perlu diarahkan ke /dashboard.
   const isSignupRoute = pathname.startsWith("/signup");
 
+  // /auth/callback (Gate 3D-B3-F1) menukar PKCE `code` dari link konfirmasi
+  // email menjadi session -- request ini SELALU datang tanpa session (belum
+  // ada cookie sama sekali), jadi wajib diizinkan lewat sebelum auth-gate di
+  // bawah, sama seperti /login dan /signup.
+  const isAuthCallbackRoute = pathname.startsWith("/auth/callback");
+
   // Demo mode: dev-only bypass — jangan sentuh Supabase sama sekali di jalur
   // ini, supaya demo tetap jalan walau Supabase/Docker sedang tidak aktif.
   if (isDemoModeAllowed() && request.cookies.get(DEMO_MODE_COOKIE)?.value === "1") {
@@ -105,7 +111,7 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicRoute = isAuthRoute || isSignupRoute || pathname === "/";
+  const isPublicRoute = isAuthRoute || isSignupRoute || isAuthCallbackRoute || pathname === "/";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

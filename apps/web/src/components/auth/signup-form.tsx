@@ -121,7 +121,11 @@ export function SignupForm() {
       options: {
         // Fixed, same-origin path -- tidak pernah diturunkan dari query
         // param/input pengguna, mirror pola redirectTo di forgot-password-form.
-        emailRedirectTo: `${window.location.origin}/signup`,
+        // Lewat /auth/callback dulu (Gate 3D-B3-F1) supaya PKCE `code` yang
+        // dikirim Supabase benar-benar ditukar jadi session sebelum sampai
+        // di /signup -- tanpa ini getSession() di halaman /signup selalu
+        // null walau email sudah confirmed.
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=/signup`,
       },
     });
 
