@@ -93,7 +93,7 @@ describe("Telegram Sales Order workflow", () => {
     expect(order?.priced.estimatedTotal).toBe(10_200_000);
 
     const reply = deps.sender.sent[0]!.text;
-    expect(reply).toContain("Draft Order — Toko Sinar Jaya");
+    expect(reply).toContain(`Draft Order ${order!.orderNumber} — Toko Sinar Jaya`);
     expect(reply).toContain("Rp10.200.000");
     expect(reply).toContain("Balas KONFIRMASI");
   });
@@ -439,5 +439,210 @@ describe("Telegram Sales Order workflow", () => {
 
     order = await deps.repository.getOrder(first.orderId);
     expect(order?.orderSource).toBe("REPEAT_ORDER");
+  });
+
+  // ---------------------------------------------------------------------
+  // Gate 3E-B — Telegram Sales Order Live Demo Readiness: skenario tambahan.
+  // ---------------------------------------------------------------------
+
+  it("18. dua sales berbeda -> masing-masing membuat order sendiri, tidak saling menyamar", async () => {
+    const deps = makeDeps();
+    const CHAT_ID_2 = 2002;
+    registerSales(deps.repository, CHAT_ID); // sales 1
+    deps.repository.seedIdentity(CHAT_ID_2, {
+      identityId: "identity-2",
+      companyId: COMPANY_ID,
+      userId: "user-2",
+      userFullName: "Budi",
+    }); // sales 2
+
+    const order1 = await processTelegramUpdate(
+      textUpdate(50, "Order Toko Satu:\nBarang A 2 dus harga 10000", CHAT_ID),
+      deps,
+    );
+    const order2 = await processTelegramUpdate(
+      textUpdate(51, "Order Toko Dua:\nBarang B 3 dus harga 20000", CHAT_ID_2),
+      deps,
+    );
+    if (order1.outcome !== "draft_created" || order2.outcome !== "draft_created") {
+      throw new Error("unexpected outcome");
+    }
+    expect(order1.orderId).not.toBe(order2.orderId);
+
+    // Sales 2 mengirim KONFIRMASI -> hanya order milik sales 2 yang berubah,
+    // draft sales 1 tetap menunggu (conversation state per-identity, bukan
+    // global/per-chat tunggal).
+    const confirm2 = await processTelegramUpdate(textUpdate(52, "KONFIRMASI", CHAT_ID_2), deps);
+    expect(confirm2.outcome).toBe("confirmed");
+    if (confirm2.outcome !== "confirmed") throw new Error("unexpected outcome");
+    expect(confirm2.orderId).toBe(order2.orderId);
+
+    const order1Row = await deps.repository.getOrder(order1.orderId);
+    expect(order1Row?.status).toBe("draft"); // tidak ikut ter-KONFIRMASI oleh sales 2
+  });
+
+  it("19. quantity ilegal (0) -> order ditolak, tidak ada draft tersimpan", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    // "0 dus" berhasil di-parse regex (bukan missing field) tapi ilegal secara bisnis.
+    const text = "Order Toko Nol:\nBarang Kosong 0 dus harga 10000";
+
+    const result = await processTelegramUpdate(textUpdate(60, text), deps);
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_quantity");
+    expect(deps.sender.sent[0]!.text).toContain("Order tidak disimpan");
+    expect(deps.sender.sent[0]!.text.toLowerCase()).toContain("quantity");
+
+    // Tidak ada draft yang tersimpan sama sekali untuk update ini.
+    const record = deps.repository.getEventRecord(60);
+    expect(record?.status).toBe("not_order");
+  });
+
+  it("20. toko dikenali tapi nonaktif untuk tenant ini -> order ditolak", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko nonaktif",
+          customerId: "customer-inactive",
+          customerName: "Toko Nonaktif",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("customer-inactive", { companyId: COMPANY_ID, isActive: false });
+
+    const result = await processTelegramUpdate(
+      textUpdate(61, "Order Toko Nonaktif:\nBarang C 2 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_customer");
+    expect(deps.repository.getEventRecord(61)?.status).toBe("not_order");
+  });
+
+  it("21. toko dikenali tapi milik tenant lain -> order ditolak (tidak bocor lintas tenant)", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko tenant lain",
+          customerId: "customer-foreign",
+          customerName: "Toko Tenant Lain",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("customer-foreign", { companyId: "company-OTHER", isActive: true });
+
+    const result = await processTelegramUpdate(
+      textUpdate(62, "Order Toko Tenant Lain:\nBarang D 2 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_customer");
+  });
+
+  it("22. produk dikenali tapi nonaktif -> order ditolak", async () => {
+    const deps = makeDeps({
+      productAliases: [
+        {
+          aliasText: "produk nonaktif",
+          productId: "product-inactive",
+          productName: "Produk Nonaktif",
+          productCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedProduct("product-inactive", { companyId: COMPANY_ID, isActive: false });
+
+    const result = await processTelegramUpdate(
+      textUpdate(63, "Order Toko E:\nProduk Nonaktif 2 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_product");
+  });
+
+  it("23. produk dikenali tapi milik tenant lain -> order ditolak", async () => {
+    const deps = makeDeps({
+      productAliases: [
+        {
+          aliasText: "produk tenant lain",
+          productId: "product-foreign",
+          productName: "Produk Tenant Lain",
+          productCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedProduct("product-foreign", { companyId: "company-OTHER", isActive: true });
+
+    const result = await processTelegramUpdate(
+      textUpdate(64, "Order Toko F:\nProduk Tenant Lain 2 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_product");
+  });
+
+  it("24. rollback saat satu item gagal -> order dua item TIDAK tersimpan sama sekali (bukan partial)", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    // Item pertama legal, item kedua quantity 0 -> seluruh order harus batal, bukan hanya item ke-2.
+    const text = [
+      "Order Toko G:",
+      "Barang Legal 5 dus harga 10000",
+      "Barang Ilegal 0 dus harga 20000",
+    ].join("\n");
+
+    const result = await processTelegramUpdate(textUpdate(65, text), deps);
+    expect(result.outcome).toBe("order_rejected");
+
+    // Tidak ada order APAPUN yang tersimpan akibat update ini (atomic all-or-nothing).
+    const allEvents = deps.repository.getEventRecord(65);
+    expect(allEvents?.status).toBe("not_order");
+  });
+
+  it("25. user Telegram sudah pernah dipasangkan tapi kini nonaktif -> ditolak seperti belum terdaftar", async () => {
+    const deps = makeDeps();
+    deps.repository.seedIdentity(
+      CHAT_ID,
+      { identityId: "identity-1", companyId: COMPANY_ID, userId: USER_ID, userFullName: "Andri" },
+      { isActive: false },
+    );
+
+    const result = await processTelegramUpdate(
+      textUpdate(66, "Order Toko H:\nBarang 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("unregistered");
+  });
+
+  it("26. respons sukses menyebut nomor order, toko, ringkasan item, total, dan status review", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    const text = "Order Toko Lengkap:\nBarang Utuh 3 dus harga 50000 diskon 3%";
+
+    const result = await processTelegramUpdate(textUpdate(67, text), deps);
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    const reply = deps.sender.sent[0]!.text;
+    expect(reply).toContain(order!.orderNumber); // nomor order
+    expect(reply).toContain("Toko Lengkap"); // toko
+    expect(reply).toContain("Barang Utuh"); // ringkasan item
+    expect(reply).toContain(`Rp${Math.round(order!.priced.estimatedTotal).toLocaleString("id-ID")}`); // total
+    expect(reply).toContain("butuh review"); // status review (tidak ada discount policy -> requiresReview)
   });
 });

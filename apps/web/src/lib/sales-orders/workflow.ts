@@ -8,9 +8,10 @@
 // =============================================================================
 
 import type { TelegramUpdate, TelegramSender } from "@/lib/telegram/client";
-import type {
-  SalesOrderTelegramRepository,
-  ResolvedIdentity,
+import {
+  DraftOrderRejectedError,
+  type SalesOrderTelegramRepository,
+  type ResolvedIdentity,
 } from "./repository";
 import type { KnowledgeProvider } from "./knowledge-provider";
 import type { PricedOrder } from "./types";
@@ -26,6 +27,7 @@ import {
   buildAlreadyConfirmedReply,
   buildNoPendingOrderReply,
   buildOrderConfirmedReply,
+  buildOrderRejectedReply,
 } from "./confirmation";
 import type { DeliveryRepositoryInterface } from "@/lib/delivery/repository";
 import {
@@ -56,6 +58,7 @@ export type ProcessResult =
   | { outcome: "not_order" }
   | { outcome: "draft_created"; orderId: string }
   | { outcome: "corrected_draft_updated"; orderId: string }
+  | { outcome: "order_rejected"; reason: string }
   | { outcome: "confirmed"; orderId: string; alreadyConfirmed: boolean }
   | { outcome: "awaiting_correction"; orderId: string }
   | { outcome: "no_pending_order" }
@@ -235,7 +238,7 @@ export async function processTelegramUpdate(
         chatId,
         alreadyConfirmed
           ? buildAlreadyConfirmedReply()
-          : buildOrderConfirmedReply(order.priced),
+          : buildOrderConfirmedReply(order.orderNumber, order.priced),
       );
       return { outcome: "confirmed", orderId: order.id, alreadyConfirmed };
     }
@@ -314,16 +317,26 @@ async function handleNewOrderText(
 
   const priced = buildPricedOrder(extracted, knowledge);
 
-  const created = await deps.repository.createDraftOrder({
-    companyId: identity.companyId,
-    salesId: identity.userId,
-    priced,
-    knowledgeVersion: knowledge.knowledgeVersion,
-    extractionConfidence: extracted.confidence,
-    missingFields: extracted.missingFields,
-    telegramEventId: eventId,
-    orderSource: detectOrderSource(text),
-  });
+  let created;
+  try {
+    created = await deps.repository.createDraftOrder({
+      companyId: identity.companyId,
+      salesId: identity.userId,
+      priced,
+      knowledgeVersion: knowledge.knowledgeVersion,
+      extractionConfidence: extracted.confidence,
+      missingFields: extracted.missingFields,
+      telegramEventId: eventId,
+      orderSource: detectOrderSource(text),
+    });
+  } catch (err) {
+    if (err instanceof DraftOrderRejectedError) {
+      await deps.repository.updateEventStatus(eventId, "not_order");
+      await deps.sender.sendMessage(chatId, buildOrderRejectedReply(err.code));
+      return { outcome: "order_rejected", reason: err.code };
+    }
+    throw err;
+  }
 
   await deps.repository.updateEventStatus(eventId, "processed", created.id);
   await deps.repository.setConversationState(
@@ -335,7 +348,7 @@ async function handleNewOrderText(
     },
   );
 
-  await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced));
+  await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced, created.orderNumber));
   return { outcome: "draft_created", orderId: created.id };
 }
 
@@ -369,15 +382,25 @@ async function handleCorrection(
     );
   }
 
-  await deps.repository.updateDraftOrder(pendingOrderId, {
-    companyId: identity.companyId,
-    actorId: identity.userId,
-    priced,
-    knowledgeVersion: knowledge.knowledgeVersion,
-    extractionConfidence: extracted.confidence,
-    missingFields: extracted.missingFields,
-    orderSource: detectOrderSource(text),
-  });
+  let updated;
+  try {
+    updated = await deps.repository.updateDraftOrder(pendingOrderId, {
+      companyId: identity.companyId,
+      actorId: identity.userId,
+      priced,
+      knowledgeVersion: knowledge.knowledgeVersion,
+      extractionConfidence: extracted.confidence,
+      missingFields: extracted.missingFields,
+      orderSource: detectOrderSource(text),
+    });
+  } catch (err) {
+    if (err instanceof DraftOrderRejectedError) {
+      await deps.repository.updateEventStatus(eventId, "not_order");
+      await deps.sender.sendMessage(chatId, buildOrderRejectedReply(err.code));
+      return { outcome: "order_rejected", reason: err.code };
+    }
+    throw err;
+  }
 
   await deps.repository.updateEventStatus(eventId, "processed", pendingOrderId);
   await deps.repository.setConversationState(
@@ -389,7 +412,7 @@ async function handleCorrection(
     },
   );
 
-  await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced));
+  await deps.sender.sendMessage(chatId, buildConfirmationSummary(priced, updated.orderNumber));
   return { outcome: "corrected_draft_updated", orderId: pendingOrderId };
 }
 

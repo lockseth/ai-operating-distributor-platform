@@ -29,11 +29,11 @@ function formatItemLine(item: PricedOrderItem, index: number): string {
   return lines.join("\n");
 }
 
-export function buildConfirmationSummary(order: PricedOrder): string {
+export function buildConfirmationSummary(order: PricedOrder, orderNumber: string): string {
   const customerLabel = order.customerName ?? "(nama toko belum diketahui — mohon lengkapi)";
   const parts: string[] = [];
 
-  parts.push(`Draft Order — ${customerLabel}`);
+  parts.push(`Draft Order ${orderNumber} — ${customerLabel}`);
   parts.push("");
   parts.push(order.items.map((item, i) => formatItemLine(item, i)).join("\n\n"));
   parts.push("");
@@ -78,7 +78,27 @@ export function buildNoPendingOrderReply(): string {
   return "Tidak ada draft order yang sedang menunggu konfirmasi dari Anda saat ini.";
 }
 
-export function buildOrderConfirmedReply(order: PricedOrder): string {
+export function buildOrderConfirmedReply(orderNumber: string, order: PricedOrder): string {
   const customerLabel = order.customerName ?? "order Anda";
-  return `Order ${customerLabel} telah dikonfirmasi. Estimasi total: ${formatIDR(order.estimatedTotal)}. Tim kami akan memprosesnya.`;
+  return `Order ${orderNumber} (${customerLabel}) telah dikonfirmasi. Estimasi total: ${formatIDR(order.estimatedTotal)}. Tim kami akan memprosesnya.`;
+}
+
+/**
+ * Gate 3E-B: balasan aman saat createDraftOrder/updateDraftOrder menolak
+ * input (lihat DraftOrderRejectedError, repository.ts) -- order TIDAK
+ * tersimpan sama sekali, pesan tidak membocorkan detail internal (id/tabel).
+ */
+export function buildOrderRejectedReply(
+  code: "invalid_customer" | "invalid_product" | "invalid_quantity" | "forbidden",
+): string {
+  if (code === "invalid_customer") {
+    return "Toko yang dikenali dari pesan ini tidak aktif atau bukan bagian dari tenant Anda. Order tidak disimpan — mohon periksa kembali nama toko atau hubungi admin/owner.";
+  }
+  if (code === "invalid_product") {
+    return "Salah satu produk pada pesan ini tidak aktif atau tidak terdaftar untuk tenant Anda. Order tidak disimpan — mohon periksa kembali nama produk.";
+  }
+  if (code === "invalid_quantity") {
+    return "Jumlah (quantity) pada salah satu item tidak valid — harus lebih dari 0. Order tidak disimpan — mohon kirim ulang dengan jumlah yang benar.";
+  }
+  return "Order tidak dapat diproses saat ini. Order tidak disimpan — silakan coba lagi atau hubungi admin.";
 }

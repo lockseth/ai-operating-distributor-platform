@@ -41,6 +41,29 @@ export interface PersistedOrder {
   orderSource: OrderSource;
 }
 
+/**
+ * Gate 3E-B: alasan draft order ditolak SEBELUM tersimpan (customer/produk
+ * tidak valid untuk tenant ini, atau quantity ilegal). Dilempar oleh
+ * createDraftOrder/updateDraftOrder — TIDAK PERNAH menulis order parsial,
+ * baik lewat RPC atomic (Supabase) maupun fake in-memory (lihat
+ * validateDraftInput di bawah, method yang sama dipakai kedua path).
+ */
+export type DraftOrderRejectionCode =
+  | "invalid_customer"
+  | "invalid_product"
+  | "invalid_quantity"
+  | "forbidden";
+
+export class DraftOrderRejectedError extends Error {
+  constructor(
+    public readonly code: DraftOrderRejectionCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "DraftOrderRejectedError";
+  }
+}
+
 export interface SalesOrderTelegramRepository {
   /** Idempotency: true jika update_id ini SUDAH pernah diproses sebelumnya. */
   findEventByUpdateId(telegramUpdateId: number): Promise<{ id: string } | null>;
@@ -127,6 +150,17 @@ export interface SalesOrderTelegramRepository {
     actorId: string,
     options?: { paymentTermsDays?: number | null },
   ): Promise<{ order: PersistedOrder; alreadyConfirmed: boolean }>;
+}
+
+function isDraftOrderRejectionCode(
+  value: string | undefined,
+): value is DraftOrderRejectionCode {
+  return (
+    value === "invalid_customer" ||
+    value === "invalid_product" ||
+    value === "invalid_quantity" ||
+    value === "forbidden"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +371,11 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       throw new Error(`createDraftOrder failed: ${rpcError.message}`);
     const row = ((rpcData ?? []) as { result_outcome: string; result_order_id: string }[])[0];
     if (!row || row.result_outcome !== "created") {
-      throw new Error(`createDraftOrder failed: ${row?.result_outcome ?? "empty RPC result"}`);
+      const outcome = row?.result_outcome;
+      if (isDraftOrderRejectionCode(outcome)) {
+        throw new DraftOrderRejectedError(outcome, `createDraftOrder rejected: ${outcome}`);
+      }
+      throw new Error(`createDraftOrder failed: ${outcome ?? "empty RPC result"}`);
     }
 
     return {
@@ -407,7 +445,11 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
         const existing = await this.getOrder(orderId);
         if (existing) return existing;
       }
-      throw new Error(`updateDraftOrder failed: ${row?.result_outcome ?? "empty RPC result"}`);
+      const outcome = row?.result_outcome;
+      if (isDraftOrderRejectionCode(outcome)) {
+        throw new DraftOrderRejectedError(outcome, `updateDraftOrder rejected: ${outcome}`);
+      }
+      throw new Error(`updateDraftOrder failed: ${outcome ?? "empty RPC result"}`);
     }
 
     const updated = await this.getOrder(orderId);
@@ -541,16 +583,70 @@ export interface InMemoryOrderAuditEvent {
   newData: unknown;
 }
 
+interface InMemoryMasterRow {
+  companyId: string;
+  isActive: boolean;
+}
+
 export class InMemorySalesOrderRepository implements SalesOrderTelegramRepository {
   private events = new Map<number, InMemoryEventRecord>();
   private identities = new Map<number, ResolvedIdentity>();
   private conversationStates = new Map<string, ConversationState>();
   private orders = new Map<string, PersistedOrder>();
   private auditTrail: InMemoryOrderAuditEvent[] = [];
+  private customers = new Map<string, InMemoryMasterRow>();
+  private products = new Map<string, InMemoryMasterRow>();
   private seq = 0;
 
-  seedIdentity(telegramChatId: number, identity: ResolvedIdentity): void {
+  seedIdentity(
+    telegramChatId: number,
+    identity: ResolvedIdentity,
+    options: { isActive?: boolean } = {},
+  ): void {
+    // isActive=false meniru user/telegram_identities nonaktif di produksi:
+    // resolveIdentity() mengembalikan null (bukan identity dengan flag) --
+    // persis perilaku SQL asli (lihat SupabaseSalesOrderRepository.resolveIdentity),
+    // supaya caller tidak bisa membedakan "belum pernah terdaftar" dari
+    // "pernah terdaftar tapi sekarang nonaktif".
+    if (options.isActive === false) return;
     this.identities.set(telegramChatId, identity);
+  }
+
+  /** Test-only: registrasi toko (customers) untuk validasi createDraftOrder/updateDraftOrder. */
+  seedCustomer(customerId: string, row: InMemoryMasterRow): void {
+    this.customers.set(customerId, row);
+  }
+
+  /** Test-only: registrasi produk (products) untuk validasi createDraftOrder/updateDraftOrder. */
+  seedProduct(productId: string, row: InMemoryMasterRow): void {
+    this.products.set(productId, row);
+  }
+
+  /**
+   * Mirror validasi create_draft_sales_order_atomic/update_draft_sales_order_atomic
+   * (migration 20260908000001_gate_3e_b_order_intake_validation.sql) supaya
+   * skenario DoD Gate 3E-B bisa diuji tanpa Supabase hidup. customerId/productId
+   * NULL (tidak ter-match Knowledge Pack) sengaja TIDAK divalidasi -- fallback
+   * raw-text tetap diterima & direview manusia (lihat pricing.ts/knowledge-provider.ts).
+   */
+  private validateDraftInput(companyId: string, priced: PricedOrder): void {
+    if (priced.customerId !== null) {
+      const c = this.customers.get(priced.customerId);
+      if (!c || c.companyId !== companyId || !c.isActive) {
+        throw new DraftOrderRejectedError("invalid_customer", "invalid customer");
+      }
+    }
+    for (const item of priced.items) {
+      if (item.productId !== null) {
+        const p = this.products.get(item.productId);
+        if (!p || p.companyId !== companyId || !p.isActive) {
+          throw new DraftOrderRejectedError("invalid_product", "invalid product");
+        }
+      }
+      if (!(item.quantity > 0)) {
+        throw new DraftOrderRejectedError("invalid_quantity", "invalid quantity");
+      }
+    }
   }
 
   private nextId(prefix: string): string {
@@ -638,6 +734,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     telegramEventId: string;
     orderSource: OrderSource;
   }): Promise<PersistedOrder> {
+    this.validateDraftInput(input.companyId, input.priced);
     const id = this.nextId("order");
     const orderNumber = `SO-TEST-${this.seq}`;
     const order: PersistedOrder = {
@@ -679,6 +776,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     const existing = this.orders.get(orderId);
     if (!existing) throw new Error("Order not found");
     if (existing.status !== "draft") return existing; // guard, no-op
+    this.validateDraftInput(input.companyId, input.priced);
 
     const updated: PersistedOrder = {
       ...existing,
