@@ -15,6 +15,7 @@
     "db:reset": "supabase db reset",
     "seed:dev": "tsx scripts/seed-dev.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
+    "seed:demo-dataset": "tsx scripts/seed-gate-3e-a-dataset.ts",
     "reset:demo-access": "tsx scripts/reset-demo-access.ts",
     "verify:demo-rls": "tsx scripts/verify-demo-rls.ts",
     "verify:demo-auth": "tsx scripts/verify-demo-auth.ts"

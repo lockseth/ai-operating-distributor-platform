@@ -10,9 +10,11 @@
  * Membuat:
  *   - Tenant demo "PT. Sumber Warna Alam Sudiada" (settings.environment = "DEMO",
  *     settings.coverage_areas = wilayah awal Cirebon Timur/Kota/Barat)
- *   - Owner demo (AODP_DEMO_OWNER_EMAIL), Admin demo (AODP_DEMO_ADMIN_EMAIL),
- *     dan Sales demo (AODP_DEMO_SALES_EMAIL) — tiga akun permanen untuk Gate
- *     3A (Demo Authentication Foundation), satu per role baseline.
+ *   - Owner demo Pak Waluyo (AODP_DEMO_OWNER_EMAIL), Admin demo
+ *     (AODP_DEMO_ADMIN_EMAIL), dan DUA Sales demo aktif (AODP_DEMO_SALES_EMAIL,
+ *     AODP_DEMO_SALES2_EMAIL) — empat akun permanen untuk Gate 3A (Demo
+ *     Authentication Foundation) + Gate 3E-A (Demo Identity & Dataset
+ *     Provisioning): owner, admin, dan minimal dua sales aktif.
  *     Sales demo adalah FIXTURE untuk uji RLS role sales, BUKAN hasil
  *     Salesman Enrollment: tidak punya status biometric/identity verified,
  *     tidak dinyatakan siap operasional. Model active/inactive salesman
@@ -22,8 +24,9 @@
  *   - Satu tenant sintetis KEDUA + owner-nya, khusus untuk membuktikan
  *     tenant isolation (bukan data Waluyo)
  *
- * TIDAK membuat: toko/customer asli, transaksi asli, Telegram enrollment,
- * KPI/target/coverage (di luar scope gate ini).
+ * TIDAK membuat: toko/customer/order dataset (lihat
+ * scripts/seed-gate-3e-a-dataset.ts), Telegram enrollment, KPI/target
+ * (di luar scope gate ini).
  *
  * Env vars dibaca/ditulis di .env.demo.local (root repo, gitignored):
  *   NEXT_PUBLIC_SUPABASE_DEMO_URL       (input, wajib)
@@ -36,6 +39,9 @@
  *                                         dipertahankan jika sudah ada)
  *   AODP_DEMO_SALES_EMAIL               (ditulis, non-secret)
  *   AODP_DEMO_SALES_PASSWORD            (ditulis HANYA saat akun baru dibuat;
+ *                                         dipertahankan jika sudah ada)
+ *   AODP_DEMO_SALES2_EMAIL              (ditulis, non-secret)
+ *   AODP_DEMO_SALES2_PASSWORD           (ditulis HANYA saat akun baru dibuat;
  *                                         dipertahankan jika sudah ada)
  *
  * Nilai TIDAK PERNAH dicetak ke console/log.
@@ -102,7 +108,7 @@ const ISOLATION_COMPANY = {
 
 const DEMO_OWNER = {
   email: "owner.demo@waluyo.aodp.test",
-  fullName: "Demo Owner — Waluyo",
+  fullName: "Waluyo (Owner Demo — PT. Sumber Warna Alam Sudiada)",
   phone: "0812-0000-9001",
   emailEnvKey: "AODP_DEMO_OWNER_EMAIL",
   passwordEnvKey: "AODP_DEMO_OWNER_PASSWORD",
@@ -118,10 +124,18 @@ const DEMO_ADMIN = {
 
 const DEMO_SALES = {
   email: "sales.demo@waluyo.aodp.test",
-  fullName: "Demo Sales — Waluyo (fixture uji RLS, bukan Salesman Enrollment)",
+  fullName: "Demo Sales 1 — Waluyo (fixture uji RLS, bukan Salesman Enrollment)",
   phone: "0812-0000-9003",
   emailEnvKey: "AODP_DEMO_SALES_EMAIL",
   passwordEnvKey: "AODP_DEMO_SALES_PASSWORD",
+};
+
+const DEMO_SALES_2 = {
+  email: "sales2.demo@waluyo.aodp.test",
+  fullName: "Demo Sales 2 — Waluyo (fixture uji RLS, bukan Salesman Enrollment)",
+  phone: "0812-0000-9004",
+  emailEnvKey: "AODP_DEMO_SALES2_EMAIL",
+  passwordEnvKey: "AODP_DEMO_SALES2_PASSWORD",
 };
 
 const ISOLATION_OWNER = {
@@ -230,10 +244,27 @@ async function upsertUserWithRole(
     .single();
   if (roleErr || !roleRow) throw new Error(`Role '${roleName}' tidak ditemukan (migration belum lengkap?)`);
 
-  const { error: urErr } = await supabase
+  // Cek-lalu-insert (BUKAN upsert/ON CONFLICT) dengan sengaja: trigger
+  // Gate 3D-B1-R1 (enforce_single_owner_per_company, BEFORE INSERT OR UPDATE)
+  // ikut menyala pada FASE INSERT dari "INSERT ... ON CONFLICT DO UPDATE",
+  // sebelum resolusi konflik terjadi -- pada fase itu NEW.id masih id baru
+  // hasil DEFAULT gen_random_uuid() (bukan id baris existing), sehingga
+  // self-exclusion "ur.id <> NEW.id" tidak berlaku dan re-assign owner yang
+  // SUDAH jadi owner company yang sama akan salah ditolak sebagai
+  // AODP_SINGLE_OWNER_VIOLATION. Cek existence dulu menghindari fase INSERT
+  // itu sama sekali untuk baris yang memang sudah ada -- tidak mengubah
+  // trigger/security enforcement itu sendiri.
+  const { data: existingRole } = await supabase
     .from("user_roles")
-    .upsert({ user_id: userId, role_id: roleRow.id, company_id: companyId }, { onConflict: "user_id,role_id,company_id" });
-  if (urErr) throw new Error(`Gagal assign role ${roleName} ke ${spec.email}: ${urErr.message}`);
+    .select("id")
+    .eq("user_id", userId)
+    .eq("role_id", roleRow.id)
+    .eq("company_id", companyId)
+    .maybeSingle();
+  if (!existingRole) {
+    const { error: urErr } = await supabase.from("user_roles").insert({ user_id: userId, role_id: roleRow.id, company_id: companyId });
+    if (urErr) throw new Error(`Gagal assign role ${roleName} ke ${spec.email}: ${urErr.message}`);
+  }
 
   return { userId, created };
 }
@@ -259,8 +290,11 @@ async function main() {
   console.log("[3] Admin demo (Waluyo)");
   const demoAdmin = await upsertUserWithRole(demoCompanyId, DEMO_ADMIN, "admin");
 
-  console.log("[4] Sales demo (Waluyo) — fixture uji RLS, bukan Salesman Enrollment");
+  console.log("[4] Sales demo 1 (Waluyo) — fixture uji RLS, bukan Salesman Enrollment");
   const demoSales = await upsertUserWithRole(demoCompanyId, DEMO_SALES, "sales");
+
+  console.log("[4b] Sales demo 2 (Waluyo) — identitas kedua untuk Gate 3E-A dataset provisioning");
+  const demoSales2 = await upsertUserWithRole(demoCompanyId, DEMO_SALES_2, "sales");
 
   console.log("[5] Produk sintetis (tenant demo)");
   await upsertSyntheticProduct(demoCompanyId, "DEMO-SKU-001", "Produk Sintetis Demo Waluyo");
@@ -285,6 +319,8 @@ async function main() {
         demo_admin_account_created_this_run: demoAdmin.created,
         demo_sales_user_id: demoSales.userId,
         demo_sales_account_created_this_run: demoSales.created,
+        demo_sales2_user_id: demoSales2.userId,
+        demo_sales2_account_created_this_run: demoSales2.created,
         isolation_company_id: isolationCompanyId,
         isolation_owner_user_id: isolationOwner.userId,
       },
