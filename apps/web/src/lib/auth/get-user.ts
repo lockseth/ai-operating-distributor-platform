@@ -72,7 +72,7 @@ export async function getAuthUser(): Promise<AuthUser> {
   // User profile
   const { data: profileData } = await supabase
     .from("users")
-    .select("id, company_id, email, full_name, is_active")
+    .select("id, company_id, email, full_name, is_active, must_change_password")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -82,6 +82,7 @@ export async function getAuthUser(): Promise<AuthUser> {
     email: string;
     full_name: string;
     is_active: boolean;
+    must_change_password: boolean;
   } | null;
 
   // Gate 3E-C-C1 — auth user valid tapi TANPA baris public.users sama sekali
@@ -105,6 +106,30 @@ export async function getAuthUser(): Promise<AuthUser> {
   if (!profile.is_active) {
     await supabase.auth.signOut();
     redirect("/login");
+  }
+
+  // Gate 3E-C-C2-B1 — mandatory password change: user yang dibuat owner
+  // dengan temporary password (must_change_password = TRUE, lihat
+  // provision_owner_created_tenant_user(), migration 20260911000001) tidak
+  // boleh mengakses satu pun halaman/server action dashboard sampai password
+  // sungguh diganti. Self-heal di sini (bukan lewat UI/route baru): panggil
+  // complete_mandatory_password_change() memakai sesi user ini sendiri
+  // (auth.uid() di dalam RPC, sama seperti provision_first_owner()) -- RPC
+  // hanya membersihkan flag bila auth.users.encrypted_password terbukti
+  // berbeda dari snapshot yang direkam saat provisioning (bukti password
+  // benar-benar sudah diganti, bukan klaim client). Bila belum berubah,
+  // redirect ke /reset-password (halaman existing, reset-password-form.tsx,
+  // TIDAK diubah sama sekali oleh gate ini) -- TANPA signOut, karena
+  // halaman itu butuh sesi ini untuk memanggil updateUser({ password }).
+  // middleware.ts sengaja mengecualikan /reset-password dari redirect-away-
+  // if-authenticated (lihat komentar di sana) supaya redirect ini tidak
+  // berujung loop, identik alasan pengecualian /signup di atas.
+  if (profile.must_change_password) {
+    const { data: rpcData } = await supabase.rpc("complete_mandatory_password_change");
+    const outcome = ((rpcData ?? []) as { result_outcome: string }[])[0]?.result_outcome;
+    if (outcome !== "cleared") {
+      redirect("/reset-password");
+    }
   }
 
   // Company

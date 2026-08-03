@@ -37,11 +37,13 @@ vi.mock("@/lib/demo/config", () => ({
 }));
 
 const signOut = vi.fn(async () => ({ error: null }));
+const rpc = vi.fn(async () => ({ data: [{ result_outcome: "cleared" }], error: null }));
 const supabaseMock = {
   auth: {
     getUser: vi.fn(async () => ({ data: { user: { id: "auth-user-1" } }, error: null })),
     signOut,
   },
+  rpc,
   from: vi.fn((table: string) => {
     if (table === "users") {
       return chain({
@@ -51,6 +53,7 @@ const supabaseMock = {
           email: "no-membership@waluyo.aodp.test",
           full_name: "No Membership",
           is_active: true,
+          must_change_password: false,
         },
       });
     }
@@ -128,5 +131,95 @@ describe("getAuthUser resume-onboarding untuk auth user tanpa profile sama sekal
 
     await expect(getAuthUser()).rejects.toThrow();
     expect(signOut).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Gate 3E-C-C2-B1: user dengan must_change_password = TRUE (dibuat owner
+// dengan temporary password) tidak boleh mengakses dashboard sampai password
+// sungguh diganti. getAuthUser() memanggil complete_mandatory_password_change()
+// (RPC, auth.uid()-based) untuk self-heal; hanya redirect ke /reset-password
+// bila RPC MEMBUKTIKAN password belum berubah. Sesi TIDAK di-signOut --
+// reset-password-form.tsx butuh sesi itu untuk memanggil updateUser().
+// =============================================================================
+
+function fullProfileMock(overrides: { must_change_password: boolean }) {
+  return vi.fn((table: string) => {
+    if (table === "users") {
+      return chain({
+        data: {
+          id: "auth-user-mcp",
+          company_id: "company-1",
+          email: "new.admin@waluyo.aodp.test",
+          full_name: "New Admin",
+          is_active: true,
+          must_change_password: overrides.must_change_password,
+        },
+      });
+    }
+    if (table === "companies") {
+      return chain({
+        data: {
+          id: "company-1",
+          name: "PT. Sumber Warna Alam Sudiada",
+          slug: "waluyo",
+          logo_url: null,
+          subscription_plan: "growth",
+          settings: null,
+        },
+      });
+    }
+    if (table === "user_roles") {
+      return chain({ data: [{ role_id: "role-admin" }] });
+    }
+    if (table === "roles") {
+      return chain({ data: [{ name: "admin" }] });
+    }
+    if (table === "role_permissions") {
+      return chain({ data: [] });
+    }
+    return chain({ data: [] });
+  });
+}
+
+describe("getAuthUser mandatory password gate (Gate 3E-C-C2-B1)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    supabaseMock.auth.getUser = vi.fn(async () => ({ data: { user: { id: "auth-user-mcp" } }, error: null }));
+    supabaseMock.auth.signOut = signOut;
+  });
+
+  it("must_change_password = TRUE dan RPC membuktikan password BELUM diganti -> redirect /reset-password, sesi TIDAK di-signOut", async () => {
+    supabaseMock.from = fullProfileMock({ must_change_password: true });
+    supabaseMock.rpc = vi.fn(async () => ({ data: [{ result_outcome: "password_not_yet_changed" }], error: null }));
+
+    const { getAuthUser } = await import("./get-user");
+
+    await expect(getAuthUser()).rejects.toThrow(`${REDIRECT_MARKER}/reset-password`);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("complete_mandatory_password_change");
+    expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("must_change_password = TRUE dan RPC berhasil membersihkan flag ('cleared') -> akses dashboard dilanjutkan seperti biasa (tidak redirect)", async () => {
+    supabaseMock.from = fullProfileMock({ must_change_password: true });
+    supabaseMock.rpc = vi.fn(async () => ({ data: [{ result_outcome: "cleared" }], error: null }));
+
+    const { getAuthUser } = await import("./get-user");
+
+    const result = await getAuthUser();
+    expect(result.id).toBe("auth-user-mcp");
+    expect(result.roles).toEqual(["admin"]);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith("complete_mandatory_password_change");
+  });
+
+  it("must_change_password = FALSE -> RPC tidak pernah dipanggil (regresi: user normal tidak terpengaruh)", async () => {
+    supabaseMock.from = fullProfileMock({ must_change_password: false });
+    supabaseMock.rpc = vi.fn(async () => ({ data: [{ result_outcome: "already_cleared" }], error: null }));
+
+    const { getAuthUser } = await import("./get-user");
+
+    const result = await getAuthUser();
+    expect(result.id).toBe("auth-user-mcp");
+    expect(supabaseMock.rpc).not.toHaveBeenCalled();
   });
 });

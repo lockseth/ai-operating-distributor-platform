@@ -42,8 +42,25 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute =
     pathname.startsWith("/login") ||
-    pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password");
+    pathname.startsWith("/forgot-password");
+
+  // /reset-password sengaja BUKAN bagian dari isAuthRoute (Gate 3E-C-C2-B1):
+  // seorang user dengan must_change_password = TRUE (dibuat owner dengan
+  // temporary password, lihat provision_owner_created_tenant_user()) PUNYA
+  // sesi authenticated yang SAH -- bukan sesi recovery Supabase Auth
+  // terpisah -- tapi WAJIB tetap bisa mencapai halaman ini untuk mengganti
+  // password (get-user.ts redirect ke sini selama flag masih TRUE). Bila
+  // /reset-password tetap dianggap isAuthRoute, blok "user && isAuthRoute"
+  // di bawah akan membalikkan authenticated user ini ke /dashboard, yang
+  // memanggil getAuthUser() lagi, yang redirect ke /reset-password lagi --
+  // redirect loop tanpa akhir, identik alasan /signup dikecualikan di bawah.
+  // Konsekuensi: user yang SUDAH login normal (must_change_password = FALSE)
+  // dan sengaja membuka /reset-password juga tidak lagi dibalikkan ke
+  // /dashboard -- halaman itu sendiri hanya memanggil updateUser({ password })
+  // pada sesi aktif, jadi ini tidak membuka privilege baru, hanya menghindari
+  // bounce yang sebelumnya bisa bentrok dengan sesi recovery yang dibuka di
+  // tab lain oleh user yang sama.
+  const isResetPasswordRoute = pathname.startsWith("/reset-password");
 
   // /signup sengaja BUKAN bagian dari isAuthRoute: rute lain di sana redirect
   // authenticated user ke /dashboard, tapi /signup harus tetap bisa diakses
@@ -111,7 +128,15 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const isPublicRoute = isAuthRoute || isSignupRoute || isAuthCallbackRoute || pathname === "/";
+  // isResetPasswordRoute tetap bagian dari isPublicRoute (perilaku existing
+  // tidak berubah): link recovery Supabase datang tanpa cookie session sama
+  // sekali pada request GET pertama (token ada di URL fragment, diproses
+  // client-side oleh supabase-js) -- rute ini WAJIB tetap bisa diakses tanpa
+  // sesi. Yang berubah HANYA: rute ini tidak lagi dibalikkan ke /dashboard
+  // ketika user SUDAH authenticated (lihat komentar isResetPasswordRoute
+  // di atas).
+  const isPublicRoute =
+    isAuthRoute || isSignupRoute || isAuthCallbackRoute || isResetPasswordRoute || pathname === "/";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
