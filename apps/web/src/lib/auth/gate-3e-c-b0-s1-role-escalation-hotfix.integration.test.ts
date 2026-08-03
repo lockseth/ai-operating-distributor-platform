@@ -16,6 +16,18 @@
 // provisioning + trigger single-owner tetap berjalan (keduanya bypass RLS
 // sebagai pemilik tabel, tidak terpengaruh fix RLS ini sama sekali).
 //
+// Gate 3E-C-B0-S1-R1 (grup B & F di bawah): migration corrective
+// 20260910000001 mengganti subquery EXISTS ambigu (yang ter-parse jadi
+// tautologi self-reference u.company_id=u.company_id -- dibuktikan live via
+// pg_policies pada Gate 3E-C-B0-S2) dengan pemanggilan fungsi SECURITY
+// DEFINER public.is_same_tenant_member(). Grup F membuktikan fungsi itu
+// BENAR-BENAR independen dari RLS users_company_select -- bukan cuma
+// "kebetulan tetap benar" seperti subquery lama -- dengan memanggilnya
+// langsung baik lewat sesi caller yang dibatasi RLS maupun lewat service-role
+// yang sama sekali tidak dibatasi RLS pada public.users, dan membuktikan
+// keduanya menghasilkan jawaban IDENTIK untuk pasangan (user, company) yang
+// sama.
+//
 // Skip graceful jika kredensial Supabase lokal tidak tersedia -- pola
 // identik dengan gate-3b-role-permission-matrix.integration.test.ts dan
 // gate-3d-b1-single-owner-enforcement.integration.test.ts.
@@ -226,11 +238,51 @@ describeIfDb("Gate 3E-C-B0-S1: block tenant role escalation to system roles (RLS
       expect(data ?? []).toHaveLength(0);
     });
 
-    it("7. Target membership tidak konsisten: owner DITOLAK insert user_roles company_id=tenant sendiri untuk user_id yang users.company_id-nya tenant LAIN", async () => {
+    it("7. Target membership tidak konsisten: owner DITOLAK insert user_roles company_id=tenant sendiri untuk user_id yang users.company_id-nya tenant LAIN (Gate 3E-C-B0-S1-R1: ditolak oleh is_same_tenant_member, BUKAN kebetulan lewat RLS users_company_select -- lihat grup F)", async () => {
       const scoped = await signIn(`${runTag}-owner@itest.test`);
       const { data, error } = await scoped
         .from("user_roles")
         .insert({ user_id: foreignUserId, company_id: companyId, role_id: adminRoleId })
+        .select("id");
+      expect(error).not.toBeNull();
+      expect(data ?? []).toHaveLength(0);
+    });
+
+    it("7b. UPDATE user_id baris existing ke user tenant LAIN (mismatched target) DITOLAK -- tetap company_id tenant sendiri", async () => {
+      const scoped = await signIn(`${runTag}-owner@itest.test`);
+      // Baris awal valid: user milik companyId sendiri, role sales.
+      const email = `${runTag}-mismatchTargetBase@itest.test`;
+      const { data: baseAuth } = await service.auth.admin.createUser({ email, password, email_confirm: true });
+      const baseUserId = (baseAuth as { user: { id: string } }).user.id;
+      await service.from("users").insert({ id: baseUserId, company_id: companyId, email, full_name: "Itest Mismatch Base", is_active: true });
+      const { data: inserted, error: insertErr } = await scoped
+        .from("user_roles")
+        .insert({ user_id: baseUserId, company_id: companyId, role_id: salesRoleId })
+        .select("id")
+        .single();
+      expect(insertErr).toBeNull();
+      const rowId = (inserted as { id: string }).id;
+
+      // Coba alihkan baris yang SAMA ke foreignUserId (anggota otherCompanyId)
+      // sambil company_id tetap companyId -- fabrikasi membership lintas-tenant
+      // lewat UPDATE, bukan INSERT.
+      const { data } = await scoped.from("user_roles").update({ user_id: foreignUserId }).eq("id", rowId).select("id");
+      expect(data ?? []).toHaveLength(0);
+
+      const { data: unchanged } = await service.from("user_roles").select("user_id").eq("id", rowId).single();
+      expect((unchanged as { user_id: string }).user_id).toBe(baseUserId);
+
+      await service.from("user_roles").delete().eq("id", rowId);
+      await service.from("users").delete().eq("id", baseUserId);
+      await service.auth.admin.deleteUser(baseUserId);
+    });
+
+    it("7c. Insert dengan user_id yang TIDAK ADA di public.users sama sekali DITOLAK", async () => {
+      const scoped = await signIn(`${runTag}-owner@itest.test`);
+      const nonexistentUserId = randomUUID();
+      const { data, error } = await scoped
+        .from("user_roles")
+        .insert({ user_id: nonexistentUserId, company_id: companyId, role_id: adminRoleId })
         .select("id");
       expect(error).not.toBeNull();
       expect(data ?? []).toHaveLength(0);
@@ -346,6 +398,67 @@ describeIfDb("Gate 3E-C-B0-S1: block tenant role escalation to system roles (RLS
       }
       await service.from("users").delete().eq("id", newUserId);
       await service.auth.admin.deleteUser(newUserId);
+    });
+  });
+
+  describe("F. is_same_tenant_member() independen dari RLS public.users (Gate 3E-C-B0-S1-R1)", () => {
+    // Bukti "tidak tautologis / tidak bergantung pada users_company_select":
+    // panggil fungsi yang SAMA PERSIS dipakai policy (bukan mock/reimplementasi
+    // terpisah) lewat DUA konteks caller yang RLS-nya sangat berbeda --
+    // service-role (ZERO restriksi RLS pada public.users -- melihat SEMUA
+    // baris tanpa filter apa pun) dan sesi owner ter-otentikasi (dibatasi
+    // users_company_select -- tidak bisa SELECT baris foreignUserId sama
+    // sekali). Bila fungsi ini diam-diam masih bergantung pada RLS caller
+    // untuk jawabannya (persis bug lama), kedua konteks akan menghasilkan
+    // jawaban BERBEDA untuk pasangan yang sama. Hasil harus IDENTIK.
+    it("16. Pasangan (foreignUserId, companyId) MISMATCH -- FALSE baik dipanggil service-role (tanpa RLS sama sekali) maupun sesi owner (dibatasi RLS)", async () => {
+      const { data: viaService, error: serviceErr } = await service.rpc("is_same_tenant_member", {
+        p_user_id: foreignUserId,
+        p_company_id: companyId,
+      });
+      expect(serviceErr).toBeNull();
+      expect(viaService).toBe(false);
+
+      const scoped = await signIn(`${runTag}-owner@itest.test`);
+      // Kontrol: owner memang TIDAK BISA melihat baris foreignUserId sama
+      // sekali (RLS users_company_select) -- membuktikan konteks ini genuinely
+      // lebih restriktif daripada service-role, bukan cuma formalitas.
+      const { data: visibleToOwner } = await scoped.from("users").select("id").eq("id", foreignUserId);
+      expect(visibleToOwner ?? []).toHaveLength(0);
+
+      const { data: viaOwnerSession, error: ownerErr } = await scoped.rpc("is_same_tenant_member", {
+        p_user_id: foreignUserId,
+        p_company_id: companyId,
+      });
+      expect(ownerErr).toBeNull();
+      expect(viaOwnerSession).toBe(false);
+    });
+
+    it("17. Pasangan (authIds.sales, companyId) MATCH -- TRUE baik dipanggil service-role maupun sesi owner", async () => {
+      const { data: viaService, error: serviceErr } = await service.rpc("is_same_tenant_member", {
+        p_user_id: authIds.sales,
+        p_company_id: companyId,
+      });
+      expect(serviceErr).toBeNull();
+      expect(viaService).toBe(true);
+
+      const scoped = await signIn(`${runTag}-owner@itest.test`);
+      const { data: viaOwnerSession, error: ownerErr } = await scoped.rpc("is_same_tenant_member", {
+        p_user_id: authIds.sales,
+        p_company_id: companyId,
+      });
+      expect(ownerErr).toBeNull();
+      expect(viaOwnerSession).toBe(true);
+    });
+
+    it("18. user_id valid tapi company_id SALAH (bukan tenant user tersebut) -- FALSE, bukan sekadar 'user ada'", async () => {
+      // authIds.sales benar-benar ada di companyId, BUKAN otherCompanyId --
+      // membuktikan perbandingan company_id-nya eksak, bukan hanya EXISTS(id).
+      const { data } = await service.rpc("is_same_tenant_member", {
+        p_user_id: authIds.sales,
+        p_company_id: otherCompanyId,
+      });
+      expect(data).toBe(false);
     });
   });
 });
