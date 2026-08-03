@@ -84,7 +84,21 @@ export async function getAuthUser(): Promise<AuthUser> {
     is_active: boolean;
   } | null;
 
-  if (!profile) redirect("/login");
+  // Gate 3E-C-C1 — auth user valid tapi TANPA baris public.users sama sekali
+  // berarti signup-nya terputus SEBELUM provision_first_owner() sempat
+  // dipanggil (bukan "belum pernah signup" -- middleware sudah menolak !user
+  // di atas). Redirect ke /login di sini dulu menyebabkan redirect loop tak
+  // berujung: middleware.ts mengarahkan authenticated user di /login balik ke
+  // /dashboard (user && isAuthRoute), yang memanggil getAuthUser() ini lagi,
+  // menemukan !profile lagi, redirect /login lagi -- tanpa akhir. /signup
+  // SENGAJA dikecualikan dari isAuthRoute di middleware persis untuk kasus
+  // ini (lihat komentar middleware.ts) -- evaluateSession() di
+  // signup-form.tsx mendeteksi session tanpa profile lalu menampilkan layar
+  // "continue" untuk melanjutkan provisioning dengan aman, tanpa membuat
+  // auth user/company/role baru. Sesi TIDAK di-signOut di sini (berbeda dari
+  // cabang is_active/zero-role di bawah) karena sesi ini justru dibutuhkan --
+  // provision_first_owner() mengidentifikasi caller lewat auth.uid().
+  if (!profile) redirect("/signup");
   // Gate 1B — shared boundary: sesi/token lama milik user yang sudah
   // dinonaktifkan (mis. Salesman non-aktif) tidak boleh melewati halaman
   // atau server action manapun yang bergantung pada getAuthUser().

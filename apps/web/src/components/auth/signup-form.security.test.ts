@@ -89,4 +89,38 @@ describe("Signup form public contract (Gate 3D-B3)", () => {
     const idx = source.indexOf("// unexpected_error: auth user & session TETAP dipertahankan");
     expect(idx).toBeGreaterThan(-1);
   });
+
+  // ===========================================================================
+  // Gate 3E-C-C1 / G4 — resume onboarding: session valid tapi profile belum
+  // ada (signup terputus sebelum provision_first_owner()) harus mendarat di
+  // layar "continue", bukan langsung memanggil RPC otomatis (RPC hanya boleh
+  // terpanggil lewat submit form eksplisit, lihat submitProvisioning/
+  // handleContinueSubmit) dan bukan redirect dashboard (hanya profile YANG
+  // SUDAH ADA yang redirect dashboard).
+  // ===========================================================================
+
+  it("session ada + profile belum ada -> phase 'continue' (resume onboarding), bukan redirect dashboard otomatis", () => {
+    const profileCheckIdx = source.indexOf('.from("users")');
+    const ifProfileIdx = source.indexOf("if (profile) {");
+    const setContinuePhaseIdx = source.indexOf('setPhase("continue");');
+    expect(profileCheckIdx).toBeGreaterThan(-1);
+    expect(ifProfileIdx).toBeGreaterThan(profileCheckIdx);
+    expect(setContinuePhaseIdx).toBeGreaterThan(ifProfileIdx);
+
+    // Blok antara "if (profile)" dan phase "continue" hanya menangani kasus
+    // profile SUDAH ADA (redirect dashboard) -- tidak ada panggilan RPC di
+    // antaranya, membuktikan jalur profile-tidak-ada tidak auto-provision.
+    const between = source.slice(ifProfileIdx, setContinuePhaseIdx);
+    expect(between).toContain('router.replace("/dashboard")');
+    expect(between).not.toContain(".rpc(");
+  });
+
+  it("evaluateSession (resume onboarding) tidak pernah memanggil provision_first_owner secara otomatis -- hanya submit form eksplisit yang memanggilnya", () => {
+    const evaluateSessionIdx = source.indexOf("const evaluateSession = useCallback(");
+    const submitProvisioningFnIdx = source.indexOf("async function submitProvisioning(");
+    expect(evaluateSessionIdx).toBeGreaterThan(-1);
+    expect(submitProvisioningFnIdx).toBeGreaterThan(evaluateSessionIdx);
+    const evaluateSessionBody = source.slice(evaluateSessionIdx, submitProvisioningFnIdx);
+    expect(evaluateSessionBody).not.toContain('.rpc(\n      "provision_first_owner"');
+  });
 });

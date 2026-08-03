@@ -91,3 +91,42 @@ describe("getAuthUser fail-closed untuk user tanpa membership (Gate 3C)", () => 
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 });
+
+// =============================================================================
+// Gate 3E-C-C1: auth user valid TANPA baris public.users sama sekali (signup
+// terputus sebelum provision_first_owner() dipanggil) harus di-redirect ke
+// /signup -- BUKAN /login. Sebelum fix ini, redirect ke /login menyebabkan
+// redirect loop tak berujung: middleware.ts mengarahkan authenticated user di
+// /login balik ke /dashboard, yang memanggil getAuthUser() ini lagi, yang
+// menemukan !profile lagi. /signup adalah satu-satunya halaman yang
+// menangani state ini (evaluateSession() di signup-form.tsx). Sesi TIDAK
+// boleh di-signOut di jalur ini (beda dari Gate 3C di atas) karena
+// provision_first_owner() butuh sesi itu untuk melanjutkan.
+// =============================================================================
+
+describe("getAuthUser resume-onboarding untuk auth user tanpa profile sama sekali (Gate 3E-C-C1 / G4)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    supabaseMock.auth.getUser = vi.fn(async () => ({ data: { user: { id: "auth-user-orphan" } }, error: null }));
+    supabaseMock.auth.signOut = signOut;
+    supabaseMock.from = vi.fn((table: string) => {
+      if (table === "users") {
+        return chain({ data: null }); // <-- zero public.users row, the case under test
+      }
+      return chain({ data: [] });
+    });
+  });
+
+  it("profile tidak ada sama sekali -> redirect ke /signup (bukan /login, mencegah redirect loop)", async () => {
+    const { getAuthUser } = await import("./get-user");
+
+    await expect(getAuthUser()).rejects.toThrow(`${REDIRECT_MARKER}/signup`);
+  });
+
+  it("sesi TIDAK di-signOut -- dibutuhkan untuk melanjutkan provision_first_owner() via auth.uid()", async () => {
+    const { getAuthUser } = await import("./get-user");
+
+    await expect(getAuthUser()).rejects.toThrow();
+    expect(signOut).not.toHaveBeenCalled();
+  });
+});

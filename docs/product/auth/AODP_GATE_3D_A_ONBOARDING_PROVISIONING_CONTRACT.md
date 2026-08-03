@@ -534,7 +534,8 @@ THREAT/RACE ANALYSIS: see §6. Primary unresolved risk is G1 (no DB-level one-ow
   tenant guarantee) — must close before any owner-provisioning RPC ships.
 GAPS/BLOCKERS: G1 **RESOLVED/FROZEN** (Gate 3D-A1 — DB-level owner-uniqueness trigger
   adopted, locked as Gate 3D-B implementation item #1, §7/§7a), G2 (signup unbuilt),
-  G3 (admin provisioning unbuilt), G4 (orphan-retry UX undecided), G5 (slug strategy
+  G3 (admin provisioning unbuilt), G4 **RESOLVED/CLOSED** (Gate 3E-C-C1 — auto-resume
+  decision; `/signup` redirect-loop fix, §10), G5 (slug strategy
   undecided), G6 (hosted Supabase config unknown — confirmation setting, password
   policy, production project existence), G7 **RESOLVED/FROZEN** (Gate 3D-A1 —
   Founder-confirmed super_admin boundary, §7).
@@ -606,3 +607,51 @@ migration-only):
   (`fix(auth): close single-owner update bypass`) against the same migration file
   introduced by Gate 3D-B1, per Founder instruction not to amend the already-committed
   Gate 3D-B1 commit.
+
+### Gate 3E-C-C1 (2026-08-03) — G4 Recovery Hardening — RESOLVED / CLOSED
+
+Closed **G4** ("no UI/UX decision for signup retried with an orphaned `auth.users` row").
+Product decision: **auto-resume provisioning for the same identity**, not a support-contact
+block — the mechanism already existed (§5.A, `signup-form.tsx` "continue" phase +
+`provision_first_owner()`, both shipped at Gate 3D-B/B3) but had one unreachable path:
+
+- **Root cause (re-audit, no new provisioning path added):** `getAuthUser()`
+  (`apps/web/src/lib/auth/get-user.ts`) redirected a confirmed-but-unprovisioned auth
+  user (valid session, zero `public.users` row) to `/login`. `middleware.ts` redirects
+  any authenticated user away from `/login` back to `/dashboard`, which calls
+  `getAuthUser()` again, which redirects to `/login` again — an unrecoverable loop. This
+  affected every entry point that reaches a `/dashboard/*` page with such a session:
+  direct navigation, a bookmarked link, and — critically — the `/login` form's own
+  post-sign-in redirect for a user retrying the "duplicate_email" signup path with their
+  known password.
+- **Fix:** redirect target changed to `/signup` (one line, `get-user.ts`). `/signup` is
+  already exempted from `middleware.ts`'s auth-route redirect specifically for this case
+  (see that file's existing comment), and `signup-form.tsx`'s `evaluateSession()` already
+  detects "session without profile" and shows the "continue" screen, which re-collects
+  `company_name`/`full_name`/`phone` and calls `provision_first_owner()` — identity is
+  always `auth.uid()`; no `user_id`/`company_id`/role field is ever client-supplied
+  (unchanged from Gate 3D-B3). The session is deliberately **not** signed out on this
+  path (unlike the Gate 3C zero-role branch) — the session is required for
+  `provision_first_owner()`'s `auth.uid()` identity check.
+- **Idempotency/atomicity/race-safety:** unchanged and already proven at the RPC layer
+  (`20260907000001_gate_3d_b2_atomic_owner_provisioning_rpc.sql`,
+  `gate-3d-b2-atomic-owner-provisioning.integration.test.ts`, tests 4/11) — advisory-lock
+  serialized per-`auth.uid()`, `already_provisioned` rejected deterministically, zero
+  duplicate tenants under concurrent retry. No new provisioning path was introduced.
+- **Unconfirmed-email retry (no code gap):** re-submitting signup for an email that
+  exists but is not yet confirmed already re-triggers Supabase's confirmation email
+  (`classifySignUpOutcome` → `confirmation_required`, not `duplicate_email`) — the
+  confirmation link routes through `/auth/callback` → `/signup` as before.
+- **Orphan cleanup (explicitly out of scope for this gate, per instruction):** an
+  `auth.users` row that is genuinely abandoned and unrecoverable through this flow — a
+  user who lost access to the mailbox needed to (re)confirm and never obtains a session
+  at all — has no self-service recovery path and requires an operator-run cleanup tool.
+  That generic cleanup tool is scoped to Gate 3E-C-C3 and was **not** built here; no
+  hosted cleanup was run or scripted as part of this gate.
+- **Tests added:** `get-user.security.test.ts` (redirect target `/signup` not `/login`;
+  session not signed out) and `signup-form.security.test.ts` (resume lands on "continue"
+  phase, does not auto-call the RPC before explicit form submit) — layered on top of the
+  existing, unchanged RPC-level integration coverage above.
+- **No change to:** `provision_first_owner()` RPC, its migration, RLS policies, the
+  Gate 3E-C-B0-S1/S1-R1 `user_roles` hotfixes, `/auth/callback`'s allowlist, forgot/reset
+  password, or the Gate 3D-B1 single-owner trigger.
