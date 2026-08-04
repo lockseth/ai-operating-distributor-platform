@@ -4,6 +4,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { OnboardingChecklist } from "@/components/platform/onboarding-checklist";
 import { FirstUserForm } from "@/components/platform/first-user-form";
+import { ResetTenantUserPasswordButton } from "@/components/platform/reset-tenant-user-password-button";
 import {
   ChevronLeft, Edit2, Building2, CheckCircle2, XCircle,
   Users, Package, ShoppingCart, FileText, Globe,
@@ -32,6 +33,19 @@ interface Company {
   is_active: boolean; created_at: string; updated_at: string;
 }
 
+interface TenantUserRow {
+  id: string;
+  full_name: string;
+  email: string;
+  is_active: boolean;
+  user_roles: { roles: { name: string } | null }[] | null;
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  owner: "Owner", admin: "Admin", sales: "Sales", manager: "Manager",
+  finance: "Finance", warehouse: "Warehouse", driver: "Driver", super_admin: "Super Admin",
+};
+
 export default async function TenantDetailPage({
   params,
 }: {
@@ -43,7 +57,7 @@ export default async function TenantDetailPage({
 
   const supabase = getAdminClient();
 
-  const [companyResult, statsResult] = await Promise.all([
+  const [companyResult, statsResult, tenantUsersResult] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).single(),
     Promise.all([
       supabase.from("users").select("id", { count: "exact", head: true }).eq("company_id", id),
@@ -53,11 +67,17 @@ export default async function TenantDetailPage({
       supabase.from("import_templates").select("id", { count: "exact", head: true }).eq("company_id", id).eq("is_active", true),
       supabase.from("settings").select("id", { count: "exact", head: true }).eq("company_id", id),
     ]),
+    supabase
+      .from("users")
+      .select("id, full_name, email, is_active, user_roles(roles(name))")
+      .eq("company_id", id)
+      .order("created_at", { ascending: true }),
   ]);
 
   if (!companyResult.data) notFound();
 
   const company = companyResult.data as unknown as Company;
+  const tenantUsers = (tenantUsersResult.data ?? []) as unknown as TenantUserRow[];
   const [usersR, productsR, customersR, ordersR, importsR, settingsR] = statsResult;
 
   const userCount     = usersR.count ?? 0;
@@ -179,6 +199,59 @@ export default async function TenantDetailPage({
               <h2 className="text-sm font-semibold text-gray-900">Buat User Pertama (Owner)</h2>
             </div>
             <FirstUserForm companyId={id} />
+          </div>
+        )}
+
+        {/* Kelola User Tenant -- Gate 3E-D2-A-R1: super_admin bisa reset
+            password user existing (owner|admin|sales) di sini. Role
+            super_admin TIDAK PERNAH ditampilkan dengan kontrol reset
+            (baik karena tidak seharusnya muncul dalam daftar tenant-scoped
+            ini, maupun sebagai pertahanan berlapis bila suatu saat terjadi). */}
+        {userCount > 0 && (
+          <div className="rounded-xl border bg-white p-6 shadow-sm">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="h-4 w-4 text-blue-500" />
+              <h2 className="text-sm font-semibold text-gray-900">Kelola User Tenant</h2>
+            </div>
+            <div className="space-y-3">
+              {tenantUsers.map((row) => {
+                const roleNames = (row.user_roles ?? [])
+                  .map((ur) => ur.roles?.name)
+                  .filter((name): name is string => Boolean(name));
+                const isSuperAdmin = roleNames.includes("super_admin");
+                return (
+                  <div key={row.id} className="rounded-lg border border-gray-100 p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-gray-900">{row.full_name}</p>
+                        <p className="truncate text-xs text-gray-500">{row.email}</p>
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {roleNames.map((name) => (
+                            <span key={name} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">
+                              {ROLE_LABEL[name] ?? name}
+                            </span>
+                          ))}
+                          {row.is_active ? (
+                            <span className="text-[11px] text-green-600">Aktif</span>
+                          ) : (
+                            <span className="text-[11px] text-red-500">Tidak Aktif</span>
+                          )}
+                        </div>
+                      </div>
+                      {!isSuperAdmin && row.is_active && (
+                        <div className="shrink-0">
+                          <ResetTenantUserPasswordButton
+                            targetUserId={row.id}
+                            fullName={row.full_name}
+                            email={row.email}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
 
