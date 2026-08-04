@@ -155,6 +155,37 @@ export async function processTelegramUpdate(
     return { outcome: "unregistered" };
   }
 
+  // --- Gate 3E-D1-R1: pairing digeneralisasi ke {owner, admin, sales}, tapi
+  // seluruh workflow di bawah ini (Sales Order, Delivery, Dispute, Menu)
+  // adalah capability 'sales.order.telegram' -- HANYA role sales. Owner/admin
+  // yang paired (untuk password.reset.self, belum diimplementasikan) TIDAK
+  // otomatis dapat akses di sini. Dicek ulang dari state SAAT INI (bukan
+  // diasumsikan dari resolveIdentity) supaya role yang berubah setelah
+  // pairing langsung fail-closed. Balasan ke pengirim DISAMAKAN dengan
+  // "unregistered" -- pola yang sama dengan claim-time eligibility corrective
+  // (Gate 1C) -- supaya tidak membocorkan bahwa chat ini sebenarnya paired
+  // tapi tidak eligible untuk workflow ini.
+  const eligibleForSalesOrder = await deps.repository.hasSalesOrderCapability(
+    identity.userId,
+    identity.companyId,
+  );
+  if (!eligibleForSalesOrder) {
+    await deps.repository.insertEvent({
+      telegramUpdateId: update.update_id,
+      companyId: identity.companyId,
+      telegramIdentityId: identity.identityId,
+      messageType: message.voice ? "voice" : "text",
+      processingStatus: "rejected_unregistered",
+      rawPayload: null,
+      telegramChatId: chatId,
+      telegramUserId: message.from?.id ?? null,
+      telegramUsername: message.from?.username ?? null,
+      rejectionReason: "capability_denied_sales_order_telegram",
+    });
+    await deps.sender.sendMessage(chatId, buildUnregisteredUserReply());
+    return { outcome: "unregistered" };
+  }
+
   // --- Alur Delivery Verification (driver) didahulukan bila sedang berjalan
   // untuk identity ini. Satu bot Telegram, satu ledger idempotency
   // (telegram_update_events) melayani kedua alur — lihat lib/delivery/repository.ts. ---

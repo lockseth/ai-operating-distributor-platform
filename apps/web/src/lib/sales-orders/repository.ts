@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PricedOrder } from "./types";
 import type { OrderSource } from "./order-source";
+import { hasTelegramCapability } from "@/lib/telegram-enrollment/capability";
 
 export interface ResolvedIdentity {
   identityId: string;
@@ -96,6 +97,16 @@ export interface SalesOrderTelegramRepository {
 
   /** Tidak pernah percaya company_id/user_id dari payload — selalu resolve dari sini. */
   resolveIdentity(telegramChatId: number): Promise<ResolvedIdentity | null>;
+
+  /**
+   * Gate 3E-D1-R1: pairing (telegram_identities aktif) TIDAK LAGI berarti
+   * eligible untuk workflow Sales Order/Delivery/Dispute/Menu -- sejak
+   * pairing digeneralisasi ke {owner, admin, sales}, hanya role 'sales' yang
+   * punya capability 'sales.order.telegram'. Dicek ulang di sini (bukan
+   * disimpulkan dari resolveIdentity) supaya perubahan role user setelah
+   * pairing langsung fail-closed pada request berikutnya.
+   */
+  hasSalesOrderCapability(userId: string, companyId: string): Promise<boolean>;
 
   getConversationState(identityId: string): Promise<ConversationState>;
 
@@ -265,6 +276,23 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       userId: row.user_id,
       userFullName: row.user.full_name,
     };
+  }
+
+  async hasSalesOrderCapability(
+    userId: string,
+    companyId: string,
+  ): Promise<boolean> {
+    const { data } = await this.supabase
+      .from("user_roles")
+      .select("role:roles!role_id(name)")
+      .eq("user_id", userId)
+      .eq("company_id", companyId);
+
+    const roles = ((data ?? []) as unknown as { role: { name: string } | null }[])
+      .map((row) => row.role?.name)
+      .filter((name): name is string => Boolean(name));
+
+    return hasTelegramCapability(roles, "sales.order.telegram");
   }
 
   async getConversationState(identityId: string): Promise<ConversationState> {
@@ -596,6 +624,12 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
   private auditTrail: InMemoryOrderAuditEvent[] = [];
   private customers = new Map<string, InMemoryMasterRow>();
   private products = new Map<string, InMemoryMasterRow>();
+  // Default true: seluruh fixture test yang ada sebelum Gate 3E-D1-R1 selalu
+  // merepresentasikan Salesman (satu-satunya role yang bisa ter-pairing saat
+  // itu). Test baru yang butuh simulasi identity owner/admin ter-pairing
+  // (tanpa capability sales.order.telegram) memanggil
+  // seedSalesOrderCapability(..., false) secara eksplisit.
+  private capabilityOverrides = new Map<string, boolean>();
   private seq = 0;
 
   seedIdentity(
@@ -610,6 +644,22 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     // "pernah terdaftar tapi sekarang nonaktif".
     if (options.isActive === false) return;
     this.identities.set(telegramChatId, identity);
+  }
+
+  /** Test-only (Gate 3E-D1-R1): override capability sales.order.telegram untuk satu user/tenant. */
+  seedSalesOrderCapability(
+    userId: string,
+    companyId: string,
+    allowed: boolean,
+  ): void {
+    this.capabilityOverrides.set(`${userId}:${companyId}`, allowed);
+  }
+
+  async hasSalesOrderCapability(
+    userId: string,
+    companyId: string,
+  ): Promise<boolean> {
+    return this.capabilityOverrides.get(`${userId}:${companyId}`) ?? true;
   }
 
   /** Test-only: registrasi toko (customers) untuk validasi createDraftOrder/updateDraftOrder. */

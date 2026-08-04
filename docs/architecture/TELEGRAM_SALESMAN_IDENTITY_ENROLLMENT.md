@@ -75,7 +75,15 @@ memulihkan kegagalan jaringan setelah klaim; akun lain tetap ditolak.
   `chat.id === from.id`.
 - Tenant dan internal user selalu berasal dari token server-side.
 - Target wajib user aktif, berada di tenant penerbit, dan mempunyai role
-  `sales`.
+  `sales`, `admin`, atau `owner` (digeneralisasi Gate 3E-D1-R1 — sebelumnya
+  hanya `sales`). Generalisasi ini HANYA membuat pairing-nya mungkin;
+  workflow Sales Order/Delivery/Dispute/Menu Telegram tetap capability
+  `sales.order.telegram` yang HANYA diizinkan untuk role `sales` — dicek
+  ulang secara terpisah di `apps/web/src/lib/telegram-enrollment/capability.ts`
+  dan `SalesOrderTelegramRepository.hasSalesOrderCapability`, fail-closed.
+  UI Dashboard → Pengguna masih hanya menampilkan tombol pairing untuk baris
+  role `sales`; pairing Owner/Admin (untuk `password.reset.self`, belum
+  diimplementasikan) menyusul di gate terpisah.
 - Satu chat Telegram tidak dapat dihubungkan ke dua user.
 - Satu internal user tidak dapat mempunyai dua identity aktif.
 - Routine issue, claim, dan revoke tidak dapat dipanggil `PUBLIC`, `anon`, atau

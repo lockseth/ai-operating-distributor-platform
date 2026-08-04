@@ -168,7 +168,17 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, outcome: "duplicate_update" });
       }
       const identity = await salesOrderRepository.resolveIdentity(chatId);
-      if (!identity) {
+      // Gate 3E-D1-R1: pairing kini bisa dimiliki owner/admin (bukan hanya
+      // sales) -- balasan disamakan dengan "identity tidak dikenal" supaya
+      // tidak membocorkan bahwa chat ini sebenarnya paired tapi tidak
+      // eligible untuk menu Sales/Delivery (capability sales.order.telegram).
+      if (
+        !identity ||
+        !(await salesOrderRepository.hasSalesOrderCapability(
+          identity.userId,
+          identity.companyId,
+        ))
+      ) {
         await sender.answerCallbackQuery(callbackQuery.id);
         return NextResponse.json({ ok: true, outcome: "unknown_identity" });
       }
@@ -206,7 +216,19 @@ export async function POST(request: Request) {
       if (!alreadyProcessed) {
         const chatId = update.message!.chat.id;
         const identity = await salesOrderRepository.resolveIdentity(chatId);
-        if (identity) {
+        // Gate 3E-D1-R1: pre-dispatch dispute/tambah-toko/menu HANYA untuk
+        // identity dengan capability sales.order.telegram (role sales) --
+        // owner/admin yang paired (untuk password.reset.self, belum
+        // diimplementasikan) jatuh ke processTelegramUpdate() di bawah, yang
+        // sudah menolaknya fail-closed dengan balasan generik yang sama
+        // dengan "belum terdaftar".
+        const eligibleForSalesOrder =
+          identity !== null &&
+          (await salesOrderRepository.hasSalesOrderCapability(
+            identity.userId,
+            identity.companyId,
+          ));
+        if (identity && eligibleForSalesOrder) {
           const disputeConversationRepository = new SupabaseDisputeConversationRepository(supabase);
           const storePicConversationRepository = new SupabaseStorePicConversationRepository(supabase);
           const menuConversationRepository = new SupabaseMenuConversationRepository(supabase);
