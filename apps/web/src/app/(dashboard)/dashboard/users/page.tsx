@@ -99,7 +99,7 @@ export default async function UsersPage() {
       user.roles.includes(role),
     );
   // Owner Control Plane (corrective closure 2026-07-23): Ubah Wilayah
-  // Salesman existing kini owner-only, konsisten dengan Tambah Salesman dan
+  // Salesman existing kini owner-only, konsisten dengan Tambah Pengguna dan
   // Tambah Wilayah -- lebih ketat dari canManageTelegram di atas.
   const isOwner = user.roles.includes("owner");
 
@@ -194,16 +194,16 @@ export default async function UsersPage() {
             className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
           >
             <UserPlus className="h-4 w-4" />
-            Tambah Salesman
+            Tambah Pengguna
           </Link>
         ) : null}
       </PageHeader>
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
         <p className="text-sm text-blue-800">
-          Manajemen pengguna lengkap untuk seluruh role sedang dalam pengembangan.
-          Admin/Owner/Manager dapat menambahkan Salesman dan menghubungkan
-          identitas Telegram-nya dari halaman ini.
+          Owner dapat menambahkan pengguna baru (Admin atau Sales) lewat tombol
+          &ldquo;Tambah Pengguna&rdquo;, dan menghubungkan identitas Telegram Salesman
+          dari halaman ini.
         </p>
       </div>
 

@@ -46,3 +46,13 @@ describe("Users page Tambah Salesman link gating (Gate 3C)", () => {
     expect(precedingCondition).not.toContain("canManageTelegram ?");
   });
 });
+
+describe("Users page Tambah Pengguna CTA (Gate 3E-C-C2-B3)", () => {
+  it('tombol CTA berlabel "Tambah Pengguna", jalur lama "Tambah Salesman" tidak lagi ada di halaman ini', () => {
+    const start = page.indexOf('href="/dashboard/users/new"');
+    const end = page.indexOf("</Link>", start);
+    const linkBlock = page.slice(start, end);
+    expect(linkBlock).toContain("Tambah Pengguna");
+    expect(page).not.toContain("Tambah Salesman");
+  });
+});

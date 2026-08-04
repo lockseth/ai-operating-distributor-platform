@@ -2,39 +2,21 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
-import { createClient } from "@/lib/supabase/server";
-import { AddSalesmanForm } from "@/components/users/add-salesman-form";
+import { AddTenantUserForm } from "@/components/users/add-tenant-user-form";
 
-export const metadata = { title: "Tambah Salesman — AODP" };
+export const metadata = { title: "Tambah Pengguna — AODP" };
 
-const MANAGE_ROLES = ["owner", "manager", "admin", "super_admin"];
-
-export default async function NewSalesmanPage() {
+// Gate 3E-C-C2-B3 -- halaman ini adalah SATU-SATUNYA entry point pembuatan
+// user tenant baru (admin | sales), owner-only -- sama persis dengan gating
+// createTenantUserAction (isOwnerActor, tenant-users/actions.ts). Tidak ada
+// MANAGE_ROLES/canManageSalesman di sini -- manager/admin/super_admin TIDAK
+// pernah boleh membuka halaman ini, konsisten dengan kontrak backend yang
+// menolak mereka di RPC provision_owner_created_tenant_user.
+export default async function NewTenantUserPage() {
   const user = await getAuthUser();
-
-  const canManage =
-    hasPermission(user.permissions, "users.manage") ||
-    MANAGE_ROLES.some((role) => user.roles.includes(role));
-  // Owner Control Gate 1A: halaman Tambah Salesman + wilayah kerja khusus
-  // Owner tenant, lebih ketat dari MANAGE_ROLES di atas (manager/admin/
-  // super_admin masih boleh mengubah wilayah Salesman existing di halaman
-  // Pengguna, tapi tidak boleh membuka halaman ini).
   const isOwner = user.roles.includes("owner");
 
-  if (!canManage || !isOwner) redirect("/dashboard/users");
-
-  const supabase = await createClient();
-  // Hanya wilayah AKTIF yang boleh dipilih untuk assignment baru (master
-  // coverage_areas, migration 20260816000001) -- salesman baru belum punya
-  // assignment existing yang perlu dipertahankan.
-  const { data: areaRows } = await supabase
-    .from("coverage_areas")
-    .select("id, name")
-    .eq("company_id", user.company_id)
-    .eq("is_active", true)
-    .order("name");
-  const availableAreas = (areaRows ?? []) as { id: string; name: string }[];
+  if (!isOwner) redirect("/dashboard/users");
 
   return (
     <div className="mx-auto max-w-lg p-6">
@@ -46,14 +28,14 @@ export default async function NewSalesmanPage() {
       </div>
 
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-gray-900">Tambah Salesman</h1>
+        <h1 className="text-xl font-bold text-gray-900">Tambah Pengguna</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Salesman baru akan tercatat pada {user.company.name}. Hubungkan akun Telegram
-          setelah Salesman dibuat.
+          Pengguna baru (Admin atau Sales) akan tercatat pada {user.company.name} dengan
+          password sementara. Wajib ganti password saat login pertama.
         </p>
       </div>
 
-      <AddSalesmanForm availableAreas={availableAreas} />
+      <AddTenantUserForm />
     </div>
   );
 }
