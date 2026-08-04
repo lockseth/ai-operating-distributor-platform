@@ -9,6 +9,16 @@
 // complete_mandatory_password_change() (20260911000001) yang TIDAK diubah
 // sama sekali oleh migration ini.
 //
+// Gate 3E-D2-A-R4 (corrective, migration 20260916000001) -- v_target.email
+// (public.users.email VARCHAR(255)) dikembalikan TANPA cast eksplisit ke
+// kolom OUT target_email (TEXT) pada RETURN QUERY jalur sukses DAN jalur
+// idempotent-replay begin() -- runtime gagal 42804 (structure of query does
+// not match function result type) pada KEDUANYA. Test #1 di bawah sekarang
+// mengasersi target_email eksplisit (bukan hanya error === null) supaya
+// regresi 42804 pada jalur sukses tertangkap; test #7 baru membuktikan
+// jalur idempotent-replay (operation_id SAMA di-retry) juga bebas 42804 dan
+// mengembalikan email yang benar.
+//
 // Pola identik gate-3e-c-c2-b1-owner-created-tenant-user.integration.test.ts.
 // Skip graceful jika kredensial Supabase lokal tidak tersedia.
 // =============================================================================
@@ -159,6 +169,9 @@ describeIfDb("Gate 3E-D2-A-R1: super_admin_{begin,finalize,fail}_tenant_user_pas
     });
     expect(begin.error).toBeNull();
     expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("db_committed");
+    // Gate 3E-D2-A-R4: jalur sukses mengembalikan email yang benar tanpa
+    // 42804 (v_target.email di-cast eksplisit ke TEXT).
+    expect((begin.data as OutcomeRow[])[0].target_email).toBe(target.email);
 
     let row = await getUserRow(target.id);
     expect(row?.must_change_password).toBe(true);
@@ -284,5 +297,43 @@ describeIfDb("Gate 3E-D2-A-R1: super_admin_{begin,finalize,fail}_tenant_user_pas
       p_target_user_id: randomUUID(),
     });
     expect(error).not.toBeNull();
+  });
+
+  it("7. [Gate 3E-D2-A-R4] Retry dengan operation_id SAMA (network retry) -- idempotent-replay tidak 42804, mengembalikan outcome + email yang sudah tercatat", async () => {
+    const companyId = await createCompany("replay");
+    const superAdmin = await createTenantUser("replay-actor", companyId, superAdminRoleId);
+    const target = await createTenantUser("replay-target", companyId, salesRoleId);
+    const operationId = randomUUID();
+
+    const first = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: operationId,
+      p_actor_id: superAdmin.id,
+      p_target_user_id: target.id,
+    });
+    expect(first.error).toBeNull();
+    expect((first.data as OutcomeRow[])[0].result_outcome).toBe("db_committed");
+    expect((first.data as OutcomeRow[])[0].target_email).toBe(target.email);
+
+    // Retry SAMA operation_id -- INSERT ke tenant_user_password_reset_operations
+    // kena unique_violation, masuk jalur idempotent-replay (RETURN QUERY
+    // v_existing_status, v_target.email, ...) yang sebelum R4 gagal 42804
+    // karena v_target.email (VARCHAR) tanpa cast ke kolom OUT TEXT.
+    const replay = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: operationId,
+      p_actor_id: superAdmin.id,
+      p_target_user_id: target.id,
+    });
+    expect(replay.error).toBeNull();
+    expect((replay.data as OutcomeRow[])[0].result_outcome).toBe("db_committed");
+    expect((replay.data as OutcomeRow[])[0].target_email).toBe(target.email);
+    expect((replay.data as OutcomeRow[])[0].target_company_id).toBe(companyId);
+
+    // Replay tidak menduplikasi mutasi -- masih satu audit event 'started'.
+    const audit = await service
+      .from("audit_logs")
+      .select("action")
+      .eq("entity_id", target.id)
+      .eq("action", "tenant_user.password_reset_started");
+    expect(audit.data).toHaveLength(1);
   });
 });
