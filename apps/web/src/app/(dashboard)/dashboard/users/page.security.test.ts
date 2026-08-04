@@ -56,3 +56,36 @@ describe("Users page Tambah Pengguna CTA (Gate 3E-C-C2-B3)", () => {
     expect(page).not.toContain("Tambah Salesman");
   });
 });
+
+describe("Users page pairing control target generalization (Gate 3E-D2-C1-R1)", () => {
+  it("kontrol pairing menggunakan TELEGRAM_PAIRING_ELIGIBLE_ROLES (owner/admin/sales), bukan hardcode roles.includes(\"sales\") saja", () => {
+    expect(page).toContain(
+      'import { TELEGRAM_PAIRING_ELIGIBLE_ROLES } from "@/lib/telegram-enrollment/capability"',
+    );
+    expect(page).toContain("isPairingEligibleRole");
+
+    const start = page.indexOf("<TelegramEnrollmentControl");
+    const precedingCondition = page.slice(Math.max(0, start - 200), start);
+    expect(precedingCondition).toContain("isOwner && isPairingEligibleRole");
+    expect(precedingCondition).not.toContain('roles.includes("sales")');
+  });
+
+  it("target nonaktif tidak mendapat kontrol issuance (u.is_active dicek sebelum <TelegramEnrollmentControl>)", () => {
+    const start = page.indexOf("<TelegramEnrollmentControl");
+    const precedingCondition = page.slice(Math.max(0, start - 200), start);
+    expect(precedingCondition).toContain("u.is_active");
+  });
+
+  it("prop yang dikirim ke TelegramEnrollmentControl adalah targetUserId, bukan salesmanId (kontrak tidak lagi menyesatkan)", () => {
+    const start = page.indexOf("<TelegramEnrollmentControl");
+    const end = page.indexOf("/>", start);
+    const propsBlock = page.slice(start, end);
+    expect(propsBlock).toContain("targetUserId={u.id}");
+    expect(propsBlock).not.toContain("salesmanId");
+  });
+
+  it('label kolom netral "Pairing Telegram", bukan "Telegram Salesman"', () => {
+    expect(page).toContain("Pairing Telegram");
+    expect(page).not.toContain("Telegram Salesman");
+  });
+});

@@ -8,6 +8,7 @@ import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollmen
 import { resolveSalesmanTelegramStatus } from "@/lib/salesman/status";
 import { SalesmanCoverageControl } from "@/components/users/salesman-coverage-control";
 import { SalesmanStatusControl } from "@/components/users/salesman-status-control";
+import { TELEGRAM_PAIRING_ELIGIBLE_ROLES } from "@/lib/telegram-enrollment/capability";
 
 export const metadata = { title: "Pengguna — AODP" };
 
@@ -202,8 +203,8 @@ export default async function UsersPage() {
       <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3">
         <p className="text-sm text-blue-800">
           Owner dapat menambahkan pengguna baru (Admin atau Sales) lewat tombol
-          &ldquo;Tambah Pengguna&rdquo;, dan menghubungkan identitas Telegram Salesman
-          dari halaman ini.
+          &ldquo;Tambah Pengguna&rdquo;, dan menghubungkan Pairing Telegram untuk
+          Owner, Admin, atau Sales dari halaman ini.
         </p>
       </div>
 
@@ -230,7 +231,7 @@ export default async function UsersPage() {
                 Wilayah Kerja
               </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
-                Telegram Salesman
+                Pairing Telegram
               </th>
             </tr>
           </thead>
@@ -250,6 +251,9 @@ export default async function UsersPage() {
                 const roles = u.user_roles
                   .map((ur) => ur.role?.name)
                   .filter((n): n is string => !!n);
+                const isPairingEligibleRole = roles.some((r) =>
+                  (TELEGRAM_PAIRING_ELIGIBLE_ROLES as readonly string[]).includes(r),
+                );
 
                 const displayName = u.full_name || u.email;
                 const initials = displayName.charAt(0).toUpperCase();
@@ -333,17 +337,23 @@ export default async function UsersPage() {
                       )}
                     </td>
                     <td className="px-4 py-3 align-top">
-                      {isOwner && roles.includes("sales") ? (
-                        <TelegramEnrollmentControl
-                          salesmanId={u.id}
-                          activeIdentity={
-                            telegramIdentity
-                              ? { username: telegramIdentity.telegram_username }
-                              : null
-                          }
-                          status={telegramStatus}
-                        />
-                      ) : roles.includes("sales") ? (
+                      {isOwner && isPairingEligibleRole ? (
+                        u.is_active ? (
+                          <TelegramEnrollmentControl
+                            targetUserId={u.id}
+                            activeIdentity={
+                              telegramIdentity
+                                ? { username: telegramIdentity.telegram_username }
+                                : null
+                            }
+                            status={telegramStatus}
+                          />
+                        ) : (
+                          <span className="text-xs text-gray-400">
+                            Pengguna nonaktif
+                          </span>
+                        )
+                      ) : isPairingEligibleRole ? (
                         <span className="text-xs text-gray-400">
                           Akses diperlukan
                         </span>

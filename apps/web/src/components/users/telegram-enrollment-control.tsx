@@ -26,11 +26,11 @@ const PENDING_STATUS_COLOR: Partial<Record<SalesmanTelegramStatus, string>> = {
 };
 
 export function TelegramEnrollmentControl({
-  salesmanId,
+  targetUserId,
   activeIdentity,
   status,
 }: {
-  salesmanId: string;
+  targetUserId: string;
   activeIdentity: ActiveIdentity | null;
   status: SalesmanTelegramStatus;
 }) {
@@ -47,7 +47,7 @@ export function TelegramEnrollmentControl({
     setError(null);
     setCopied(false);
     startTransition(async () => {
-      const result = await createTelegramEnrollmentAction(salesmanId);
+      const result = await createTelegramEnrollmentAction(targetUserId);
       if (!result.ok || !result.enrollment) {
         setError(result.error ?? "Kode Telegram tidak dapat dibuat.");
         return;
@@ -66,7 +66,7 @@ export function TelegramEnrollmentControl({
 
     setError(null);
     startTransition(async () => {
-      const result = await disconnectTelegramIdentityAction(salesmanId);
+      const result = await disconnectTelegramIdentityAction(targetUserId);
       setConfirmDisconnect(false);
       if (!result.ok) {
         setError(result.error ?? "Koneksi Telegram tidak dapat diputuskan.");
@@ -149,7 +149,7 @@ export function TelegramEnrollmentControl({
       {command && (
         <div className="max-w-72 rounded-lg border border-blue-100 bg-blue-50 p-2.5">
           <p className="mb-1 text-xs font-medium text-blue-900">
-            Kirim kepada Salesman — hanya berlaku sekali
+            Kirim ke pengguna target — hanya berlaku sekali
           </p>
           <code className="block break-all rounded bg-white px-2 py-1 text-[11px] text-gray-700">
             {command}

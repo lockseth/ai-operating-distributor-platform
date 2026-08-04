@@ -62,9 +62,9 @@ export function buildEnrollmentReply(
 ): string {
   if (result.outcome === "claimed") {
     return [
-      `Telegram berhasil terhubung ke akun Salesman ${result.identity.userFullName}.`,
+      `Telegram berhasil terhubung ke akun ${result.identity.userFullName}.`,
       "",
-      "Mulai sekarang Anda dapat mengirim order melalui chat pribadi ini.",
+      "Gunakan chat pribadi ini kapan pun untuk reset password mandiri. Jika akun Anda berperan sebagai Sales, order juga dapat dikirim dari sini.",
     ].join("\n");
   }
 
@@ -77,11 +77,11 @@ export function buildEnrollmentReply(
   }
 
   if (result.reason === "user_already_linked") {
-    return "Akun Salesman tersebut sudah terhubung ke Telegram lain. Minta admin memutuskan koneksi lama terlebih dahulu.";
+    return "Akun tersebut sudah terhubung ke Telegram lain. Minta admin memutuskan koneksi lama terlebih dahulu.";
   }
 
   if (result.reason === "not_eligible") {
-    return "Pendaftaran tidak dapat diselesaikan karena akun Salesman sudah tidak aktif atau tidak memenuhi syarat. Hubungi admin/owner distributor Anda.";
+    return "Pendaftaran tidak dapat diselesaikan karena akun sudah tidak aktif atau tidak memenuhi syarat. Hubungi admin/owner distributor Anda.";
   }
 
   return "Kode pendaftaran tidak valid, sudah digunakan, atau kedaluwarsa. Minta kode baru kepada admin/owner distributor Anda.";

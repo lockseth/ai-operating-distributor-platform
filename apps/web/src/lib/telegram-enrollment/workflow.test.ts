@@ -77,7 +77,7 @@ describe("Telegram Salesman Identity Enrollment", () => {
     expect(result).toEqual({ outcome: "claimed", identity: IDENTITY });
     if (result.outcome !== "claimed") throw new Error("unexpected outcome");
     const reply = buildEnrollmentReply(result);
-    expect(reply).toContain("Salesman Andri");
+    expect(reply).toContain("akun Andri");
     expect(reply).not.toContain(RAW_TOKEN);
     expect(reply).not.toContain("company-1");
   });

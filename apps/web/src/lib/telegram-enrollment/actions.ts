@@ -46,7 +46,7 @@ function isOwnerActor(user: { roles: string[] }): boolean {
 }
 
 export async function createTelegramEnrollmentAction(
-  salesmanId: string,
+  targetUserId: string,
 ): Promise<TelegramEnrollmentActionResult> {
   const user = await getAuthUser();
   if (user.isDemo) {
@@ -55,11 +55,11 @@ export async function createTelegramEnrollmentAction(
   if (!canManageTelegram(user) || !isOwnerActor(user)) {
     return {
       ok: false,
-      error: "Hanya Owner tenant yang dapat mengelola Telegram Salesman.",
+      error: "Hanya Owner tenant yang dapat mengelola pairing Telegram.",
     };
   }
-  if (!UUID_PATTERN.test(salesmanId)) {
-    return { ok: false, error: "Salesman tidak valid." };
+  if (!UUID_PATTERN.test(targetUserId)) {
+    return { ok: false, error: "Target tidak valid." };
   }
 
   const rawToken = generateEnrollmentToken();
@@ -73,7 +73,7 @@ export async function createTelegramEnrollmentAction(
       "issue_telegram_salesman_enrollment",
       {
         p_company_id: user.company_id,
-        p_user_id: salesmanId,
+        p_user_id: targetUserId,
         p_token_hash: hashEnrollmentToken(rawToken),
         p_expires_at: expiresAt.toISOString(),
         p_created_by: user.id,
@@ -96,13 +96,13 @@ export async function createTelegramEnrollmentAction(
       return {
         ok: false,
         error:
-          "Salesman sudah terhubung ke Telegram. Putuskan koneksi lama terlebih dahulu.",
+          "Akun ini sudah terhubung ke Telegram. Putuskan koneksi lama terlebih dahulu.",
       };
     }
     if (row?.result_outcome === "not_eligible") {
       return {
         ok: false,
-        error: "Target harus merupakan Salesman aktif di perusahaan ini.",
+        error: "Target harus Owner, Admin, atau Sales aktif di perusahaan ini.",
       };
     }
     if (row?.result_outcome !== "issued" || !row.enrollment_token_id) {
@@ -127,7 +127,7 @@ export async function createTelegramEnrollmentAction(
 }
 
 export async function disconnectTelegramIdentityAction(
-  salesmanId: string,
+  targetUserId: string,
 ): Promise<TelegramEnrollmentActionResult> {
   const user = await getAuthUser();
   if (user.isDemo) {
@@ -136,11 +136,11 @@ export async function disconnectTelegramIdentityAction(
   if (!canManageTelegram(user) || !isOwnerActor(user)) {
     return {
       ok: false,
-      error: "Hanya Owner tenant yang dapat mengelola Telegram Salesman.",
+      error: "Hanya Owner tenant yang dapat mengelola pairing Telegram.",
     };
   }
-  if (!UUID_PATTERN.test(salesmanId)) {
-    return { ok: false, error: "Salesman tidak valid." };
+  if (!UUID_PATTERN.test(targetUserId)) {
+    return { ok: false, error: "Target tidak valid." };
   }
 
   const supabase = getAdminClient();
@@ -149,7 +149,7 @@ export async function disconnectTelegramIdentityAction(
       "revoke_telegram_salesman_identity",
       {
         p_company_id: user.company_id,
-        p_user_id: salesmanId,
+        p_user_id: targetUserId,
         p_revoked_by: user.id,
       },
     );
