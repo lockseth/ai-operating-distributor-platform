@@ -221,7 +221,11 @@ describeIfDb("Gate 3E-D2-A-R1: super_admin_{begin,finalize,fail}_tenant_user_pas
       "tenant_user.password_reset_completed",
     ]);
     expect(audit.data).toHaveLength(2);
-    expect(JSON.stringify(audit.data)).not.toMatch(/password/i);
+    // action event names legitimately contain "password" (e.g.
+    // tenant_user.password_reset_started) -- only new_data must be free of
+    // password secrets (temp password, hash, etc).
+    const auditNewData = (audit.data as { new_data: unknown }[]).map((row) => row.new_data);
+    expect(JSON.stringify(auditNewData)).not.toMatch(/password/i);
   });
 
   it("2. Actor bukan super_admin ditolak -- forbidden, zero mutation", async () => {
