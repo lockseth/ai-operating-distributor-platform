@@ -14,9 +14,10 @@ export type TelegramPairingRole = (typeof TELEGRAM_PAIRING_ELIGIBLE_ROLES)[numbe
 
 export type TelegramCapability = "password.reset.self" | "sales.order.telegram";
 
-// password.reset.self: BELUM diimplementasikan di R1 (lihat Gate 3E-D1-R1) --
-// hanya kontrak capability yang disiapkan supaya P2 tidak perlu mengubah
-// bentuk tabel ini, hanya memakainya.
+// password.reset.self: diimplementasikan di Gate 3E-D2-B (lib/telegram-
+// password-reset/, app/api/webhooks/telegram/route.ts) -- kontrak di sini
+// disiapkan sejak Gate 3E-D1-R1 supaya gate itu tidak perlu mengubah bentuk
+// tabel ini, hanya memakainya.
 const CAPABILITY_ROLES: Record<TelegramCapability, readonly TelegramPairingRole[]> = {
   "password.reset.self": ["owner", "admin", "sales"],
   "sales.order.telegram": ["sales"],

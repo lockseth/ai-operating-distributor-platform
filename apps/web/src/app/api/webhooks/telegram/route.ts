@@ -54,6 +54,9 @@ import { SupabaseTodayDeliveryRepository } from "@/lib/daily-session/deliveries"
 import { SupabaseTodayOrdersRepository } from "@/lib/daily-session/orders";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
+import { detectPasswordResetTrigger } from "@/lib/telegram-password-reset/trigger";
+import { SupabaseTelegramSelfServicePasswordResetRepository } from "@/lib/telegram-password-reset/repository";
+import { resetTenantUserPassword } from "@/lib/tenant-user-password-reset/workflow";
 
 // 60 update/menit per IP — cukup longgar untuk trafik bot wajar, mencegah flood.
 const RATE_LIMIT = 60;
@@ -168,6 +171,55 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: true, outcome: "duplicate_update" });
       }
       const identity = await salesOrderRepository.resolveIdentity(chatId);
+
+      // Gate 3E-D2-B: pwreset:confirm/cancel ditangani TERPISAH dari menu
+      // callback generik di bawah -- capability password.reset.self, bukan
+      // sales.order.telegram, jadi tersedia juga untuk owner/admin yang
+      // tidak eligible untuk menu Sales/Delivery sama sekali.
+      if (callbackQuery.data === "pwreset:confirm" || callbackQuery.data === "pwreset:cancel") {
+        await sender.answerCallbackQuery(callbackQuery.id);
+
+        const pwResetRepo = new SupabaseTelegramSelfServicePasswordResetRepository(supabase);
+        const eligible =
+          identity !== null &&
+          (await pwResetRepo.hasPasswordResetCapability(identity.userId, identity.companyId));
+
+        if (!identity || !eligible) {
+          return NextResponse.json({ ok: true, outcome: "unknown_identity" });
+        }
+
+        const event = await salesOrderRepository.insertEvent({
+          telegramUpdateId: update.update_id,
+          companyId: identity.companyId,
+          telegramIdentityId: identity.identityId,
+          messageType: "text",
+          processingStatus: "received",
+          rawPayload: update,
+        });
+
+        if (callbackQuery.data === "pwreset:cancel") {
+          await sender.sendMessage(chatId, "Reset password dibatalkan.");
+          await salesOrderRepository.updateEventStatus(event.id, "processed");
+          return NextResponse.json({ ok: true, outcome: "password_reset_cancelled" });
+        }
+
+        const result = await resetTenantUserPassword(pwResetRepo, {
+          actorId: identity.userId,
+          targetUserId: identity.userId,
+        });
+
+        if (result.outcome === "reset") {
+          await sender.sendMessage(
+            chatId,
+            `Password sementara Anda: ${result.tempPassword}\n\nJangan bagikan ke siapa pun. Login di aplikasi AODP dengan password ini -- Anda akan diminta membuat password baru.`,
+          );
+        } else {
+          await sender.sendMessage(chatId, "Gagal mereset password. Silakan coba lagi nanti.");
+        }
+        await salesOrderRepository.updateEventStatus(event.id, "processed");
+        return NextResponse.json({ ok: true, outcome: `password_reset_${result.outcome}` });
+      }
+
       // Gate 3E-D1-R1: pairing kini bisa dimiliki owner/admin (bukan hanya
       // sales) -- balasan disamakan dengan "identity tidak dikenal" supaya
       // tidak membocorkan bahwa chat ini sebenarnya paired tapi tidak
@@ -216,12 +268,74 @@ export async function POST(request: Request) {
       if (!alreadyProcessed) {
         const chatId = update.message!.chat.id;
         const identity = await salesOrderRepository.resolveIdentity(chatId);
+
+        // Gate 3E-D2-B: trigger password reset dicek PALING AWAL, sebelum
+        // cascade eligibleForSalesOrder di bawah -- capability password.
+        // reset.self terpisah dari sales.order.telegram, berlaku juga untuk
+        // owner/admin yang TIDAK eligible untuk cascade sales order sama
+        // sekali (mereka akan jatuh ke processTelegramUpdate() generik di
+        // bawah tanpa blok ini). EXACT-match (bukan free-text search, lihat
+        // trigger.ts) dicek dulu -- murni perbandingan string, tidak ada
+        // query DB -- sebelum query capability/conversation-state apa pun.
+        if (identity && detectPasswordResetTrigger(text)) {
+          const pwResetRepo = new SupabaseTelegramSelfServicePasswordResetRepository(supabase);
+          const eligibleForPasswordReset = await pwResetRepo.hasPasswordResetCapability(
+            identity.userId,
+            identity.companyId,
+          );
+
+          if (eligibleForPasswordReset) {
+            // Percakapan lain yang sedang aktif SELALU dilanjutkan dulu --
+            // pola identik precedence dispute/tambah-toko/menu di bawah,
+            // supaya trigger ini tidak membajak alur lain yang sedang
+            // berjalan untuk identity yang sama.
+            const disputeConversationRepository = new SupabaseDisputeConversationRepository(supabase);
+            const storePicConversationRepository = new SupabaseStorePicConversationRepository(supabase);
+            const menuConversationRepository = new SupabaseMenuConversationRepository(supabase);
+            const disputeState = await disputeConversationRepository.getState(identity.identityId);
+            const storePicState = await storePicConversationRepository.getState(identity.identityId);
+            const menuState = await menuConversationRepository.getState(identity.identityId);
+            const salesOrderConvo = await salesOrderRepository.getConversationState(identity.identityId);
+            const deliveryConvo = await deliveryRepository.getConversationState(identity.identityId);
+            const anyOtherFlowActive =
+              disputeState.awaiting !== "none" ||
+              storePicState.awaiting !== "none" ||
+              menuState.awaiting !== "none" ||
+              salesOrderConvo.awaiting !== "none" ||
+              deliveryConvo.awaiting !== "none";
+
+            if (!anyOtherFlowActive) {
+              const event = await salesOrderRepository.insertEvent({
+                telegramUpdateId: update.update_id,
+                companyId: identity.companyId,
+                telegramIdentityId: identity.identityId,
+                messageType: "text",
+                processingStatus: "received",
+                rawPayload: update,
+              });
+              await sender.sendMessageWithKeyboard(
+                chatId,
+                "Anda yakin ingin mereset password? Anda akan diminta membuat password baru saat login berikutnya.",
+                [
+                  [
+                    { text: "Ya, reset password", callbackData: "pwreset:confirm" },
+                    { text: "Batal", callbackData: "pwreset:cancel" },
+                  ],
+                ],
+              );
+              await salesOrderRepository.updateEventStatus(event.id, "processed");
+              return NextResponse.json({ ok: true, outcome: "password_reset_prompt" });
+            }
+          }
+        }
+
         // Gate 3E-D1-R1: pre-dispatch dispute/tambah-toko/menu HANYA untuk
         // identity dengan capability sales.order.telegram (role sales) --
-        // owner/admin yang paired (untuk password.reset.self, belum
-        // diimplementasikan) jatuh ke processTelegramUpdate() di bawah, yang
-        // sudah menolaknya fail-closed dengan balasan generik yang sama
-        // dengan "belum terdaftar".
+        // owner/admin yang paired dan BUKAN sedang memicu password reset
+        // (blok Gate 3E-D2-B di atas, capability password.reset.self)
+        // jatuh ke processTelegramUpdate() di bawah, yang sudah menolaknya
+        // fail-closed dengan balasan generik yang sama dengan "belum
+        // terdaftar".
         const eligibleForSalesOrder =
           identity !== null &&
           (await salesOrderRepository.hasSalesOrderCapability(
