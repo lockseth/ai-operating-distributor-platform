@@ -33,9 +33,26 @@ export async function updateSession(request: NextRequest) {
     "/api/internal/automation/dispatch",
     "/api/internal/automation/heartbeat",
   ];
+  // /api/health -- Gate 3E-C-C2-B4-R2-H1: public infra liveness probe (lihat
+  // komentar di app/api/health/route.ts) SENGAJA TIDAK terautentikasi supaya
+  // load balancer/orchestrator/uptime monitor bisa memeriksa "aplikasi
+  // hidup" tanpa credential. Sebelumnya TIDAK ada pengecualian di sini sama
+  // sekali -- middleware selalu meredirect anonymous request ke /login
+  // sebelum route handler-nya (yang justru dirancang untuk anonymous)
+  // sempat jalan, kontradiktif dengan kontrak yang didokumentasikan di route
+  // itu sendiri.
+  //
+  // EXACT match (=== , bukan startsWith prefix) -- identik alasan
+  // AUDITED_WEBHOOK_ROUTES di atas: /api/health/* atau nama mirip (mis.
+  // /api/health-check, /api/health/private) TIDAK otomatis ikut ter-exempt
+  // hanya karena mirip nama/lokasi, harus diaudit & ditambahkan sendiri
+  // secara sadar bila memang perlu.
+  const PUBLIC_HEALTH_ROUTE = "/api/health";
+
   if (
     AUDITED_WEBHOOK_ROUTES.includes(pathname) ||
-    AUDITED_INTERNAL_AUTOMATION_ROUTES.includes(pathname)
+    AUDITED_INTERNAL_AUTOMATION_ROUTES.includes(pathname) ||
+    pathname === PUBLIC_HEALTH_ROUTE
   ) {
     return NextResponse.next({ request });
   }
