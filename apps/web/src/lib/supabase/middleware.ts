@@ -60,6 +60,16 @@ export async function updateSession(request: NextRequest) {
   // pada sesi aktif, jadi ini tidak membuka privilege baru, hanya menghindari
   // bounce yang sebelumnya bisa bentrok dengan sesi recovery yang dibuka di
   // tab lain oleh user yang sama.
+  //
+  // Update Gate 3E-C-C2-B4-R1: sejak /auth/confirm ada, request recovery yang
+  // sampai ke /reset-password SUDAH membawa cookie session (di-set oleh
+  // verifyOtp() di /auth/confirm sebelum redirect ke sini) -- bukan lagi
+  // "tanpa session sama sekali, token diproses client-side" seperti asumsi
+  // lama. Route tetap public di sini (defense-in-depth, tidak mengubah
+  // perilaku existing untuk kasus temp-password di atas) -- guard "wajib ada
+  // session valid" yang sesungguhnya sekarang eksplisit di reset-password/
+  // page.tsx sendiri (redirect fail-closed bila tidak ada user), bukan lagi
+  // cuma implisit lewat kegagalan updateUser().
   const isResetPasswordRoute = pathname.startsWith("/reset-password");
 
   // /signup sengaja BUKAN bagian dari isAuthRoute: rute lain di sana redirect
@@ -78,6 +88,15 @@ export async function updateSession(request: NextRequest) {
   // ada cookie sama sekali), jadi wajib diizinkan lewat sebelum auth-gate di
   // bawah, sama seperti /login dan /signup.
   const isAuthCallbackRoute = pathname.startsWith("/auth/callback");
+
+  // /auth/confirm (Gate 3E-C-C2-B4-R1) menukar `token_hash` dari link
+  // recovery email menjadi session lewat verifyOtp() -- identik alasan
+  // /auth/callback di atas: request ini SELALU datang tanpa session sama
+  // sekali (link dibuka di browser/device manapun, termasuk yang berbeda
+  // dari browser yang memicu resetPasswordForEmail() -- itulah sebabnya
+  // token_hash dipakai, bukan PKCE `code`), jadi wajib diizinkan lewat
+  // sebelum auth-gate di bawah.
+  const isAuthConfirmRoute = pathname.startsWith("/auth/confirm");
 
   // Demo mode: dev-only bypass — jangan sentuh Supabase sama sekali di jalur
   // ini, supaya demo tetap jalan walau Supabase/Docker sedang tidak aktif.
@@ -128,15 +147,16 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // isResetPasswordRoute tetap bagian dari isPublicRoute (perilaku existing
-  // tidak berubah): link recovery Supabase datang tanpa cookie session sama
-  // sekali pada request GET pertama (token ada di URL fragment, diproses
-  // client-side oleh supabase-js) -- rute ini WAJIB tetap bisa diakses tanpa
-  // sesi. Yang berubah HANYA: rute ini tidak lagi dibalikkan ke /dashboard
-  // ketika user SUDAH authenticated (lihat komentar isResetPasswordRoute
-  // di atas).
+  // isResetPasswordRoute tetap bagian dari isPublicRoute -- lihat komentar
+  // lengkap di deklarasi isResetPasswordRoute di atas (termasuk update Gate
+  // 3E-C-C2-B4-R1 soal /auth/confirm).
   const isPublicRoute =
-    isAuthRoute || isSignupRoute || isAuthCallbackRoute || isResetPasswordRoute || pathname === "/";
+    isAuthRoute ||
+    isSignupRoute ||
+    isAuthCallbackRoute ||
+    isAuthConfirmRoute ||
+    isResetPasswordRoute ||
+    pathname === "/";
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
