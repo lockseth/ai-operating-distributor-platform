@@ -3,6 +3,11 @@
 // kontrak yang sudah ada tetap berlaku untuk sesi recovery baru (item #10 dan
 // #13 daftar test gate): kegagalan updateUser() tidak pernah dilaporkan
 // sebagai sukses, dan user ordinary kembali ke journey yang aman.
+//
+// Gate 3E-D2-A-R2 — satu perubahan ditambahkan: signOut() sebelum redirect
+// sukses, supaya recovery session (dari /auth/confirm ATAU dari
+// exchangeCodeForSession di /reset-password/page.tsx) tidak menggantung
+// setelah password berhasil diganti.
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -26,6 +31,13 @@ describe("reset-password-form security contract (Gate 3E-C-C2-B4-R1)", () => {
 
   it("sukses -> redirect ke /login (journey aman, bukan langsung /dashboard)", () => {
     expect(source).toContain('router.push("/login?reset=success")');
+  });
+
+  it("sukses -> signOut() dipanggil sebelum redirect, recovery session tidak menggantung (Gate 3E-D2-A-R2)", () => {
+    const signOutIdx = source.indexOf("supabase.auth.signOut()");
+    const pushIdx = source.indexOf('router.push("/login?reset=success")');
+    expect(signOutIdx).toBeGreaterThan(-1);
+    expect(signOutIdx).toBeLessThan(pushIdx);
   });
 
   it("tidak pernah menyentuh must_change_password langsung dari client", () => {

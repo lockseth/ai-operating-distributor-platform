@@ -36,6 +36,11 @@ export function ResetPasswordForm() {
       return;
     }
 
+    // Gate 3E-D2-A-R2 — recovery session (baik dari /auth/confirm maupun
+    // exchangeCodeForSession di /reset-password) tidak lagi diperlukan
+    // setelah password berhasil diganti; user diarahkan login ulang dengan
+    // password barunya, bukan meninggalkan sesi recovery menggantung.
+    await supabase.auth.signOut();
     router.push("/login?reset=success");
   }
 
