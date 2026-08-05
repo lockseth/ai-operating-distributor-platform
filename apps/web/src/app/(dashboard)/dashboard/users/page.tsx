@@ -341,6 +341,11 @@ export default async function UsersPage() {
                         u.is_active ? (
                           <TelegramEnrollmentControl
                             targetUserId={u.id}
+                            targetName={displayName}
+                            targetRoleLabel={
+                              roles.map((r) => ROLE_LABEL[r] ?? r).join(", ") ||
+                              "Tanpa role"
+                            }
                             activeIdentity={
                               telegramIdentity
                                 ? { username: telegramIdentity.telegram_username }

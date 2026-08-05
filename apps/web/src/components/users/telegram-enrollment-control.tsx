@@ -27,32 +27,44 @@ const PENDING_STATUS_COLOR: Partial<Record<SalesmanTelegramStatus, string>> = {
 
 export function TelegramEnrollmentControl({
   targetUserId,
+  targetName,
+  targetRoleLabel,
   activeIdentity,
   status,
 }: {
   targetUserId: string;
+  targetName: string;
+  targetRoleLabel: string;
   activeIdentity: ActiveIdentity | null;
   status: SalesmanTelegramStatus;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [command, setCommand] = useState<string | null>(null);
   const [deepLink, setDeepLink] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [configError, setConfigError] = useState(false);
   const [copied, setCopied] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   function createEnrollment() {
     setError(null);
     setCopied(false);
+    setConfigError(false);
     startTransition(async () => {
       const result = await createTelegramEnrollmentAction(targetUserId);
       if (!result.ok || !result.enrollment) {
         setError(result.error ?? "Kode Telegram tidak dapat dibuat.");
         return;
       }
-      setCommand(result.enrollment.command);
+      if (!result.enrollment.deepLink) {
+        // Token sudah diterbitkan di backend, tapi TELEGRAM_BOT_USERNAME
+        // kosong/tidak valid -- fail closed, jangan fallback ke token mentah.
+        setDeepLink(null);
+        setExpiresAt(null);
+        setConfigError(true);
+        return;
+      }
       setDeepLink(result.enrollment.deepLink);
       setExpiresAt(result.enrollment.expiresAt);
     });
@@ -72,20 +84,20 @@ export function TelegramEnrollmentControl({
         setError(result.error ?? "Koneksi Telegram tidak dapat diputuskan.");
         return;
       }
-      setCommand(null);
       setDeepLink(null);
       setExpiresAt(null);
+      setConfigError(false);
       router.refresh();
     });
   }
 
-  async function copyCommand() {
-    if (!command) return;
+  async function copyPairingLink() {
+    if (!deepLink) return;
     try {
-      await navigator.clipboard.writeText(command);
+      await navigator.clipboard.writeText(deepLink);
       setCopied(true);
     } catch {
-      setError("Salin otomatis gagal. Pilih dan salin kode secara manual.");
+      setError("Salin otomatis gagal. Tautan tetap bisa diklik langsung.");
     }
   }
 
@@ -146,34 +158,45 @@ export function TelegramEnrollmentControl({
         {status === "not_connected" ? "Buat tautan Telegram" : "Terbitkan ulang tautan"}
       </button>
 
-      {command && (
+      {configError && (
+        <div className="max-w-72 rounded-lg border border-red-100 bg-red-50 p-2.5">
+          <p className="text-xs font-medium text-red-700">
+            Konfigurasi bot Telegram belum lengkap. Hubungi admin sistem
+            sebelum mengirim tautan pairing.
+          </p>
+        </div>
+      )}
+
+      {deepLink && (
         <div className="max-w-72 rounded-lg border border-blue-100 bg-blue-50 p-2.5">
           <p className="mb-1 text-xs font-medium text-blue-900">
-            Kirim ke pengguna target — hanya berlaku sekali
+            Untuk {targetName} · {targetRoleLabel}
+          </p>
+          <p className="mb-1.5 text-[11px] text-blue-700">
+            Tautan sekali pakai — kirim hanya kepada {targetName}, jangan
+            dibagikan ke pihak lain.
           </p>
           <code className="block break-all rounded bg-white px-2 py-1 text-[11px] text-gray-700">
-            {command}
+            {deepLink}
           </code>
           <div className="mt-2 flex flex-wrap items-center gap-2">
+            <a
+              href={deepLink}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-700"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Buka Telegram
+            </a>
             <button
               type="button"
-              onClick={copyCommand}
+              onClick={copyPairingLink}
               className="inline-flex items-center gap-1 text-xs font-medium text-blue-700"
             >
               <Copy className="h-3.5 w-3.5" />
-              {copied ? "Tersalin" : "Salin"}
+              {copied ? "Tersalin" : "Salin Tautan Pairing"}
             </button>
-            {deepLink && (
-              <a
-                href={deepLink}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-medium text-blue-700"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Buka Telegram
-              </a>
-            )}
           </div>
           {expiresAt && (
             <p className="mt-1.5 text-[11px] text-blue-700">
