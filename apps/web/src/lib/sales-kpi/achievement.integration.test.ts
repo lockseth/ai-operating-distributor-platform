@@ -169,7 +169,7 @@ describeIfDb("Sales KPI Achievement Integration -- EC crediting/reversal (DB-bac
     expect(ecEvents ?? []).toHaveLength(1);
   });
 
-  it("10. Remote/unlinked confirmed order tidak menghasilkan Call maupun EC", async () => {
+  it("10. Remote/unlinked confirmed order tidak menghasilkan Call maupun EC (ORDER_COUNT/REVENUE tetap terkredit sejak Gate 3E-D0-F3 -- lihat order-kpi-achievement.integration.test.ts)", async () => {
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-remote`, customer_id: customerId,
@@ -179,9 +179,10 @@ describeIfDb("Sales KPI Achievement Integration -- EC crediting/reversal (DB-bac
 
     const { data: events } = await supabase
       .from("sales_kpi_achievement_events")
-      .select("id")
+      .select("id, kpi_code")
       .eq("order_id", orderId);
-    expect(events ?? []).toHaveLength(0);
+    const rows = (events ?? []) as { id: string; kpi_code: string }[];
+    expect(rows.filter((r) => r.kpi_code === "CALL" || r.kpi_code === "EFFECTIVE_CALL")).toHaveLength(0);
   });
 
   it("14. Dispute/cancellation menyatakan order tidak sah -> EC reversal append-only, event asal tetap ada", async () => {

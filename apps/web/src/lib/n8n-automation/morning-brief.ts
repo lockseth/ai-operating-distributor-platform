@@ -65,6 +65,12 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
   lines.push(
     `Effective Call: ${formatLine(ctx.projection.effectiveCall.target, ctx.projection.effectiveCall.actual, ctx.projection.effectiveCall.achievementPercentage)}`,
   );
+  lines.push(
+    `Order: ${formatLine(ctx.projection.orderCount.target, ctx.projection.orderCount.actual, ctx.projection.orderCount.achievementPercentage)}`,
+  );
+  lines.push(
+    `Revenue: ${formatLine(ctx.projection.revenue.target, Math.round(ctx.projection.revenue.actual), ctx.projection.revenue.achievementPercentage)}`,
+  );
 
   const ecRate =
     ctx.projection.call.actual > 0
@@ -92,6 +98,8 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
       },
       call: ctx.projection.call,
       effectiveCall: ctx.projection.effectiveCall,
+      orderCount: ctx.projection.orderCount,
+      revenue: ctx.projection.revenue,
       ecRate,
       baselineSufficiency: ctx.baseline?.sufficiency ?? null,
       status: "ACTIVE_PERIOD",

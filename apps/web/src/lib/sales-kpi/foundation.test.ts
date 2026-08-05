@@ -41,23 +41,28 @@ async function createJulyPeriod(
   return result.periodId;
 }
 
-describe("Sales KPI definition contract — Waluyo v1", () => {
-  it("mengaktifkan tepat dua KPI: CALL dan EFFECTIVE_CALL", () => {
+describe("Sales KPI definition contract — Waluyo v1 + Gate 3E-D0-F3", () => {
+  it("mengaktifkan tepat empat KPI governed: CALL, EFFECTIVE_CALL, ORDER_COUNT, REVENUE", () => {
     expect(
       WALUYO_SALES_KPI_DEFINITIONS.map((definition) => definition.code),
-    ).toEqual(["CALL", "EFFECTIVE_CALL"]);
+    ).toEqual(["CALL", "EFFECTIVE_CALL", "ORDER_COUNT", "REVENUE"]);
   });
 
-  it("tidak memiliki AR, Collection, omzet, weight, atau composite score", () => {
+  it("tidak memiliki AR, Collection, weight, atau composite score (REVENUE order-based diizinkan sejak Gate 3E-D0-F3)", () => {
     const serialized = JSON.stringify(
       WALUYO_SALES_KPI_DEFINITIONS,
     ).toLowerCase();
-    expect(serialized).not.toMatch(/collection|omzet|revenue|weight|composite/);
+    expect(serialized).not.toMatch(/collection|weight|composite/);
+    expect(serialized).not.toMatch(/\bar_/);
     expect(
-      WALUYO_SALES_KPI_DEFINITIONS.every(
-        (definition) => definition.unit === "COUNT",
-      ),
+      WALUYO_SALES_KPI_DEFINITIONS.filter(
+        (definition) => definition.code !== "REVENUE",
+      ).every((definition) => definition.unit === "COUNT"),
     ).toBe(true);
+    expect(
+      WALUYO_SALES_KPI_DEFINITIONS.find((definition) => definition.code === "REVENUE")
+        ?.unit,
+    ).toBe("IDR");
   });
 
   it("measurement source EC mengunci confirmed field-visit order", () => {
@@ -71,8 +76,10 @@ describe("Sales KPI definition contract — Waluyo v1", () => {
   it("runtime code guard fail-closed untuk KPI lain", () => {
     expect(isSalesKpiCode("CALL")).toBe(true);
     expect(isSalesKpiCode("EFFECTIVE_CALL")).toBe(true);
+    expect(isSalesKpiCode("ORDER_COUNT")).toBe(true);
+    expect(isSalesKpiCode("REVENUE")).toBe(true);
     expect(isSalesKpiCode("AR_COLLECTION")).toBe(false);
-    expect(isSalesKpiCode("REVENUE")).toBe(false);
+    expect(isSalesKpiCode("COLLECTION")).toBe(false);
   });
 });
 
@@ -172,7 +179,7 @@ describe("Configurable KPI Foundation repository", () => {
       }),
     ).resolves.toEqual({
       outcome: "initialized",
-      definitionCount: 2,
+      definitionCount: 4,
     });
     await expect(
       repository.initializeFoundation({
@@ -181,9 +188,9 @@ describe("Configurable KPI Foundation repository", () => {
       }),
     ).resolves.toEqual({
       outcome: "already_initialized",
-      definitionCount: 2,
+      definitionCount: 4,
     });
-    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(2);
+    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(4);
     expect(
       repository
         .getAuditTrail(COMPANY_A)
@@ -408,8 +415,8 @@ describe("Configurable KPI Foundation repository", () => {
       companyId: COMPANY_B,
       actorId: "owner-b",
     });
-    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(2);
-    expect(repository.getDefinitions(COMPANY_B)).toHaveLength(2);
+    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(4);
+    expect(repository.getDefinitions(COMPANY_B)).toHaveLength(4);
     expect(
       repository
         .getAuditTrail(COMPANY_A)

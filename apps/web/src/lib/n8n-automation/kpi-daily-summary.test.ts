@@ -14,6 +14,8 @@ function projection(callActual: number, callTarget: number | null, ecActual: num
     endDate: "2026-08-31",
     call: { kpiCode: "CALL", target: callTarget, actual: callActual, remaining: callTarget !== null ? Math.max(0, callTarget - callActual) : null, achievementPercentage: callTarget !== null ? Math.round((callActual / callTarget) * 100) : null, pacingStatus: callTarget !== null ? "ON_TRACK" : "DATA_INSUFFICIENT" },
     effectiveCall: { kpiCode: "EFFECTIVE_CALL", target: ecTarget, actual: ecActual, remaining: ecTarget !== null ? Math.max(0, ecTarget - ecActual) : null, achievementPercentage: ecTarget !== null ? Math.round((ecActual / ecTarget) * 100) : null, pacingStatus: ecTarget !== null ? "ON_TRACK" : "DATA_INSUFFICIENT" },
+    orderCount: { kpiCode: "ORDER_COUNT", target: null, actual: 0, remaining: null, achievementPercentage: null, pacingStatus: "DATA_INSUFFICIENT" },
+    revenue: { kpiCode: "REVENUE", target: null, actual: 0, remaining: null, achievementPercentage: null, pacingStatus: "DATA_INSUFFICIENT" },
     sourceFreshness: callTarget !== null || ecTarget !== null ? "COMPLETE" : "DATA_INSUFFICIENT",
   };
 }

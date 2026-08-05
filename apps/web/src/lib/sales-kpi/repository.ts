@@ -434,7 +434,7 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
 
     const { data: eventRows, error: eventError } = await this.client
       .from("sales_kpi_achievement_events")
-      .select("kpi_code, event_type")
+      .select("kpi_code, event_type, value")
       .eq("company_id", input.companyId)
       .eq("salesperson_id", input.salespersonId)
       .gte("business_date", period.start_date)
@@ -442,12 +442,19 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
     if (eventError) {
       return { outcome: "unexpected_error", error: eventError.message };
     }
-    const actuals: Record<SalesKpiCode, number> = { CALL: 0, EFFECTIVE_CALL: 0 };
+    const actuals: Record<SalesKpiCode, number> = {
+      CALL: 0,
+      EFFECTIVE_CALL: 0,
+      ORDER_COUNT: 0,
+      REVENUE: 0,
+    };
     for (const row of (eventRows ?? []) as {
       kpi_code: SalesKpiCode;
       event_type: "CREDITED" | "REVERSED";
+      value: number | string | null;
     }[]) {
-      actuals[row.kpi_code] += row.event_type === "CREDITED" ? 1 : -1;
+      const magnitude = Number(row.value ?? 1);
+      actuals[row.kpi_code] += (row.event_type === "CREDITED" ? 1 : -1) * magnitude;
     }
 
     const periodBounds = { startDate: period.start_date, endDate: period.end_date };
@@ -463,6 +470,18 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       actuals.EFFECTIVE_CALL,
       periodBounds,
     );
+    const orderCount = computeAchievementLine(
+      "ORDER_COUNT",
+      targets.get("ORDER_COUNT") ?? null,
+      actuals.ORDER_COUNT,
+      periodBounds,
+    );
+    const revenue = computeAchievementLine(
+      "REVENUE",
+      targets.get("REVENUE") ?? null,
+      actuals.REVENUE,
+      periodBounds,
+    );
 
     return {
       outcome: "ok",
@@ -475,8 +494,13 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
         endDate: period.end_date,
         call,
         effectiveCall,
+        orderCount,
+        revenue,
         sourceFreshness:
-          call.target === null && effectiveCall.target === null
+          call.target === null &&
+          effectiveCall.target === null &&
+          orderCount.target === null &&
+          revenue.target === null
             ? "DATA_INSUFFICIENT"
             : "COMPLETE",
       },
@@ -684,6 +708,8 @@ interface AchievementEventRecord {
   callId: string | null;
   orderId: string | null;
   reversalOfEventId: string | null;
+  /** Kontribusi numerik baris ini -- 1 untuk KPI COUNT, final_amount untuk REVENUE. */
+  value: number;
 }
 
 export class InMemorySalesKpiRepository implements SalesKpiRepository {
@@ -746,13 +772,14 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       .map((row) => ({ ...row }));
   }
 
-  /** Test-only: seed baris ledger historis langsung (mis. untuk uji baseline kalibrasi pra-periode). */
+  /** Test-only: seed baris ledger historis langsung (mis. untuk uji baseline kalibrasi pra-periode, atau untuk uji agregasi ORDER_COUNT/REVENUE tanpa trigger Postgres). */
   seedAchievementEvent(
     companyId: string,
     salespersonId: string,
     kpiCode: SalesKpiCode,
     eventType: "CREDITED" | "REVERSED",
     businessDate: string,
+    opts: { value?: number; orderId?: string | null } = {},
   ): void {
     this.achievementEvents.push({
       id: this.nextId("event"),
@@ -762,8 +789,9 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       eventType,
       businessDate,
       callId: null,
-      orderId: null,
+      orderId: opts.orderId ?? null,
       reversalOfEventId: null,
+      value: opts.value ?? 1,
     });
   }
 
@@ -1157,6 +1185,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       callId,
       orderId: null,
       reversalOfEventId: null,
+      value: 1,
     });
     return { outcome: "recorded", callId };
   }
@@ -1229,6 +1258,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
         callId: call.id,
         orderId: null,
         reversalOfEventId: callEvent.id,
+        value: 1,
       });
     }
 
@@ -1249,6 +1279,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
         callId: call.id,
         orderId: ecEvent.orderId,
         reversalOfEventId: ecEvent.id,
+        value: 1,
       });
     }
 
@@ -1274,6 +1305,10 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
     const targetCall = activeTargets.find((t) => t.kpiCode === "CALL")?.targetValue ?? null;
     const targetEc =
       activeTargets.find((t) => t.kpiCode === "EFFECTIVE_CALL")?.targetValue ?? null;
+    const targetOrderCount =
+      activeTargets.find((t) => t.kpiCode === "ORDER_COUNT")?.targetValue ?? null;
+    const targetRevenue =
+      activeTargets.find((t) => t.kpiCode === "REVENUE")?.targetValue ?? null;
 
     const relevantEvents = this.achievementEvents.filter(
       (event) =>
@@ -1282,12 +1317,17 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
         event.businessDate >= period.startDate &&
         event.businessDate <= period.endDate,
     );
-    const actualCall = relevantEvents
-      .filter((event) => event.kpiCode === "CALL")
-      .reduce((sum, event) => sum + (event.eventType === "CREDITED" ? 1 : -1), 0);
-    const actualEc = relevantEvents
-      .filter((event) => event.kpiCode === "EFFECTIVE_CALL")
-      .reduce((sum, event) => sum + (event.eventType === "CREDITED" ? 1 : -1), 0);
+    const actualFor = (kpiCode: SalesKpiCode): number =>
+      relevantEvents
+        .filter((event) => event.kpiCode === kpiCode)
+        .reduce(
+          (sum, event) => sum + (event.eventType === "CREDITED" ? 1 : -1) * event.value,
+          0,
+        );
+    const actualCall = actualFor("CALL");
+    const actualEc = actualFor("EFFECTIVE_CALL");
+    const actualOrderCount = actualFor("ORDER_COUNT");
+    const actualRevenue = actualFor("REVENUE");
 
     const periodBounds = { startDate: period.startDate, endDate: period.endDate };
     const call = computeAchievementLine("CALL", targetCall, actualCall, periodBounds);
@@ -1295,6 +1335,18 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       "EFFECTIVE_CALL",
       targetEc,
       actualEc,
+      periodBounds,
+    );
+    const orderCount = computeAchievementLine(
+      "ORDER_COUNT",
+      targetOrderCount,
+      actualOrderCount,
+      periodBounds,
+    );
+    const revenue = computeAchievementLine(
+      "REVENUE",
+      targetRevenue,
+      actualRevenue,
       periodBounds,
     );
 
@@ -1309,8 +1361,13 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
         endDate: period.endDate,
         call,
         effectiveCall,
+        orderCount,
+        revenue,
         sourceFreshness:
-          call.target === null && effectiveCall.target === null
+          call.target === null &&
+          effectiveCall.target === null &&
+          orderCount.target === null &&
+          revenue.target === null
             ? "DATA_INSUFFICIENT"
             : "COMPLETE",
       },

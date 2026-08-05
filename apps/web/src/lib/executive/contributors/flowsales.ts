@@ -50,6 +50,70 @@ export const flowsalesContributor: ExecutiveContributor = {
     const day14 = new Date(now.getTime() - 14 * 86400_000);
     const todayIso = isoDate(now);
 
+    // ── Governed KPI REVENUE (sales_kpi_*) -- SATU-SATUNYA source of truth
+    // untuk tile achieved_revenue_month/gap_revenue (Gate 3E-D0-F3). TIDAK
+    // lagi dari sales_reports.target_revenue/achieved_revenue (self-report
+    // aktivitas, bukan KPI Dashboard Owner -- lihat lock decision #2/#6).
+    const activePeriodRes = await supabase
+      .from("sales_kpi_periods")
+      .select("id, start_date, end_date")
+      .eq("company_id", companyId)
+      .eq("status", "ACTIVE")
+      .maybeSingle();
+    const activePeriod = activePeriodRes.data as
+      | { id: string; start_date: string; end_date: string }
+      | null;
+
+    let governedRevenueTarget = 0;
+    let governedRevenueAchieved = 0;
+    let hasGovernedRevenueTarget = false;
+    if (activePeriod) {
+      const definitionRes = await supabase
+        .from("sales_kpi_definitions")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("code", "REVENUE")
+        .is("superseded_at", null)
+        .maybeSingle();
+      const revenueDefinitionId = (definitionRes.data as { id: string } | null)?.id ?? null;
+
+      if (revenueDefinitionId) {
+        const [targetsRes, eventsRes] = await Promise.all([
+          supabase
+            .from("sales_kpi_targets")
+            .select("target_value")
+            .eq("company_id", companyId)
+            .eq("period_id", activePeriod.id)
+            .eq("kpi_definition_id", revenueDefinitionId)
+            .eq("status", "ACTIVE"),
+          supabase
+            .from("sales_kpi_achievement_events")
+            .select("event_type, value")
+            .eq("company_id", companyId)
+            .eq("kpi_code", "REVENUE")
+            .gte("business_date", activePeriod.start_date)
+            .lte("business_date", activePeriod.end_date),
+        ]);
+        const targetRows = (targetsRes.data ?? []) as { target_value: number }[];
+        const eventRows = (eventsRes.data ?? []) as {
+          event_type: string;
+          value: number | string | null;
+        }[];
+        hasGovernedRevenueTarget = targetRows.length > 0;
+        governedRevenueTarget = targetRows.reduce((s, r) => s + r.target_value, 0);
+        governedRevenueAchieved = eventRows.reduce(
+          (s, r) => s + (r.event_type === "CREDITED" ? 1 : -1) * Number(r.value ?? 0),
+          0,
+        );
+      }
+    }
+    const revenueDataInsufficient = !activePeriod || !hasGovernedRevenueTarget;
+    const gapRevenueGoverned = calcGap(governedRevenueTarget, governedRevenueAchieved);
+    const pctRevenueGoverned =
+      hasGovernedRevenueTarget && governedRevenueTarget > 0
+        ? calcAchievementPct(governedRevenueTarget, governedRevenueAchieved)
+        : null;
+
     const [reportsRes, ordersTodayRes, orders7Res, ordersPrev7Res, salesUsersRes] =
       await Promise.all([
         supabase
@@ -185,26 +249,46 @@ export const flowsalesContributor: ExecutiveContributor = {
       },
       {
         key: "achieved_revenue_month",
-        label: "Omzet Dilaporkan Bulan Ini",
-        value: formatIDR(achievedRevenue),
-        subValue: `target ${formatIDR(targetRevenue)}`,
-        accent: "blue",
-        trend: pctRevenue >= 100 ? "up" : pctRevenue >= 70 ? "neutral" : "down",
-        trendLabel: `${pctRevenue}% dari target`,
+        label: "Omzet Order Periode KPI Aktif",
+        value: revenueDataInsufficient ? "Data belum cukup" : formatIDR(governedRevenueAchieved),
+        subValue: !activePeriod
+          ? "belum ada periode KPI aktif"
+          : !hasGovernedRevenueTarget
+            ? "target Revenue belum ditetapkan di KPI Setup"
+            : `target ${formatIDR(governedRevenueTarget)}`,
+        accent: revenueDataInsufficient ? "amber" : "blue",
+        trend:
+          pctRevenueGoverned === null
+            ? "neutral"
+            : pctRevenueGoverned >= 100
+              ? "up"
+              : pctRevenueGoverned >= 70
+                ? "neutral"
+                : "down",
+        trendLabel: pctRevenueGoverned !== null ? `${pctRevenueGoverned}% dari target` : "data belum cukup",
       },
       {
         key: "gap_revenue",
         label: "Gap Omzet",
-        value: gapRevenue > 0 ? formatIDR(gapRevenue) : "Tercapai",
-        subValue:
-          gapRevenue > 0 && latestRemaining > 0
-            ? `butuh ±${formatIDR(Math.ceil(gapRevenue / latestRemaining))}/hari (sisa ${latestRemaining} hari kerja)`
-            : gapRevenue > 0
-              ? "sisa hari kerja belum dilaporkan"
-              : "target omzet bulan ini terpenuhi",
-        accent: gapRevenue > 0 ? "amber" : "green",
-        trend: gapRevenue > 0 ? "down" : "up",
-        trendLabel: gapRevenue > 0 ? "kejar target" : "pertahankan",
+        value: revenueDataInsufficient
+          ? "Target belum ditetapkan"
+          : gapRevenueGoverned > 0
+            ? formatIDR(gapRevenueGoverned)
+            : "Tercapai",
+        subValue: !activePeriod
+          ? "aktifkan periode KPI untuk memantau gap omzet"
+          : !hasGovernedRevenueTarget
+            ? "tetapkan target Revenue per Sales di KPI Setup"
+            : gapRevenueGoverned > 0
+              ? `dari target ${formatIDR(governedRevenueTarget)} (periode berjalan)`
+              : "target Revenue periode ini terpenuhi",
+        accent: revenueDataInsufficient ? "amber" : gapRevenueGoverned > 0 ? "amber" : "green",
+        trend: revenueDataInsufficient ? "neutral" : gapRevenueGoverned > 0 ? "down" : "up",
+        trendLabel: revenueDataInsufficient
+          ? "data belum cukup"
+          : gapRevenueGoverned > 0
+            ? "kejar target"
+            : "pertahankan",
       },
       {
         key: "oa_month",

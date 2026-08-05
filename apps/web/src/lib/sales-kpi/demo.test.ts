@@ -11,7 +11,7 @@ describe("Local demo — Configurable KPI Foundation Waluyo", () => {
       companyId: "waluyo",
       actorId: "owner-waluyo",
     });
-    expect(initialized).toEqual({ outcome: "initialized", definitionCount: 2 });
+    expect(initialized).toEqual({ outcome: "initialized", definitionCount: 4 });
 
     const createdPeriod = await repository.createPeriod({
       companyId: "waluyo",
@@ -83,6 +83,8 @@ describe("Local demo — Configurable KPI Foundation Waluyo", () => {
     expect(definitions.map((definition) => definition.code)).toEqual([
       "CALL",
       "EFFECTIVE_CALL",
+      "ORDER_COUNT",
+      "REVENUE",
     ]);
     expect(targets).toHaveLength(3);
     expect(targets.filter((target) => target.status === "ACTIVE")).toHaveLength(

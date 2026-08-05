@@ -49,7 +49,20 @@ const PACING_TONE: Record<SalesKpiPacingStatus, string> = {
   DATA_INSUFFICIENT: "bg-gray-100 text-gray-500",
 };
 
-function AchievementCard({ label, line }: { label: string; line: SalesKpiAchievementLine }) {
+function formatIDR(amount: number): string {
+  return `Rp${Math.round(amount).toLocaleString("id-ID")}`;
+}
+
+function AchievementCard({
+  label,
+  line,
+  format = "count",
+}: {
+  label: string;
+  line: SalesKpiAchievementLine;
+  format?: "count" | "currency";
+}) {
+  const fmt = (n: number) => (format === "currency" ? formatIDR(n) : String(n));
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
       <div className="flex items-center justify-between">
@@ -64,8 +77,8 @@ function AchievementCard({ label, line }: { label: string; line: SalesKpiAchieve
       ) : (
         <div className="mt-3 space-y-1">
           <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-gray-900">{line.actual}</span>
-            <span className="text-sm text-gray-400">/ {line.target}</span>
+            <span className="text-2xl font-bold text-gray-900">{fmt(line.actual)}</span>
+            <span className="text-sm text-gray-400">/ {fmt(line.target)}</span>
           </div>
           <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
             <div
@@ -75,7 +88,7 @@ function AchievementCard({ label, line }: { label: string; line: SalesKpiAchieve
           </div>
           <div className="flex justify-between text-xs text-gray-500">
             <span>{line.achievementPercentage}% tercapai</span>
-            <span>Sisa {line.remaining}</span>
+            <span>Sisa {fmt(line.remaining ?? 0)}</span>
           </div>
         </div>
       )}
@@ -168,13 +181,15 @@ export function KpiAchievementView({
 
       {!loading && projection && (
         <div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <AchievementCard label="Call" line={projection.call} />
             <AchievementCard label="Effective Call" line={projection.effectiveCall} />
+            <AchievementCard label="Order Count" line={projection.orderCount} />
+            <AchievementCard label="Revenue" line={projection.revenue} format="currency" />
           </div>
           {projection.sourceFreshness === "DATA_INSUFFICIENT" && (
             <p className="mt-3 text-xs text-gray-400">
-              Data belum cukup -- belum ada target CALL maupun EFFECTIVE_CALL yang dikonfigurasi untuk salesman/periode ini.
+              Data belum cukup -- belum ada target CALL, EFFECTIVE_CALL, ORDER_COUNT, maupun REVENUE yang dikonfigurasi untuk salesman/periode ini.
             </p>
           )}
         </div>

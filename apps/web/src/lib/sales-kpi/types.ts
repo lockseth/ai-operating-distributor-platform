@@ -1,12 +1,20 @@
-export const SALES_KPI_CODES = ["CALL", "EFFECTIVE_CALL"] as const;
+export const SALES_KPI_CODES = [
+  "CALL",
+  "EFFECTIVE_CALL",
+  "ORDER_COUNT",
+  "REVENUE",
+] as const;
 
 export type SalesKpiCode = (typeof SALES_KPI_CODES)[number];
 export type SalesKpiMeasurementSource =
   | "VALID_FIELD_VISIT"
-  | "CONFIRMED_FIELD_VISIT_ORDER";
+  | "CONFIRMED_FIELD_VISIT_ORDER"
+  | "CONFIRMED_SALES_ORDER_COUNT"
+  | "CONFIRMED_SALES_ORDER_REVENUE";
 export type SalesKpiPeriodStatus = "DRAFT" | "ACTIVE" | "LOCKED";
 export type SalesKpiTargetStatus = "ACTIVE" | "SUPERSEDED";
 export type SalesKpiManagerRole = "owner" | "manager" | "super_admin";
+export type SalesKpiUnit = "COUNT" | "IDR";
 
 export interface SalesKpiDefinition {
   id: string;
@@ -14,7 +22,7 @@ export interface SalesKpiDefinition {
   code: SalesKpiCode;
   name: string;
   description: string;
-  unit: "COUNT";
+  unit: SalesKpiUnit;
   measurementSource: SalesKpiMeasurementSource;
   version: number;
 }
@@ -251,7 +259,9 @@ export interface SalesKpiAchievementProjection {
   endDate: string;
   call: SalesKpiAchievementLine;
   effectiveCall: SalesKpiAchievementLine;
-  /** DATA_INSUFFICIENT hanya jika KEDUA target CALL dan EFFECTIVE_CALL belum dikonfigurasi. */
+  orderCount: SalesKpiAchievementLine;
+  revenue: SalesKpiAchievementLine;
+  /** DATA_INSUFFICIENT hanya jika KEEMPAT target (CALL/EFFECTIVE_CALL/ORDER_COUNT/REVENUE) belum dikonfigurasi. */
   sourceFreshness: "COMPLETE" | "DATA_INSUFFICIENT";
 }
 

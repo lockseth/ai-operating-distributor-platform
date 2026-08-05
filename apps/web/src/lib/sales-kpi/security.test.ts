@@ -111,7 +111,9 @@ describe("Configurable Sales KPI security contracts", () => {
     expect(migration).toContain("'weighted_score_enabled', FALSE");
     expect(migration).not.toContain("'AR_COLLECTION'");
     expect(service).toContain("SALES_KPI_CODES");
-    expect(service).not.toMatch(/code:\s*["'](?:AR|COLLECTION|REVENUE)/);
+    // REVENUE diizinkan sejak Gate 3E-D0-F3 (governed order-based KPI) --
+    // AR/COLLECTION tetap dilarang (bukan KPI, lihat lock decision #2).
+    expect(service).not.toMatch(/code:\s*["'](?:AR|COLLECTION)/);
   });
 
   it("target wajib salesman aktif pada tenant yang sama", () => {

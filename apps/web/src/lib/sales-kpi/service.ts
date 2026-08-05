@@ -32,6 +32,24 @@ export const WALUYO_SALES_KPI_DEFINITIONS: ReadonlyArray<
     measurementSource: "CONFIRMED_FIELD_VISIT_ORDER",
     version: 1,
   },
+  {
+    code: "ORDER_COUNT",
+    name: "Order Count",
+    description:
+      "Jumlah Sales Order confirmed pada periode ini -- semua channel/order_source (bukan hanya Telegram, bukan hanya FIELD_VISIT).",
+    unit: "COUNT",
+    measurementSource: "CONFIRMED_SALES_ORDER_COUNT",
+    version: 1,
+  },
+  {
+    code: "REVENUE",
+    name: "Revenue",
+    description:
+      "Total omzet (final_amount) Sales Order confirmed pada periode ini, dikurangi order yang dibatalkan -- semua channel/order_source.",
+    unit: "IDR",
+    measurementSource: "CONFIRMED_SALES_ORDER_REVENUE",
+    version: 1,
+  },
 ] as const;
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

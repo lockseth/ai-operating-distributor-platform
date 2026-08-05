@@ -6,6 +6,7 @@ import {
   getKpiCalibrationBaselineAction,
   getSalesKpiAchievementProjectionAction,
   setSalesKpiPeriodStatusAction,
+  setSalesKpiTargetAction,
   setSalesKpiTargetsCalibratedAction,
 } from "@/lib/sales-kpi/actions";
 import type {
@@ -154,6 +155,13 @@ function SalesmanCalibrationRow({
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
 
+  const [orderCountTarget, setOrderCountTarget] = useState("");
+  const [revenueTarget, setRevenueTarget] = useState("");
+  const [orderReason, setOrderReason] = useState("");
+  const [orderError, setOrderError] = useState<string | null>(null);
+  const [orderSaving, setOrderSaving] = useState(false);
+  const [orderSavedNote, setOrderSavedNote] = useState<string | null>(null);
+
   async function applyCalibrationData(
     baselineResult: Awaited<ReturnType<typeof getKpiCalibrationBaselineAction>>,
     projectionResult: Awaited<ReturnType<typeof getSalesKpiAchievementProjectionAction>>,
@@ -174,6 +182,16 @@ function SalesmanCalibrationRow({
       );
       setReason(
         projectionResult.projection.call.target !== null ? "" : "Target awal periode",
+      );
+      setOrderCountTarget(
+        projectionResult.projection.orderCount.target !== null
+          ? String(projectionResult.projection.orderCount.target)
+          : "",
+      );
+      setRevenueTarget(
+        projectionResult.projection.revenue.target !== null
+          ? String(projectionResult.projection.revenue.target)
+          : "",
       );
     }
   }
@@ -248,6 +266,54 @@ function SalesmanCalibrationRow({
     }
   }
 
+  async function handleSaveOrderRevenue() {
+    setOrderError(null);
+    setOrderSavedNote(null);
+    const orderCountValue = Number(orderCountTarget);
+    const revenueValue = Number(revenueTarget);
+    if (!Number.isInteger(orderCountValue) || orderCountValue < 0) {
+      setOrderError("Target Order Count harus bilangan bulat non-negatif.");
+      return;
+    }
+    if (!Number.isInteger(revenueValue) || revenueValue < 0) {
+      setOrderError("Target Revenue harus bilangan bulat non-negatif (Rupiah).");
+      return;
+    }
+    if (orderReason.trim().length < 3) {
+      setOrderError("Alasan perubahan wajib diisi (minimal 3 karakter).");
+      return;
+    }
+
+    setOrderSaving(true);
+    const orderCountResult = await setSalesKpiTargetAction({
+      periodId,
+      salespersonId: salesman.id,
+      kpiCode: "ORDER_COUNT",
+      targetValue: orderCountValue,
+      changeReason: orderReason,
+    });
+    if (!orderCountResult.ok) {
+      setOrderSaving(false);
+      setOrderError(orderCountResult.error ?? "Gagal menyimpan target Order Count.");
+      return;
+    }
+    const revenueResult = await setSalesKpiTargetAction({
+      periodId,
+      salespersonId: salesman.id,
+      kpiCode: "REVENUE",
+      targetValue: revenueValue,
+      changeReason: orderReason,
+    });
+    setOrderSaving(false);
+    if (revenueResult.ok) {
+      setOrderSavedNote("Target tersimpan.");
+      setOrderReason("");
+      await reload();
+    } else {
+      setOrderError(revenueResult.error ?? "Gagal menyimpan target Revenue.");
+    }
+  }
+
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
       <h3 className="text-sm font-semibold text-gray-800">{salesman.fullName}</h3>
@@ -309,6 +375,70 @@ function SalesmanCalibrationRow({
               <p className="mt-1 text-sm text-gray-400">Data belum cukup</p>
             )}
           </div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">Target Order Count &amp; Revenue (semua channel order confirmed)</p>
+          <div className="mt-1 flex flex-wrap items-end gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              Order Count
+              <input
+                type="number"
+                min={0}
+                disabled={!canEdit}
+                className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50"
+                value={orderCountTarget}
+                onChange={(e) => setOrderCountTarget(e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              Revenue (Rp)
+              <input
+                type="number"
+                min={0}
+                disabled={!canEdit}
+                className="w-32 rounded-lg border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50"
+                value={revenueTarget}
+                onChange={(e) => setRevenueTarget(e.target.value)}
+              />
+            </label>
+            {projection && (
+              <p className="text-xs text-gray-500">
+                Achievement: {projection.orderCount.actual} order
+                {projection.orderCount.target !== null ? ` / ${projection.orderCount.target}` : ""}
+                {" -- "}
+                Rp{Math.round(projection.revenue.actual).toLocaleString("id-ID")}
+                {projection.revenue.target !== null
+                  ? ` / Rp${Math.round(projection.revenue.target).toLocaleString("id-ID")}`
+                  : ""}
+              </p>
+            )}
+          </div>
+          {canEdit && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                className="min-w-[16rem] flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                placeholder="Alasan perubahan (wajib)"
+                value={orderReason}
+                onChange={(e) => setOrderReason(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={orderSaving}
+                onClick={handleSaveOrderRevenue}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {orderSaving ? "Menyimpan..." : "Simpan Target"}
+              </button>
+            </div>
+          )}
+          {!canEdit && (
+            <p className="mt-2 text-xs text-gray-400">Periode terkunci -- target tidak dapat diubah.</p>
+          )}
+          {orderError && <p className="mt-2 text-sm text-red-600">{orderError}</p>}
+          {orderSavedNote && <p className="mt-2 text-sm text-green-600">{orderSavedNote}</p>}
         </div>
       )}
 

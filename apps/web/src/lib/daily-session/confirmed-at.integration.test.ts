@@ -140,7 +140,7 @@ describeIfDb("sales_orders.confirmed_at trigger -- Blocker 2 (Postgres nyata)", 
     expect((row as { confirmed_at: string | null }).confirmed_at).toBeNull();
   });
 
-  it("remote confirmed order (CUSTOMER_WHATSAPP) tetap dapat confirmed_at, tapi tidak menjadi Call/EC", async () => {
+  it("remote confirmed order (CUSTOMER_WHATSAPP) tetap dapat confirmed_at, tapi tidak menjadi Call/EC (ORDER_COUNT/REVENUE tetap terkredit sejak Gate 3E-D0-F3)", async () => {
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-5`, customer_id: customerId,
@@ -154,9 +154,10 @@ describeIfDb("sales_orders.confirmed_at trigger -- Blocker 2 (Postgres nyata)", 
 
     const { data: events } = await supabase
       .from("sales_kpi_achievement_events")
-      .select("id")
+      .select("id, kpi_code")
       .eq("order_id", orderId);
-    expect(events ?? []).toHaveLength(0);
+    const rows = (events ?? []) as { id: string; kpi_code: string }[];
+    expect(rows.filter((r) => r.kpi_code === "CALL" || r.kpi_code === "EFFECTIVE_CALL")).toHaveLength(0);
   });
 
   it("countConfirmedToday memakai confirmed_at, BUKAN created_at -- dibuat 'kemarin' (created_at dipaksa mundur) tapi confirmed hari ini tetap dihitung", async () => {
