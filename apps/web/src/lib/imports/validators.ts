@@ -50,28 +50,52 @@ export async function validateCustomerPicRow(
 
   const storeLegacyCode = clean(row.store_legacy_code);
   const storeName = clean(row.store_name);
-  const picName = clean(row.pic_name);
-  const picPhoneRaw = clean(row.pic_phone);
+  const storeCity = clean(row.store_city);
+  const storeProvince = clean(row.store_province);
 
   if (!storeLegacyCode) errors.push({ field: "store_legacy_code", message: "Kode toko lama wajib diisi." });
   if (!storeName) errors.push({ field: "store_name", message: "Nama toko wajib diisi." });
-  if (!picName) errors.push({ field: "pic_name", message: "Nama PIC wajib diisi." });
-  if (!picPhoneRaw) errors.push({ field: "pic_phone", message: "Nomor HP PIC wajib diisi." });
 
-  const picPhone = normalizeIdPhone(picPhoneRaw);
-  if (picPhoneRaw && !picPhone) errors.push({ field: "pic_phone", message: "Format nomor HP PIC tidak valid." });
+  // Normalisasi wilayah (typo suggestion) sengaja di-DEFER (Demo V2: import
+  // manual lewat template AODP, operator mengetik sendiri) -- store_city/
+  // store_province tetap disimpan apa adanya, tanpa saran otomatis.
 
+  // PIC opsional penuh: kalau SEMUA field PIC kosong, toko diimport tanpa PIC
+  // (tidak fabricate PIC dummy). Kalau SEBAGIAN terisi, PIC wajib lengkap +
+  // valid atau baris jadi NEEDS_REVIEW -- tidak pernah PIC setengah-jadi yang lolos.
+  const picNameRaw = clean(row.pic_name);
+  const picPhoneRaw = clean(row.pic_phone);
   const picEmailRaw = clean(row.pic_email);
-  const picEmail = picEmailRaw ? normalizeEmail(picEmailRaw) : null;
-  if (picEmailRaw && picEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(picEmail)) {
-    errors.push({ field: "pic_email", message: "Format email PIC tidak valid." });
-  }
+  const picRolesRaw = clean(row.pic_roles);
+  const picFieldsPresent = Boolean(picNameRaw || picPhoneRaw || picEmailRaw || picRolesRaw);
 
-  const rolesRaw = clean(row.pic_roles);
-  const roles = rolesRaw.split(/[;,]/).map((r) => r.trim().toUpperCase()).filter(Boolean);
-  const validRoles = roles.filter((r) => (PIC_ROLES as readonly string[]).includes(r)) as PicRole[];
-  if (roles.length === 0) errors.push({ field: "pic_roles", message: "Peran PIC wajib diisi." });
-  else if (validRoles.length !== roles.length) errors.push({ field: "pic_roles", message: `Peran tidak dikenal: ${roles.filter((r) => !validRoles.includes(r as PicRole)).join(", ")}` });
+  let picName: string | null = null;
+  let picPhone: string | null = null;
+  let picEmail: string | null = null;
+  let validRoles: PicRole[] = [];
+
+  if (picFieldsPresent) {
+    if (!picNameRaw) errors.push({ field: "pic_name", message: "Nama PIC wajib diisi kalau data PIC lain diisi (atau kosongkan semua field PIC)." });
+    if (!picPhoneRaw) errors.push({ field: "pic_phone", message: "Nomor HP PIC wajib diisi kalau data PIC lain diisi (atau kosongkan semua field PIC)." });
+
+    const normalizedPhone = picPhoneRaw ? normalizeIdPhone(picPhoneRaw) : null;
+    if (picPhoneRaw && !normalizedPhone) errors.push({ field: "pic_phone", message: "Format nomor HP PIC tidak valid." });
+
+    const normalizedEmail = picEmailRaw ? normalizeEmail(picEmailRaw) : null;
+    if (picEmailRaw && normalizedEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(normalizedEmail)) {
+      errors.push({ field: "pic_email", message: "Format email PIC tidak valid." });
+    }
+
+    const roles = picRolesRaw.split(/[;,]/).map((r) => r.trim().toUpperCase()).filter(Boolean);
+    const valid = roles.filter((r) => (PIC_ROLES as readonly string[]).includes(r)) as PicRole[];
+    if (!picRolesRaw) errors.push({ field: "pic_roles", message: "Peran PIC wajib diisi kalau data PIC lain diisi (atau kosongkan semua field PIC)." });
+    else if (valid.length !== roles.length) errors.push({ field: "pic_roles", message: `Peran tidak dikenal: ${roles.filter((r) => !valid.includes(r as PicRole)).join(", ")}` });
+
+    picName = picNameRaw || null;
+    picPhone = normalizedPhone;
+    picEmail = normalizedEmail;
+    validRoles = valid;
+  }
 
   const storePhone = normalizeIdPhone(clean(row.store_phone));
   const isActive = normalizeBoolean(clean(row.is_active), true);
@@ -104,16 +128,20 @@ export async function validateCustomerPicRow(
 
   const normalizedData = {
     store_legacy_code: storeLegacyCode, store_name: storeName, store_phone: storePhone,
-    store_address: clean(row.store_address) || null, store_area: clean(row.store_area) || null,
+    store_address: clean(row.store_address) || null,
+    store_city: storeCity || null, store_province: storeProvince || null,
+    store_area: clean(row.store_area) || null,
     assigned_sales_id: assignedSalesId, pic_name: picName, pic_phone: picPhone,
     pic_email: picEmail, pic_roles: validRoles, is_active: isActive,
   };
 
   if (existingStoreId) {
-    const existingPic = await lookup.findPicByPhoneOnStore(companyId, existingStoreId, picPhone!);
-    if (existingPic) {
-      warnings.push({ field: "pic_phone", message: "Nomor PIC ini sudah terdaftar pada toko ini -- dilewati (bukan duplicate baru)." });
-      return finalize(errors, warnings, "SKIP_DUPLICATE", existingPic.id, normalizedData);
+    if (picName && picPhone) {
+      const existingPic = await lookup.findPicByPhoneOnStore(companyId, existingStoreId, picPhone);
+      if (existingPic) {
+        warnings.push({ field: "pic_phone", message: "Nomor PIC ini sudah terdaftar pada toko ini -- dilewati (bukan duplicate baru)." });
+        return finalize(errors, warnings, "SKIP_DUPLICATE", existingPic.id, normalizedData);
+      }
     }
     return finalize(errors, warnings, "UPDATE", existingStoreId, normalizedData);
   }
@@ -134,20 +162,31 @@ export async function validateProductPriceRow(
   const productLegacyCode = clean(row.product_legacy_code);
   const sku = normalizeSku(clean(row.sku));
   const name = clean(row.name);
+
+  // Harga opsional (Demo V2, import manual lewat template AODP): baris tanpa
+  // harga TETAP diproses (CREATE/UPDATE), tapi is_active dipaksa false di
+  // bawah -- tidak menolak seluruh baris demi harga, cukup mencegah produk
+  // tanpa harga dipakai transaksi.
   const priceRaw = clean(row.price);
-  const price = normalizeIdCurrency(priceRaw);
+  const price = priceRaw ? normalizeIdCurrency(priceRaw) : null;
 
   if (!productLegacyCode) errors.push({ field: "product_legacy_code", message: "Kode produk lama wajib diisi." });
   if (!sku) errors.push({ field: "sku", message: "SKU wajib diisi." });
   if (!name) errors.push({ field: "name", message: "Nama produk wajib diisi." });
-  if (!priceRaw) errors.push({ field: "price", message: "Harga wajib diisi." });
-  else if (price === null) errors.push({ field: "price", message: "Format harga tidak valid." });
+  if (priceRaw && price === null) errors.push({ field: "price", message: "Format harga tidak valid." });
+
+  const priceComplete = price !== null && price > 0;
+  if (!priceComplete) {
+    warnings.push({ field: "price", message: "Harga belum lengkap -- produk diimport nonaktif (tidak bisa dipakai order) sampai harga diisi manual." });
+  }
 
   if (errors.length > 0) return finalize(errors, warnings, "NEEDS_REVIEW", null, {});
 
   const normalizedData = {
     product_legacy_code: productLegacyCode, sku, name,
-    unit: clean(row.unit) || "pcs", price, is_active: normalizeBoolean(clean(row.is_active), true),
+    unit: clean(row.unit) || "pcs",
+    price: priceComplete ? price : 0,
+    is_active: priceComplete ? normalizeBoolean(clean(row.is_active), true) : false,
   };
 
   const byLegacy = await lookup.findProductByLegacyId(companyId, sourceSystem, productLegacyCode);

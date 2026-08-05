@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { CustomerFilters } from "@/components/customers/customer-filters";
-import { Plus, Users } from "lucide-react";
+import { Plus, Users, Edit2 } from "lucide-react";
 
 export const metadata = { title: "Pelanggan — AODP" };
 
@@ -53,9 +53,11 @@ const TYPE_LABELS: Record<string, string> = {
 async function CustomerTable({
   companyId,
   params,
+  canEdit,
 }: {
   companyId: string;
   params: SearchParams;
+  canEdit: boolean;
 }) {
   const q      = params.q ?? "";
   const city   = params.city ?? "";
@@ -150,12 +152,24 @@ async function CustomerTable({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <Link
-                    href={`/dashboard/customers/${c.id}`}
-                    className="text-xs font-medium text-blue-600 hover:text-blue-800 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    Detail →
-                  </Link>
+                  <div className="flex items-center justify-end gap-3">
+                    {canEdit && (
+                      <Link
+                        href={`/dashboard/customers/${c.id}/edit`}
+                        aria-label={`Edit ${c.name}`}
+                        className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-700"
+                      >
+                        <Edit2 className="h-3.5 w-3.5" />
+                        Edit
+                      </Link>
+                    )}
+                    <Link
+                      href={`/dashboard/customers/${c.id}`}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                    >
+                      Detail →
+                    </Link>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -256,6 +270,7 @@ export default async function CustomersPage({
   const salesUsers = (salesResult.data ?? []) as unknown as SalesUser[];
 
   const canCreate = hasPermission(user.permissions, "customers.create");
+  const canEdit   = hasPermission(user.permissions, "customers.update");
 
   return (
     <div className="p-6 space-y-5">
@@ -285,7 +300,7 @@ export default async function CustomersPage({
 
       <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
         <Suspense fallback={<div className="p-8 flex justify-center"><LoadingSpinner /></div>}>
-          <CustomerTable companyId={user.company_id} params={params} />
+          <CustomerTable companyId={user.company_id} params={params} canEdit={canEdit} />
         </Suspense>
       </div>
     </div>

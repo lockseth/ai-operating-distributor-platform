@@ -244,6 +244,7 @@ export class SupabaseImportRepository implements ImportRepository {
 
 interface MemCustomer {
   id: string; companyId: string; name: string; phone: string | null; address: string | null; area: string | null;
+  city?: string | null; province?: string | null;
   assignedSalesId: string | null; isActive: boolean; legacySourceSystem: string | null; legacyId: string | null;
   importBatchId: string | null; lastOrderAt: string | null;
 }
@@ -381,6 +382,8 @@ export class InMemoryImportRepository implements ImportRepository {
                 existing.name = (nd.store_name as string) || existing.name;
                 existing.phone = (nd.store_phone as string) ?? existing.phone;
                 existing.address = (nd.store_address as string) ?? existing.address;
+                existing.city = (nd.store_city as string) ?? existing.city;
+                existing.province = (nd.store_province as string) ?? existing.province;
                 existing.area = (nd.store_area as string) ?? existing.area;
                 existing.isActive = (nd.is_active as boolean) ?? existing.isActive;
                 customerId = existing.id;
@@ -389,7 +392,8 @@ export class InMemoryImportRepository implements ImportRepository {
               customerId = this.id("customer");
               this.customers.set(customerId, {
                 id: customerId, companyId, name: nd.store_name as string, phone: (nd.store_phone as string) ?? null,
-                address: (nd.store_address as string) ?? null, area: (nd.store_area as string) ?? null,
+                address: (nd.store_address as string) ?? null, city: (nd.store_city as string) ?? null,
+                province: (nd.store_province as string) ?? null, area: (nd.store_area as string) ?? null,
                 assignedSalesId: (nd.assigned_sales_id as string) ?? null, isActive: (nd.is_active as boolean) ?? true,
                 legacySourceSystem: batch.sourceSystem, legacyId: nd.store_legacy_code as string,
                 importBatchId: batchId, lastOrderAt: null,
@@ -397,14 +401,22 @@ export class InMemoryImportRepository implements ImportRepository {
             }
           }
 
-          const picId = this.id("pic");
-          this.pics.set(picId, {
-            id: picId, companyId, customerId: customerId!, name: nd.pic_name as string, phone: nd.pic_phone as string,
-            email: (nd.pic_email as string) ?? null, roles: nd.pic_roles as string[], validationStatus: "UNVERIFIED",
-            legacyId: (nd.pic_legacy_code as string) ?? null,
-          });
-          row.committedEntityId = picId;
-          row.committedEntityTable = "customer_pics";
+          // PIC opsional: baris tanpa data PIC sama sekali hanya membuat/
+          // memperbarui toko, tidak membuat customer_pics (kontrak: jangan
+          // fabricate PIC dummy).
+          if (nd.pic_name) {
+            const picId = this.id("pic");
+            this.pics.set(picId, {
+              id: picId, companyId, customerId: customerId!, name: nd.pic_name as string, phone: nd.pic_phone as string,
+              email: (nd.pic_email as string) ?? null, roles: nd.pic_roles as string[], validationStatus: "UNVERIFIED",
+              legacyId: (nd.pic_legacy_code as string) ?? null,
+            });
+            row.committedEntityId = picId;
+            row.committedEntityTable = "customer_pics";
+          } else {
+            row.committedEntityId = customerId;
+            row.committedEntityTable = "customers";
+          }
 
         } else if (batch.importType === "PRODUCT_PRICE") {
           const nd = row.normalizedData as Record<string, unknown>;
@@ -517,6 +529,9 @@ export class InMemoryImportRepository implements ImportRepository {
           const liveOrder = [...this.orders.values()].some((o) => o.customerId === pic.customerId);
           if (liveOrder) blockers.push({ rowNumber: row.rowNumber, entityTable: "customers", entityId: pic.customerId, reason: "Toko sudah punya order live di luar batch ini" });
         }
+      } else if (row.committedEntityTable === "customers") {
+        const liveOrder = [...this.orders.values()].some((o) => o.customerId === row.committedEntityId);
+        if (liveOrder) blockers.push({ rowNumber: row.rowNumber, entityTable: "customers", entityId: row.committedEntityId!, reason: "Toko sudah punya order live di luar batch ini" });
       } else if (row.committedEntityTable === "products") {
         // InMemory tidak memodelkan sales_order_items -- tidak ada blocker produk di sini.
       } else if (row.committedEntityTable === "sales_orders") {
@@ -537,6 +552,11 @@ export class InMemoryImportRepository implements ImportRepository {
           if (customer && customer.importBatchId === batchId && !stillHasPics) {
             this.customers.delete(pic.customerId);
           }
+        }
+      } else if (row.committedEntityTable === "customers") {
+        const customer = this.customers.get(row.committedEntityId!);
+        if (customer && customer.importBatchId === batchId) {
+          this.customers.delete(row.committedEntityId!);
         }
       } else if (row.committedEntityTable === "products") {
         this.products.delete(row.committedEntityId!);

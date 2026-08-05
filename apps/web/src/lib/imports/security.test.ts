@@ -16,6 +16,11 @@ describe("XLSX kini didukung, format berbahaya tetap ditolak", () => {
     expect(checkFileExtension("data.xlsm").ok).toBe(false);
     expect(checkFileExtension("data.xlsb").ok).toBe(false);
   });
+  it(".xls ditolak dengan pesan spesifik sesuai kontrak ERP master data (bukan pesan generik)", () => {
+    const result = checkFileExtension("NAMA PELANGGAN SWAS.xls");
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("Format Excel lama .xls terdeteksi. Simpan sebagai .xlsx atau gunakan konverter.");
+  });
   it("ekstensi lain (mis. .exe, .zip polos) ditolak", () => {
     expect(checkFileExtension("data.exe").ok).toBe(false);
     expect(checkFileExtension("data.zip").ok).toBe(false);

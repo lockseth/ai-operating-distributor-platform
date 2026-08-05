@@ -8,7 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { ProductFilters } from "@/components/products/product-filters";
-import { Plus, Package, AlertTriangle } from "lucide-react";
+import { Plus, Package, AlertTriangle, Edit2 } from "lucide-react";
 
 export const metadata = { title: "Produk — AODP" };
 
@@ -40,9 +40,11 @@ interface SearchParams { q?: string; category?: string; status?: string; page?: 
 async function ProductTable({
   companyId,
   params,
+  canEdit,
 }: {
   companyId: string;
   params: SearchParams;
+  canEdit: boolean;
 }) {
   const q          = params.q ?? "";
   const categoryId = params.category ?? "";
@@ -140,12 +142,24 @@ async function ProductTable({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/dashboard/products/${p.id}`}
-                      className="text-xs font-medium text-blue-600 hover:text-blue-800 opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      Detail →
-                    </Link>
+                    <div className="flex items-center justify-end gap-3">
+                      {canEdit && (
+                        <Link
+                          href={`/dashboard/products/${p.id}/edit`}
+                          aria-label={`Edit ${p.name}`}
+                          className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-blue-700"
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                          Edit
+                        </Link>
+                      )}
+                      <Link
+                        href={`/dashboard/products/${p.id}`}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                      >
+                        Detail →
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               );
@@ -246,6 +260,7 @@ export default async function ProductsPage({
   const { count } = await countQuery;
 
   const canCreate = hasPermission(user.permissions, "products.create");
+  const canEdit   = hasPermission(user.permissions, "products.update");
 
   return (
     <div className="p-6 space-y-5">
@@ -272,7 +287,7 @@ export default async function ProductsPage({
       {/* Product Table */}
       <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
         <Suspense fallback={<div className="p-8 flex justify-center"><LoadingSpinner /></div>}>
-          <ProductTable companyId={user.company_id} params={params} />
+          <ProductTable companyId={user.company_id} params={params} canEdit={canEdit} />
         </Suspense>
       </div>
     </div>

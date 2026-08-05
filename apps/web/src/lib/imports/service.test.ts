@@ -92,7 +92,20 @@ describe("5. Mapping wajib field diperiksa sebelum validasi", () => {
     const result = validateMappingCompleteness([{ sourceColumn: "x", targetField: "store_name" }], "CUSTOMER_PIC");
     expect(result.ok).toBe(false);
     expect(result.missingRequiredFields).toContain("store_legacy_code");
-    expect(result.missingRequiredFields).toContain("pic_name");
+  });
+
+  it("pic_name/pic_phone/pic_roles TIDAK wajib di-mapping (file master pelanggan ERP sering tanpa kolom PIC sama sekali)", () => {
+    const result = validateMappingCompleteness(
+      [
+        { sourceColumn: "kode", targetField: "store_legacy_code" },
+        { sourceColumn: "nama", targetField: "store_name" },
+      ],
+      "CUSTOMER_PIC"
+    );
+    expect(result.ok).toBe(true);
+    expect(result.missingRequiredFields).not.toContain("pic_name");
+    expect(result.missingRequiredFields).not.toContain("pic_phone");
+    expect(result.missingRequiredFields).not.toContain("pic_roles");
   });
 
   it("validateStagedBatch menolak jika mapping tidak lengkap", async () => {

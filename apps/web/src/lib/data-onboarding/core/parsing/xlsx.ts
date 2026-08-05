@@ -67,15 +67,14 @@ export async function parseXlsxWorkbook(buffer: Buffer, opts: XlsxParseOptions):
 
   for (const ws of wb.worksheets) {
     let cellCount = 0;
-    let dataRowCount = 0;
-    let isFirstDataRow = true;
-    let headers: string[] = [];
-    const rows: string[][] = [];
     let exceeded: string | null = null;
 
+    // Pass 1: kumpulkan semua baris non-kosong apa adanya (belum diputuskan
+    // mana header). ws sudah sepenuhnya di-load di memori oleh wb.xlsx.load()
+    // di atas -- ini bukan re-parse file, murni iterasi struktur yang sudah ada.
+    const allRows: string[][] = [];
     ws.eachRow({ includeEmpty: false }, (row) => {
       if (exceeded) return;
-
       const cells: string[] = [];
       row.eachCell({ includeEmpty: true }, (cell) => {
         cellCount += 1;
@@ -93,25 +92,33 @@ export async function parseXlsxWorkbook(buffer: Buffer, opts: XlsxParseOptions):
         }
       });
       if (exceeded) return;
-
-      if (isFirstDataRow) {
-        headers = cells;
-        isFirstDataRow = false;
-        return;
-      }
-
-      dataRowCount += 1;
-      if (dataRowCount > opts.maxRows) {
-        exceeded = `Jumlah baris pada sheet "${ws.name}" melebihi batas ${opts.maxRows}.`;
-        return;
-      }
-      rows.push(cells);
+      allRows.push(cells);
     });
 
     if (exceeded) return { ok: false, reason: exceeded };
 
+    // Pass 2: deteksi baris header, bukan selalu anggap baris pertama =
+    // header -- laporan ERP asli (mis. export POS) sering punya baris
+    // judul/logo/nama perusahaan di atas header sungguhan, masing-masing
+    // cuma 1 kolom terisi. Baris PERTAMA dengan >=2 kolom terisi dipakai
+    // sebagai header; baris judul di atasnya dilewati transparan
+    // (preambleRowsSkipped dihitung, tidak dibuang diam-diam tanpa jejak).
+    // Kalau TIDAK ADA baris yang pernah mencapai >=2 kolom sepanjang sheet
+    // (mis. sheet catatan satu-kolom), fallback ke baris pertama sebagai
+    // header (perilaku lama) -- supaya sheet minimal seperti itu tetap
+    // muncul apa adanya, bukan hilang tanpa transparansi.
+    let headerIndex = allRows.findIndex((cells) => cells.filter((c) => c.trim() !== "").length >= 2);
+    if (headerIndex === -1) headerIndex = 0;
+
+    const headers = allRows[headerIndex] ?? [];
+    const dataRows = allRows.slice(headerIndex + 1);
+
+    if (dataRows.length > opts.maxRows) {
+      return { ok: false, reason: `Jumlah baris pada sheet "${ws.name}" melebihi batas ${opts.maxRows}.` };
+    }
+
     if (headers.length > 0) {
-      sheets.push({ name: ws.name, headers, rows });
+      sheets.push({ name: ws.name, headers, rows: dataRows, preambleRowsSkipped: headerIndex });
     }
   }
 

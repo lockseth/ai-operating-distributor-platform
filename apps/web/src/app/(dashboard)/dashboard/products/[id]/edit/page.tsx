@@ -35,7 +35,7 @@ export default async function EditProductPage({
   const { id } = await params;
   const user   = await getAuthUser();
 
-  if (!hasPermission(user.permissions, "products.edit")) {
+  if (!hasPermission(user.permissions, "products.update")) {
     redirect(`/dashboard/products/${id}`);
   }
 

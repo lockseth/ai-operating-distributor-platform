@@ -129,16 +129,29 @@ export const DOMAIN_FIELDS: Record<ImportType, readonly DomainField[]> = {
       aliases: ["area", "wilayah", "region"] },
     { key: "assigned_salesman_name", label: "Sales Penanggung Jawab", required: false, type: "text", example: "Budi Santoso",
       aliases: ["sales to", "salesman", "sales", "assigned salesman", "nama sales"] },
-    { key: "pic_name", label: "Nama PIC", required: true, type: "text", example: "Siti Aminah",
+    // PIC opsional penuh (LANGKAH ERP MASTER DATA): file master pelanggan ERP
+    // sering tidak membawa kolom PIC sama sekali. Kalau field ini required,
+    // validateMappingCompleteness() menolak SELURUH mapping sebelum baris
+    // apa pun diperiksa. Enforcement "PIC lengkap ATAU semuanya kosong" pindah
+    // ke row-level logic di validators.ts (validateCustomerPicRow).
+    { key: "pic_name", label: "Nama PIC (opsional)", required: false, type: "text", example: "Siti Aminah",
       aliases: ["nama pic", "pic name", "contact person", "nama kontak"] },
-    { key: "pic_phone", label: "Nomor HP PIC", required: true, type: "phone", example: "081298765432",
+    { key: "pic_phone", label: "Nomor HP PIC (opsional)", required: false, type: "phone", example: "081298765432",
       aliases: ["no hp pic", "pic phone", "nomor pic"] },
     { key: "pic_email", label: "Email PIC (opsional)", required: false, type: "email", example: "siti@example.com",
       aliases: ["email pic", "pic email", "email"] },
-    { key: "pic_roles", label: "Peran PIC (pisah koma: OWNER,ORDERER,RECEIVER,PAYMENT_CONTACT,BACKUP_CONTACT)", required: true, type: "roles", example: "OWNER",
+    { key: "pic_roles", label: "Peran PIC (opsional, pisah koma: OWNER,ORDERER,RECEIVER,PAYMENT_CONTACT,BACKUP_CONTACT)", required: false, type: "roles", example: "OWNER",
       aliases: ["peran", "role", "pic role", "jabatan"] },
     { key: "is_active", label: "Aktif", required: false, type: "boolean", example: "TRUE",
       aliases: ["aktif", "status", "active"] },
+    // Field baru ditambah di AKHIR array (bukan disisipkan) supaya urutan
+    // kolom lama tidak bergeser -- template/mapping-profile lama dan data
+    // posisional existing tetap valid (backward-compat, konsisten dengan
+    // kebijakan versi minor di templates.ts).
+    { key: "store_city", label: "Kota (opsional)", required: false, type: "text", example: "Jakarta",
+      aliases: ["kota", "city"] },
+    { key: "store_province", label: "Provinsi (opsional)", required: false, type: "text", example: "DKI Jakarta",
+      aliases: ["provinsi", "province"] },
   ],
   PRODUCT_PRICE: [
     { key: "product_legacy_code", label: "Kode Produk Lama", required: true, type: "text", example: "PRD-001",
@@ -149,7 +162,11 @@ export const DOMAIN_FIELDS: Record<ImportType, readonly DomainField[]> = {
       aliases: ["nama produk", "product name", "nama barang"] },
     { key: "unit", label: "Satuan", required: false, type: "text", example: "dus",
       aliases: ["satuan", "unit", "uom"] },
-    { key: "price", label: "Harga", required: true, type: "currency", example: "Rp 45.000",
+    // Harga opsional (Demo V2, import manual lewat template AODP): baris
+    // tanpa harga tetap dibuat/diperbarui TAPI dipaksa is_active=false (lihat
+    // validateProductPriceRow) -- tidak boleh dipakai order sampai harga > 0
+    // diisi manual, tanpa menolak seluruh baris.
+    { key: "price", label: "Harga (opsional -- kosong = produk nonaktif untuk order)", required: false, type: "currency", example: "Rp 45.000",
       aliases: ["harga", "price", "harga jual"] },
     { key: "is_active", label: "Aktif", required: false, type: "boolean", example: "TRUE",
       aliases: ["aktif", "status", "active"] },

@@ -18,8 +18,11 @@ import type { TemplateVersionInfo } from "@/lib/data-onboarding/core/types";
  * docs/architecture/UNIVERSAL_DATA_ONBOARDING.md).
  */
 const TEMPLATE_VERSION: Record<ImportType, string> = {
-  CUSTOMER_PIC: "1.0.0",
-  PRODUCT_PRICE: "1.0.0",
+  // 1.1.0: field aditif/opsional (store_city, store_province) + pic_*/price
+  // jadi opsional -- kompatibel dengan mapping profile versi 1.0.0 lama
+  // (minor bump, bukan major, sesuai isTemplateVersionCompatible).
+  CUSTOMER_PIC: "1.1.0",
+  PRODUCT_PRICE: "1.1.0",
   OPEN_AR: "1.0.0",
   OPEN_ORDER: "1.0.0",
   HISTORICAL_ORDER: "1.0.0",

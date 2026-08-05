@@ -28,8 +28,8 @@ describe("parseXlsxWorkbook (LANGKAH G -- XLSX parsing)", () => {
 
   it("XLSX dengan >1 sheet menghasilkan banyak ParsedSheet (pemilihan sheet ada di service.ts, bukan di sini)", async () => {
     const buf = await buildWorkbook([
-      { name: "Toko", rows: [["nama"], ["Toko A"]] },
-      { name: "Produk", rows: [["sku"], ["SKU-1"]] },
+      { name: "Toko", rows: [["nama", "kode"], ["Toko A", "T1"]] },
+      { name: "Produk", rows: [["sku", "nama"], ["SKU-1", "Barang 1"]] },
     ]);
     const result = await parseXlsxWorkbook(buf, DEFAULT_OPTS);
     expect(result.ok).toBe(true);
@@ -84,7 +84,7 @@ describe("parseXlsxWorkbook (LANGKAH G -- XLSX parsing)", () => {
   });
 
   it("jumlah baris melebihi batas ditolak (berhenti begitu limit tercapai)", async () => {
-    const rows = [["nama"], ...Array.from({ length: 10 }, (_, i) => [`Baris ${i}`])];
+    const rows = [["nama", "kode"], ...Array.from({ length: 10 }, (_, i) => [`Baris ${i}`, `K${i}`])];
     const buf = await buildWorkbook([{ name: "Data", rows }]);
     const result = await parseXlsxWorkbook(buf, { ...DEFAULT_OPTS, maxRows: 5 });
     expect(result.ok).toBe(false);
@@ -106,5 +106,62 @@ describe("parseXlsxWorkbook (LANGKAH G -- XLSX parsing)", () => {
     const buf = Buffer.from(await wb.xlsx.writeBuffer());
     const result = await parseXlsxWorkbook(buf, DEFAULT_OPTS);
     expect(result.ok).toBe(false);
+  });
+
+  describe("deteksi header setelah baris judul/preamble (ERP master data, LANGKAH kontrak poin 6)", () => {
+    it("header TIDAK selalu baris pertama -- baris judul (1 kolom terisi) di atas header sungguhan dilewati transparan", async () => {
+      // Mirip layout export ERP asli: baris judul/nama perusahaan/kota/telepon
+      // (masing-masing cuma 1 kolom terisi), lalu header sungguhan di baris ke-6.
+      const buf = await buildWorkbook([{
+        name: "Data",
+        rows: [
+          ["DAFTAR PELANGGAN"],
+          ["PT. SUMBER WARNA ALAM SUDIADA"],
+          ["CIREBON"],
+          ["085185905859"],
+          ["Kode", "Nama", "Alamat", "Kota", "Provinsi", "Telepon"],
+          ["PL0001", "TK WIJAYA FROZEN", "PASAR HARJAMUKTI", "CIREBON", "JAWA BARAT", ""],
+        ],
+      }]);
+      const result = await parseXlsxWorkbook(buf, DEFAULT_OPTS);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const sheet = result.workbook.sheets[0]!;
+      expect(sheet.headers).toEqual(["Kode", "Nama", "Alamat", "Kota", "Provinsi", "Telepon"]);
+      expect(sheet.rows).toEqual([["PL0001", "TK WIJAYA FROZEN", "PASAR HARJAMUKTI", "CIREBON", "JAWA BARAT", ""]]);
+      // Transparan: jumlah baris preamble yang dilewati tercatat, bukan hilang diam-diam.
+      expect(sheet.preambleRowsSkipped).toBe(4);
+    });
+
+    it("baris kosong DI TENGAH data (setelah header) dilewati apa adanya, bukan dianggap akhir data", async () => {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Data");
+      ws.addRow(["Kode Item", "Nama Item", "Stok"]);
+      ws.addRow(["00001", "Produk Satu", "10"]);
+      ws.addRow([]); // baris kosong sungguhan di antara data, seperti pada export ERP asli
+      ws.addRow(["00002", "Produk Dua", "20"]);
+      const buf = Buffer.from(await wb.xlsx.writeBuffer());
+
+      const result = await parseXlsxWorkbook(buf, DEFAULT_OPTS);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const sheet = result.workbook.sheets[0]!;
+      expect(sheet.headers).toEqual(["Kode Item", "Nama Item", "Stok"]);
+      expect(sheet.rows).toEqual([
+        ["00001", "Produk Satu", "10"],
+        ["00002", "Produk Dua", "20"],
+      ]);
+    });
+
+    it("sheet yang tidak pernah punya baris >=2 kolom fallback ke baris pertama sebagai header (perilaku lama, transparan -- bukan hilang diam-diam)", async () => {
+      const buf = await buildWorkbook([{ name: "Catatan", rows: [["Judul Saja"], ["Baris Lain Satu Kolom"]] }]);
+      const result = await parseXlsxWorkbook(buf, DEFAULT_OPTS);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const sheet = result.workbook.sheets[0]!;
+      expect(sheet.headers).toEqual(["Judul Saja"]);
+      expect(sheet.rows).toEqual([["Baris Lain Satu Kolom"]]);
+      expect(sheet.preambleRowsSkipped).toBe(0);
+    });
   });
 });

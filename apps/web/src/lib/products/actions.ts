@@ -73,7 +73,7 @@ export async function updateProductAction(
 ): Promise<void> {
   const user = await getAuthUser();
 
-  if (!hasPermission(user.permissions, "products.edit")) {
+  if (!hasPermission(user.permissions, "products.update")) {
     throw new Error("Tidak memiliki akses untuk mengedit produk");
   }
 
@@ -119,7 +119,7 @@ export async function archiveProductAction(productId: string): Promise<void> {
 
   if (
     !hasPermission(user.permissions, "products.delete") &&
-    !hasPermission(user.permissions, "products.edit")
+    !hasPermission(user.permissions, "products.update")
   ) {
     throw new Error("Tidak memiliki akses untuk mengarsipkan produk");
   }
@@ -151,7 +151,7 @@ export async function archiveProductAction(productId: string): Promise<void> {
 export async function activateProductAction(productId: string): Promise<void> {
   const user = await getAuthUser();
 
-  if (!hasPermission(user.permissions, "products.edit")) {
+  if (!hasPermission(user.permissions, "products.update")) {
     throw new Error("Tidak memiliki akses untuk mengaktifkan produk");
   }
 

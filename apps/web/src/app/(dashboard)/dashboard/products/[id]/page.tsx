@@ -65,7 +65,7 @@ export default async function ProductDetailPage({
   if (!data) notFound();
 
   const product = data as unknown as Product;
-  const canEdit    = hasPermission(user.permissions, "products.edit");
+  const canEdit    = hasPermission(user.permissions, "products.update");
   const canArchive = hasPermission(user.permissions, "products.delete") || canEdit;
 
   const isLowStock = product.stock_quantity <= product.min_stock && product.min_stock > 0;

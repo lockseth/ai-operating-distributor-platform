@@ -32,6 +32,8 @@ export interface ParsedSheet {
   name: string;
   headers: string[];
   rows: string[][];
+  /** Jumlah baris preamble (judul/logo, <2 kolom terisi) yang dilewati sebelum header ditemukan -- XLSX saja, transparan (bukan dibuang diam-diam). Undefined/0 untuk CSV (header selalu baris pertama). */
+  preambleRowsSkipped?: number;
 }
 
 export interface ParsedWorkbook {
