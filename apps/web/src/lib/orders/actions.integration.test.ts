@@ -194,8 +194,12 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
   });
 
   it("update_sales_order_status_atomic: transisi nyata menulis audit dengan old/new status", async () => {
+    // Gate 3E-D4-C4: 'confirmed' tidak lagi bisa jadi target RPC generik ini
+    // (lihat test khusus di bawah) -- 'cancelled' dipakai di sini murni untuk
+    // membuktikan RPC generik masih menulis audit old/new status dengan benar
+    // untuk transisi legal lain.
     const { data } = await supabase.rpc("update_sales_order_status_atomic", {
-      p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: createdOrderId, p_new_status: "confirmed",
+      p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: createdOrderId, p_new_status: "cancelled",
     });
     expect((data ?? [])[0]?.result_outcome).toBe("updated");
 
@@ -205,7 +209,17 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
       .order("created_at", { ascending: false }).limit(1).single();
     const audit = auditRow as { old_data: { status: string }; new_data: { status: string } };
     expect(audit.old_data.status).toBe("draft");
-    expect(audit.new_data.status).toBe("confirmed");
+    expect(audit.new_data.status).toBe("cancelled");
+  });
+
+  it("update_sales_order_status_atomic: p_new_status='confirmed' SELALU ditolak (confirmation_workflow_required) -- confirmation hanya lewat confirm_sales_order_atomic (Gate 3E-D4-C4)", async () => {
+    await supabase.from("sales_orders").update({ status: "draft" }).eq("id", createdOrderId);
+    const { data } = await supabase.rpc("update_sales_order_status_atomic", {
+      p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: createdOrderId, p_new_status: "confirmed",
+    });
+    expect((data ?? [])[0]?.result_outcome).toBe("confirmation_workflow_required");
+    const { data: orderRow } = await supabase.from("sales_orders").select("status").eq("id", createdOrderId).single();
+    expect((orderRow as { status: string }).status).toBe("draft");
   });
 
   it("cancel_sales_order_atomic: order dengan status delivered/invoiced/paid ditolak (invalid_status), tidak menulis audit", async () => {
@@ -320,10 +334,12 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
       });
       const orderId = (order4 ?? [])[0]?.result_order_id as string;
 
-      const step1 = await supabase.rpc("update_sales_order_status_atomic", {
-        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "confirmed",
+      // Gate 3E-D4-C4: draft -> confirmed sekarang WAJIB lewat
+      // confirm_sales_order_atomic (RPC generik menolak p_new_status='confirmed').
+      const step1 = await supabase.rpc("confirm_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_payment_terms_days: null,
       });
-      expect((step1.data ?? [])[0]?.result_outcome).toBe("updated");
+      expect((step1.data ?? [])[0]?.result_outcome).toBe("confirmed");
 
       const step2 = await supabase.rpc("update_sales_order_status_atomic", {
         p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: "processing",
@@ -470,7 +486,13 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
       });
       const orderId = (order11 ?? [])[0]?.result_order_id as string;
 
-      for (const status of ["confirmed", "processing", "delivering"]) {
+      // Gate 3E-D4-C4: draft -> confirmed WAJIB lewat confirm_sales_order_atomic.
+      const confirmStep = await supabase.rpc("confirm_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_payment_terms_days: null,
+      });
+      expect((confirmStep.data ?? [])[0]?.result_outcome).toBe("confirmed");
+
+      for (const status of ["processing", "delivering"]) {
         const step = await supabase.rpc("update_sales_order_status_atomic", {
           p_company_id: companyId, p_actor_id: ownerAuthId, p_order_id: orderId, p_new_status: status,
         });

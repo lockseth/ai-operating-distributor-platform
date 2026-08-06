@@ -80,10 +80,10 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
     rpcMock.mockResolvedValue({ data: [{ result_outcome: "updated" }], error: null });
     const { updateOrderStatusAction } = await import("./actions");
 
-    await updateOrderStatusAction("order-1", "confirmed");
+    await updateOrderStatusAction("order-1", "processing");
     expect(rpcMock).toHaveBeenCalledWith(
       "update_sales_order_status_atomic",
-      expect.objectContaining({ p_new_status: "confirmed" })
+      expect.objectContaining({ p_new_status: "processing" })
     );
   });
 
@@ -92,7 +92,7 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
     rpcMock.mockResolvedValue({ data: [{ result_outcome: "paid_locked" }], error: null });
     const { updateOrderStatusAction } = await import("./actions");
 
-    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/sudah berstatus paid/i);
+    await expect(updateOrderStatusAction("order-1", "processing")).rejects.toThrow(/sudah berstatus paid/i);
   });
 
   it("outcome RPC 'payment_workflow_required' tetap diterjemahkan jadi error eksplisit, bukan silent success", async () => {
@@ -104,7 +104,7 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
     rpcMock.mockResolvedValue({ data: [{ result_outcome: "payment_workflow_required" }], error: null });
     const { updateOrderStatusAction } = await import("./actions");
 
-    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/payment workflow terverifikasi/i);
+    await expect(updateOrderStatusAction("order-1", "processing")).rejects.toThrow(/payment workflow terverifikasi/i);
   });
 
   it("menolak target 'invoiced' SEBELUM admin.rpc() dipanggil sama sekali", async () => {
@@ -132,7 +132,7 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
     rpcMock.mockResolvedValue({ data: [{ result_outcome: "invoiced_locked" }], error: null });
     const { updateOrderStatusAction } = await import("./actions");
 
-    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/sudah berstatus invoiced/i);
+    await expect(updateOrderStatusAction("order-1", "processing")).rejects.toThrow(/sudah berstatus invoiced/i);
   });
 
   it("outcome RPC 'invoice_issuance_required' tetap diterjemahkan jadi error eksplisit, bukan silent success", async () => {
@@ -140,6 +140,76 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
     rpcMock.mockResolvedValue({ data: [{ result_outcome: "invoice_issuance_required" }], error: null });
     const { updateOrderStatusAction } = await import("./actions");
 
-    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/issuance invoice canonical/i);
+    await expect(updateOrderStatusAction("order-1", "processing")).rejects.toThrow(/issuance invoice canonical/i);
+  });
+});
+
+// =============================================================================
+// Gate 3E-D4-C4 -- target "confirmed" WAJIB reroute ke confirm_sales_order_atomic
+// (bukan lagi update_sales_order_status_atomic sama sekali). Enforcement UTAMA
+// ada di database (migration 20260926000001, Guard G pada update_sales_order_
+// status_atomic + Guard 1-3 pada confirm_sales_order_atomic) -- dibuktikan
+// DB-backed di gate-3e-d4-c4-confirmation-enforcement.integration.test.ts.
+// Test ini membuktikan lapisan action memanggil RPC yang BENAR dan
+// menerjemahkan outcome barunya dengan benar.
+// =============================================================================
+describe("updateOrderStatusAction -- target 'confirmed' reroute ke confirm_sales_order_atomic (Gate 3E-D4-C4)", () => {
+  afterEach(() => {
+    rpcMock.mockClear();
+    getAuthUserMock.mockClear();
+    vi.resetModules();
+  });
+
+  it("target 'confirmed' memanggil confirm_sales_order_atomic, BUKAN update_sales_order_status_atomic", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "confirmed", already_confirmed: false }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await updateOrderStatusAction("order-1", "confirmed");
+    expect(rpcMock).toHaveBeenCalledWith(
+      "confirm_sales_order_atomic",
+      expect.objectContaining({ p_order_id: "order-1" })
+    );
+    expect(rpcMock).not.toHaveBeenCalledWith("update_sales_order_status_atomic", expect.anything());
+  });
+
+  it("outcome 'already_confirmed' diperlakukan sebagai sukses (idempotent)", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "already_confirmed", already_confirmed: true }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).resolves.toBeUndefined();
+  });
+
+  it("outcome 'invalid_order_state' (mis. order pending_owner_approval) diterjemahkan jadi error eksplisit", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "invalid_order_state", already_confirmed: false }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/tidak dapat dikonfirmasi/i);
+  });
+
+  it("outcome 'pending_approval_exists' diterjemahkan jadi error eksplisit", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "pending_approval_exists", already_confirmed: false }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/menunggu keputusan owner/i);
+  });
+
+  it("outcome 'unapproved_special_price' diterjemahkan jadi error eksplisit", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "unapproved_special_price", already_confirmed: false }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/belum\/tidak disetujui owner/i);
+  });
+
+  it("outcome 'approval_snapshot_mismatch' diterjemahkan jadi error eksplisit", async () => {
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "approval_snapshot_mismatch", already_confirmed: false }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "confirmed")).rejects.toThrow(/berubah setelah disetujui owner/i);
   });
 });

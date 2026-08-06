@@ -219,6 +219,49 @@ export async function updateOrderStatusAction(
     );
   }
 
+  // Gate 3E-D4-C4: target "confirmed" WAJIB lewat confirm_sales_order_atomic
+  // (satu-satunya RPC yang memvalidasi special-price approval boundary) --
+  // update_sales_order_status_atomic sekarang menolak p_new_status='confirmed'
+  // tanpa kecuali (migration 20260926000001, Guard G). Tombol "Konfirmasi"
+  // di UI tidak berubah -- hanya reroute RPC backend.
+  if (newStatus === "confirmed") {
+    const admin = getAdminClient();
+    const { data: rpcData, error: rpcError } = await admin.rpc("confirm_sales_order_atomic", {
+      p_company_id: user.company_id,
+      p_actor_id: user.id,
+      p_order_id: orderId,
+      p_payment_terms_days: null,
+    });
+
+    if (rpcError) throw new Error(rpcError.message);
+    const row = ((rpcData ?? []) as { result_outcome: string; already_confirmed: boolean }[])[0];
+    if (!row) throw new Error("confirm_sales_order_atomic: empty RPC result");
+
+    switch (row.result_outcome) {
+      case "confirmed":
+      case "already_confirmed":
+        break;
+      case "forbidden":
+        throw new Error("Tidak punya akses");
+      case "not_found":
+        throw new Error("Order tidak ditemukan");
+      case "invalid_order_state":
+        throw new Error("Order tidak dapat dikonfirmasi pada status saat ini.");
+      case "pending_approval_exists":
+        throw new Error("Order masih menunggu keputusan Owner atas proposal harga khusus.");
+      case "approval_snapshot_mismatch":
+        throw new Error("Order berubah setelah disetujui Owner -- ajukan ulang proposal harga khusus.");
+      case "unapproved_special_price":
+        throw new Error("Order memakai harga khusus yang belum/tidak disetujui Owner.");
+      default:
+        throw new Error(`Gagal mengonfirmasi order: ${row.result_outcome}`);
+    }
+
+    revalidatePath("/dashboard/orders");
+    revalidatePath(`/dashboard/orders/${orderId}`);
+    return;
+  }
+
   const admin = getAdminClient();
   const { data: rpcData, error: rpcError } = await admin.rpc("update_sales_order_status_atomic", {
     p_company_id: user.company_id,
