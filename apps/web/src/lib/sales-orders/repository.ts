@@ -10,6 +10,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PricedOrder } from "./types";
 import type { OrderSource } from "./order-source";
 import { hasTelegramCapability } from "@/lib/telegram-enrollment/capability";
+import {
+  SupabaseFeatureFlagRepository,
+  type FeatureFlagRepository,
+} from "@/lib/feature-flags/repository";
 
 export interface ResolvedIdentity {
   identityId: string;
@@ -130,6 +134,12 @@ export interface SalesOrderTelegramRepository {
    * punya capability 'sales.order.telegram'. Dicek ulang di sini (bukan
    * disimpulkan dari resolveIdentity) supaya perubahan role user setelah
    * pairing langsung fail-closed pada request berikutnya.
+   *
+   * Gate 3E-D4-C6: TRUE hanya jika role sales DAN kill switch global
+   * telegram_sales_orders ON. Ini satu-satunya titik enforcement yang
+   * dipanggil oleh SEMUA entry point Telegram (callback menu, text
+   * pre-dispatch, dan processTelegramUpdate) -- flag OFF/hilang/malformed
+   * selalu fail-closed di sini, tidak perlu dicek ulang di pemanggil.
    */
   hasSalesOrderCapability(userId: string, companyId: string): Promise<boolean>;
 
@@ -205,7 +215,11 @@ function isDraftOrderRejectionCode(
 // ---------------------------------------------------------------------------
 
 export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepository {
-  constructor(private readonly supabase: SupabaseClient) {}
+  private readonly featureFlags: FeatureFlagRepository;
+
+  constructor(private readonly supabase: SupabaseClient) {
+    this.featureFlags = new SupabaseFeatureFlagRepository(supabase);
+  }
 
   async findEventByUpdateId(
     telegramUpdateId: number,
@@ -315,6 +329,13 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     userId: string,
     companyId: string,
   ): Promise<boolean> {
+    // Gate 3E-D4-C6: kill switch global dicek DULU -- short-circuit fail-
+    // closed sebelum query role sama sekali kalau flag OFF/hilang/malformed.
+    // Kedua kondisi (role sales DAN flag ON) wajib TRUE; tidak ada jalur yang
+    // bisa lolos hanya dengan salah satu.
+    const globalFlagEnabled = await this.featureFlags.isEnabled("telegram_sales_orders");
+    if (!globalFlagEnabled) return false;
+
     const { data } = await this.supabase
       .from("user_roles")
       .select("role:roles!role_id(name)")
@@ -672,6 +693,11 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
   // (tanpa capability sales.order.telegram) memanggil
   // seedSalesOrderCapability(..., false) secara eksplisit.
   private capabilityOverrides = new Map<string, boolean>();
+  // Gate 3E-D4-C6: default true, sama seperti capabilityOverrides -- seluruh
+  // fixture test yang ada sebelum gate ini merepresentasikan flag global
+  // sudah ON di produksi. Test yang butuh simulasi flag OFF memanggil
+  // seedTelegramSalesOrdersFlag(false) secara eksplisit.
+  private telegramSalesOrdersFlag = true;
   private seq = 0;
 
   seedIdentity(
@@ -697,10 +723,16 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     this.capabilityOverrides.set(`${userId}:${companyId}`, allowed);
   }
 
+  /** Test-only (Gate 3E-D4-C6): override kill switch global telegram_sales_orders. */
+  seedTelegramSalesOrdersFlag(enabled: boolean): void {
+    this.telegramSalesOrdersFlag = enabled;
+  }
+
   async hasSalesOrderCapability(
     userId: string,
     companyId: string,
   ): Promise<boolean> {
+    if (!this.telegramSalesOrdersFlag) return false;
     return this.capabilityOverrides.get(`${userId}:${companyId}`) ?? true;
   }
 
