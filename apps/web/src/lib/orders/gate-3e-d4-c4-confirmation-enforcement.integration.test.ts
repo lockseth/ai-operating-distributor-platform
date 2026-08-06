@@ -251,15 +251,20 @@ describeIfDb("Gate 3E-D4-C4: confirm_sales_order_atomic() enforcement (DB-backed
 
   it("1. Normal draft tanpa riwayat special price -> confirm sukses, KPI ORDER_COUNT=1 & REVENUE=final_amount tepat sekali", async () => {
     const { orderId } = await makeOrder(companyA, customerIds.A, authIds.salesA1, [{ productKey: "p1", quantity: 2, unitPrice: 100000 }]);
-    const { data: orderBefore } = await service.from("sales_orders").select("final_amount").eq("id", orderId).single();
-    const finalAmount = Number((orderBefore as { final_amount: number }).final_amount);
 
     const row = await callConfirm(companyA, authIds.ownerA, orderId);
     expect(row.result_outcome).toBe("confirmed");
     expect(row.already_confirmed).toBe(false);
 
-    const { data: order } = await service.from("sales_orders").select("status").eq("id", orderId).single();
+    const { data: order } = await service.from("sales_orders").select("status, final_amount").eq("id", orderId).single();
     expect((order as { status: string }).status).toBe("confirmed");
+    // Gate 3E-D4-C5: final_amount SEKARANG direkomputasi server-side saat
+    // confirm (200.000 subtotal + 11% tax = 222.000) -- dibaca SETELAH
+    // confirm (bukan dari fixture pra-confirm yang tidak pernah menghitung
+    // tax) supaya test membuktikan invariant sesungguhnya: REVENUE KPI harus
+    // sama dengan final_amount order yang BENAR-BENAR terkonfirmasi.
+    const finalAmount = Number((order as { final_amount: number }).final_amount);
+    expect(finalAmount).toBe(222000);
 
     expect(await kpiCreditedCount(orderId, "ORDER_COUNT")).toBe(1);
     expect(await kpiCreditedCount(orderId, "REVENUE")).toBe(1);
