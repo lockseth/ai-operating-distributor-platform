@@ -11,6 +11,12 @@
 // data spesifik tenant. Semua yang SPESIFIK tenant (nama produk, kode
 // produk, nama/kode customer, alias satuan tambahan) HARUS di-resolve lewat
 // KnowledgeContext (lihat knowledge-provider.ts), tidak pernah di-hardcode.
+//
+// Ambiguity: resolusi alias/nama produk & customer TIDAK PERNAH memilih
+// kandidat pertama saat ada lebih dari satu kecocokan berbeda (lihat
+// resolveUnique). Nol kandidat -> teks mentah dipertahankan (NOT_FOUND).
+// Lebih dari satu kandidat -> teks mentah dipertahankan + ditandai di
+// missingFields sebagai *.ambiguous (NEEDS_CLARIFICATION), bukan ditebak.
 // =============================================================================
 
 import type { ExtractedSalesOrder, ExtractedSalesOrderItem, DiscountType } from "@flowsales/ai";
@@ -24,6 +30,13 @@ const GENERIC_UNIT_WORDS = [
   "liter", "ltr", "lusin", "buah", "unit", "sak", "pack", "pak", "roll", "rol",
 ];
 
+// Kata kerja umum yang menandai transisi dari "siapa toko/pemesannya" ke
+// "apa yang dipesan" dalam SATU kalimat bebas (tidak dipisah baris), mis.
+// "Toko Maju minta cat avian putih 5 kaleng". Generik bahasa Indonesia,
+// bukan kosakata spesifik tenant.
+const ORDER_TRIGGER_VERBS = ["minta", "pesan", "order", "mau", "beli", "tambah", "kirim"];
+const TIME_MARKER_WORDS = ["besok", "nanti", "hari ini", "sekarang"];
+
 const CUSTOMER_LINE_PATTERN = /^(?:order\s+)?(.+?)\s*:?\s*$/i;
 const DELIVERY_LINE_PATTERN = /\bkirim\b/i;
 const HARGA_PATTERN = /\bharga\s+([a-z0-9.,]+(?:\s*(?:ribu|rb|juta|jt))?)/i;
@@ -33,6 +46,27 @@ const QTY_UNIT_TAIL_PATTERN = new RegExp(
   "i"
 );
 
+// --- Pengenalan toko in-line (satu kalimat, tanpa pemisah baris) ---------
+const TRIGGER_VERB_ALTERNATION = ORDER_TRIGGER_VERBS.join("|");
+const KIRIM_KE_INLINE_PATTERN = new RegExp(
+  `\\bkirim\\s+ke\\s+([a-z][\\w'-]*(?:\\s+[a-z][\\w'-]*){0,4}?)(?=\\s*(?:,|${TIME_MARKER_WORDS.map((w) => w.replace(" ", "\\s+")).join("|")}|$))`,
+  "i"
+);
+const TOKO_INLINE_PATTERN = new RegExp(
+  `\\b(toko\\s+[a-z][\\w'-]*(?:\\s+[a-z][\\w'-]*){0,4}?)(?=\\s+(?:${TRIGGER_VERB_ALTERNATION})\\b|\\s*[,:]|$)`,
+  "i"
+);
+const HONORIFIC_INLINE_PATTERN = new RegExp(
+  `\\b((?:bu|pak|ibu|bapak)\\s+[a-z][\\w'-]*(?:\\s+[a-z][\\w'-]*){0,2}?)(?=\\s+(?:${TRIGGER_VERB_ALTERNATION})\\b|\\s*[,:]|$)`,
+  "i"
+);
+const LEADING_TRIGGER_VERB_PATTERN = new RegExp(`^\\s*(?:${TRIGGER_VERB_ALTERNATION})\\b\\s*`, "i");
+const LEADING_TIME_MARKER_PATTERN = new RegExp(
+  `^\\s*(?:${TIME_MARKER_WORDS.map((w) => w.replace(" ", "\\s+")).join("|")})\\b\\s*,?\\s*`,
+  "i"
+);
+const LEADING_COMMA_PATTERN = /^\s*,\s*/;
+
 function splitLines(rawText: string): string[] {
   return rawText
     .split("\n")
@@ -41,7 +75,54 @@ function splitLines(rawText: string): string[] {
 }
 
 function looksLikeItemLine(line: string): boolean {
-  return HARGA_PATTERN.test(line);
+  return HARGA_PATTERN.test(line) || QTY_UNIT_TAIL_PATTERN.test(line);
+}
+
+interface InlineStoreMarker {
+  customerName: string;
+  remainder: string;
+  deliveryPhrase: string | null;
+}
+
+/**
+ * Deteksi penanda toko/customer yang menyatu dalam SATU kalimat (bukan baris
+ * terpisah), mis. "Toko Maju minta cat avian putih 5 kaleng" atau
+ * "Kirim ke sumber jaya besok, nippon merah 3 dus". Hanya dipakai bila sisa
+ * teks setelah penanda dilepas MASIH terlihat seperti baris item -- kalau
+ * tidak, kembalikan null supaya baris murni nama toko (mis. "Order Toko
+ * Sinar Jaya:") tetap ditangani oleh heuristik baris-pertama yang sudah ada
+ * (tidak ada regresi pada format existing).
+ */
+function detectInlineStoreMarker(line: string): InlineStoreMarker | null {
+  const kirimMatch = line.match(KIRIM_KE_INLINE_PATTERN);
+  if (kirimMatch && kirimMatch[1] && kirimMatch.index !== undefined) {
+    const customerName = kirimMatch[1].trim();
+    let remainder = line.slice(0, kirimMatch.index) + line.slice(kirimMatch.index + kirimMatch[0].length);
+    let deliveryPhrase: string | null = null;
+    const timeMatch = remainder.match(LEADING_TIME_MARKER_PATTERN);
+    if (timeMatch) {
+      deliveryPhrase = timeMatch[0].replace(/[,]/g, "").trim();
+      remainder = remainder.slice(timeMatch[0].length);
+    }
+    remainder = remainder.replace(LEADING_COMMA_PATTERN, "").trim();
+    if (customerName.length > 0 && looksLikeItemLine(remainder)) {
+      return { customerName, remainder, deliveryPhrase };
+    }
+  }
+
+  for (const pattern of [TOKO_INLINE_PATTERN, HONORIFIC_INLINE_PATTERN]) {
+    const match = line.match(pattern);
+    if (!match || !match[1] || match.index === undefined) continue;
+    const customerName = match[1].trim();
+    let remainder = line.slice(0, match.index) + line.slice(match.index + match[0].length);
+    remainder = remainder.replace(LEADING_TRIGGER_VERB_PATTERN, "");
+    remainder = remainder.replace(LEADING_COMMA_PATTERN, "").trim();
+    if (customerName.length > 0 && looksLikeItemLine(remainder)) {
+      return { customerName, remainder, deliveryPhrase: null };
+    }
+  }
+
+  return null;
 }
 
 function parseDiscountPhrase(phrase: string): { type: DiscountType; value: number } | null {
@@ -56,14 +137,29 @@ function parseDiscountPhrase(phrase: string): { type: DiscountType; value: numbe
   return { type: "nominal", value: nominal };
 }
 
+// Catatan ambiguitas: UNIQUE(company_id, alias_text) di DB mencegah duplikat
+// pada string PERSIS sama, tapi normalizeAliasKey() bisa menyatukan dua
+// alias_text berbeda (mis. beda spasi/huruf besar-kecil) yang menunjuk
+// entitas berbeda -- resolveProductAlias/resolveCustomerCode di bawah
+// mengumpulkan SELURUH baris yang cocok (bukan .find() match pertama) dan
+// menandai ambigu bila lebih dari satu id berbeda ditemukan.
+
 function resolveProductAlias(
   productNameRaw: string,
   knowledge: KnowledgeContext
-): { name: string; code: string | null } {
+): { name: string; code: string | null; ambiguous: boolean } {
   const key = normalizeAliasKey(productNameRaw);
-  const match = knowledge.productAliases.find((a) => normalizeAliasKey(a.aliasText) === key);
-  if (match) return { name: match.productName, code: match.productCode };
-  return { name: productNameRaw.trim(), code: null };
+  const matches = knowledge.productAliases.filter((a) => normalizeAliasKey(a.aliasText) === key);
+  if (matches.length === 0) return { name: productNameRaw.trim(), code: null, ambiguous: false };
+
+  // Alias yang cocok tapi menunjuk PRODUK BERBEDA (productId berbeda) -> ambigu,
+  // meski secara kebetulan nama/kode kanoniknya sama untuk sebagian baris.
+  const distinctProductIds = new Set(matches.map((a) => a.productId));
+  if (distinctProductIds.size > 1) {
+    return { name: productNameRaw.trim(), code: null, ambiguous: true };
+  }
+  const match = matches[0]!;
+  return { name: match.productName, code: match.productCode, ambiguous: false };
 }
 
 function resolveUnitAlias(unitRaw: string, knowledge: KnowledgeContext): string {
@@ -75,7 +171,7 @@ function resolveUnitAlias(unitRaw: string, knowledge: KnowledgeContext): string 
 function parseItemLine(
   line: string,
   knowledge: KnowledgeContext
-): { item: ExtractedSalesOrderItem; missing: string[] } | null {
+): { item: ExtractedSalesOrderItem; missing: string[]; productAmbiguous: boolean } | null {
   let working = line;
 
   // 1. Diskon (di akhir kalimat, opsional)
@@ -91,12 +187,17 @@ function parseItemLine(
     working = working.slice(0, discountMatch.index).trim();
   }
 
-  // 2. Harga
+  // 2. Harga -- OPSIONAL. Sales lapangan sering tidak menyebut harga sama
+  // sekali (harga disepakati/di-lookup terpisah); tidak ada harga bukan
+  // berarti bukan order, hanya berarti unitPrice belum diketahui (masuk
+  // missingFields, TIDAK diberi default diam-diam di sini -- lihat pricing.ts
+  // untuk bagaimana null ditangani saat kalkulasi subtotal).
   let unitPrice: number | null = null;
   const hargaMatch = working.match(HARGA_PATTERN);
-  if (!hargaMatch) return null; // bukan baris item yang valid
-  unitPrice = parseIndonesianAmount(hargaMatch[1]!);
-  working = working.slice(0, hargaMatch.index).trim();
+  if (hargaMatch) {
+    unitPrice = parseIndonesianAmount(hargaMatch[1]!);
+    working = working.slice(0, hargaMatch.index).trim();
+  }
 
   // 3. Qty + satuan di ekor sisa teks, sisanya nama produk
   const qtyMatch = working.match(QTY_UNIT_TAIL_PATTERN);
@@ -112,6 +213,10 @@ function parseItemLine(
   }
 
   if (productNameRaw.length === 0) return null;
+  // Baris tanpa harga DAN tanpa qty+satuan yang jelas tidak cukup terlihat
+  // seperti item order (looksLikeItemLine sudah memfilter di pemanggil,
+  // guard ini hanya untuk parseItemLine yang dipanggil langsung).
+  if (!hargaMatch && !qtyMatch) return null;
 
   const resolvedProduct = resolveProductAlias(productNameRaw, knowledge);
   const unit = unitRaw ? resolveUnitAlias(unitRaw, knowledge) : null;
@@ -120,6 +225,7 @@ function parseItemLine(
   if (quantity === null) missing.push("quantity");
   if (unit === null) missing.push("unit");
   if (unitPrice === null) missing.push("unitPrice");
+  if (resolvedProduct.ambiguous) missing.push("productName.ambiguous");
 
   const subtotal =
     quantity !== null && unitPrice !== null
@@ -138,6 +244,7 @@ function parseItemLine(
       subtotal,
     },
     missing,
+    productAmbiguous: resolvedProduct.ambiguous,
   };
 }
 
@@ -163,8 +270,16 @@ export function extractSalesOrder(rawText: string, knowledge: KnowledgeContext):
   const missingFields: string[] = [];
 
   let deliveryNote: string | null = null;
+  let inlineCustomerCandidate: string | null = null;
   const nonDeliveryLines: string[] = [];
   for (const line of lines) {
+    const marker = detectInlineStoreMarker(line);
+    if (marker) {
+      if (inlineCustomerCandidate === null) inlineCustomerCandidate = marker.customerName;
+      if (marker.deliveryPhrase) deliveryNote = marker.deliveryPhrase;
+      nonDeliveryLines.push(marker.remainder);
+      continue;
+    }
     if (DELIVERY_LINE_PATTERN.test(line)) {
       const withoutKeyword = line.replace(/^kirim\s*/i, "").trim();
       deliveryNote = withoutKeyword.length > 0 ? withoutKeyword : line;
@@ -183,6 +298,10 @@ export function extractSalesOrder(rawText: string, knowledge: KnowledgeContext):
     itemLines = nonDeliveryLines.slice(1);
   }
 
+  if (customerName === null && inlineCustomerCandidate !== null) {
+    customerName = inlineCustomerCandidate;
+  }
+
   if (customerName === null) missingFields.push("customer.name");
 
   const items: ExtractedSalesOrderItem[] = [];
@@ -196,10 +315,13 @@ export function extractSalesOrder(rawText: string, knowledge: KnowledgeContext):
 
   if (deliveryNote === null) missingFields.push("deliveryNote");
 
+  const customerResolution = resolveCustomerCode(customerName, knowledge);
+  if (customerResolution.ambiguous) missingFields.push("customer.ambiguous");
+
   const confidence = computeConfidence(customerName, items, missingFields);
 
   return {
-    customer: { name: customerName, code: resolveCustomerCode(customerName, knowledge) },
+    customer: { name: customerName, code: customerResolution.code },
     items,
     deliveryNote,
     missingFields,
@@ -207,11 +329,18 @@ export function extractSalesOrder(rawText: string, knowledge: KnowledgeContext):
   };
 }
 
-function resolveCustomerCode(customerName: string | null, knowledge: KnowledgeContext): string | null {
-  if (!customerName) return null;
+function resolveCustomerCode(
+  customerName: string | null,
+  knowledge: KnowledgeContext
+): { code: string | null; ambiguous: boolean } {
+  if (!customerName) return { code: null, ambiguous: false };
   const key = normalizeAliasKey(customerName);
-  const match = knowledge.customerAliases.find((a) => normalizeAliasKey(a.aliasText) === key);
-  return match ? match.customerCode : null;
+  const matches = knowledge.customerAliases.filter((a) => normalizeAliasKey(a.aliasText) === key);
+  if (matches.length === 0) return { code: null, ambiguous: false };
+
+  const distinctCustomerIds = new Set(matches.map((a) => a.customerId));
+  if (distinctCustomerIds.size > 1) return { code: null, ambiguous: true };
+  return { code: matches[0]!.customerCode, ambiguous: false };
 }
 
 function computeConfidence(

@@ -65,9 +65,33 @@ export class DraftOrderRejectedError extends Error {
   }
 }
 
+/**
+ * Dilempar saat dua request BERSAMAAN (race) mencoba insertEvent dengan
+ * telegram_update_id yang sama -- di produksi ini adalah pelanggaran
+ * UNIQUE(telegram_update_id) di DB (lihat migration
+ * 20260709000001_telegram_sales_order_intake.sql), bukan pengecekan
+ * findEventByUpdateId di level aplikasi yang bisa kalah race. Konstruktor
+ * fake in-memory (lihat InMemorySalesOrderRepository) meniru perilaku ini
+ * supaya keamanan concurrent-duplicate bisa dibuktikan lewat test tanpa
+ * Supabase sungguhan.
+ */
+export class DuplicateUpdateEventError extends Error {
+  constructor(public readonly telegramUpdateId: number) {
+    super(`telegram_update_id ${telegramUpdateId} already exists (unique constraint)`);
+    this.name = "DuplicateUpdateEventError";
+  }
+}
+
 export interface SalesOrderTelegramRepository {
-  /** Idempotency: true jika update_id ini SUDAH pernah diproses sebelumnya. */
-  findEventByUpdateId(telegramUpdateId: number): Promise<{ id: string } | null>;
+  /**
+   * Idempotency: non-null jika update_id ini SUDAH pernah diproses sebelumnya.
+   * rawPayload disertakan supaya pemanggil bisa membandingkan payload yang
+   * baru datang terhadap yang tersimpan (lihat workflow.ts) -- update_id yang
+   * sama dengan payload BERBEDA harus ditolak sebagai conflict, bukan
+   * diperlakukan seperti retry biasa. null berarti raw_payload memang tidak
+   * pernah disimpan (mis. handshake dari chat belum terdaftar -- privasi).
+   */
+  findEventByUpdateId(telegramUpdateId: number): Promise<{ id: string; rawPayload: unknown } | null>;
 
   insertEvent(input: {
     telegramUpdateId: number;
@@ -183,13 +207,15 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
 
   async findEventByUpdateId(
     telegramUpdateId: number,
-  ): Promise<{ id: string } | null> {
+  ): Promise<{ id: string; rawPayload: unknown } | null> {
     const { data } = await this.supabase
       .from("telegram_update_events")
-      .select("id")
+      .select("id, raw_payload")
       .eq("telegram_update_id", telegramUpdateId)
       .maybeSingle();
-    return (data as { id: string } | null) ?? null;
+    if (!data) return null;
+    const row = data as { id: string; raw_payload: unknown };
+    return { id: row.id, rawPayload: row.raw_payload };
   }
 
   async insertEvent(input: {
@@ -220,7 +246,12 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
       })
       .select("id")
       .single();
-    if (error) throw new Error(`insertEvent failed: ${error.message}`);
+    if (error) {
+      // 23505 = unique_violation (Postgres) -- race concurrent pada
+      // UNIQUE(telegram_update_id), lihat DuplicateUpdateEventError.
+      if (error.code === "23505") throw new DuplicateUpdateEventError(input.telegramUpdateId);
+      throw new Error(`insertEvent failed: ${error.message}`);
+    }
     return data as { id: string };
   }
 
@@ -525,10 +556,17 @@ export class SupabaseSalesOrderRepository implements SalesOrderTelegramRepositor
     const priced: PricedOrder = {
       customerName: row.customer?.name ?? row.customer_name_raw,
       customerId: row.customer?.id ?? null,
+      // Order sudah tersimpan -- customerId/productId final sudah ditentukan
+      // saat createDraftOrder/updateDraftOrder (null jika NOT_FOUND/ambigu
+      // saat itu). Flag ambiguous di sini murni untuk tampilan real-time saat
+      // parsing, tidak di-reconstruct dari DB (lihat missing_fields untuk
+      // audit histori ambiguitas -- pola yang sama seperti requiresReview di bawah).
+      customerAmbiguous: false,
       items: row.items.map((i) => ({
         productName: i.product_name_raw ?? "(produk)",
         productCode: null,
         productId: i.product_id,
+        productAmbiguous: false,
         quantity: i.quantity,
         unit: i.unit,
         unitPrice: i.unit_price,
@@ -706,9 +744,9 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
 
   async findEventByUpdateId(
     telegramUpdateId: number,
-  ): Promise<{ id: string } | null> {
+  ): Promise<{ id: string; rawPayload: unknown } | null> {
     const e = this.events.get(telegramUpdateId);
-    return e ? { id: e.id } : null;
+    return e ? { id: e.id, rawPayload: e.rawPayload } : null;
   }
 
   async insertEvent(input: {
@@ -723,6 +761,12 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     telegramUsername?: string | null;
     rejectionReason?: string;
   }): Promise<{ id: string }> {
+    // Meniru UNIQUE(telegram_update_id) di DB produksi -- request kedua yang
+    // "menang race" terhadap pre-check findEventByUpdateId (lihat
+    // DuplicateUpdateEventError) TIDAK BOLEH diam-diam menimpa event pertama.
+    if (this.events.has(input.telegramUpdateId)) {
+      throw new DuplicateUpdateEventError(input.telegramUpdateId);
+    }
     const id = this.nextId("evt");
     this.events.set(input.telegramUpdateId, {
       id,

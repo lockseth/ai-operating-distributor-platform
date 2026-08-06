@@ -43,6 +43,15 @@ export function buildConfirmationSummary(order: PricedOrder, orderNumber: string
     parts.push(`Pengiriman: ${order.deliveryNote}`);
   }
 
+  if (order.customerAmbiguous) {
+    parts.push("");
+    parts.push("⚠️ Nama toko cocok dengan lebih dari satu toko terdaftar — perlu diperjelas manual, belum tertaut ke toko manapun.");
+  }
+  if (order.items.some((i) => i.productAmbiguous)) {
+    parts.push("");
+    parts.push("⚠️ Ada nama produk yang cocok dengan lebih dari satu produk terdaftar — perlu diperjelas manual, belum tertaut ke produk manapun.");
+  }
+
   if (order.requiresDiscountReview) {
     parts.push("");
     parts.push("⚠️ Order ini butuh review diskon dari admin sebelum diproses lebih lanjut.");
@@ -101,4 +110,15 @@ export function buildOrderRejectedReply(
     return "Jumlah (quantity) pada salah satu item tidak valid — harus lebih dari 0. Order tidak disimpan — mohon kirim ulang dengan jumlah yang benar.";
   }
   return "Order tidak dapat diproses saat ini. Order tidak disimpan — silakan coba lagi atau hubungi admin.";
+}
+
+/**
+ * Gate Parser Telegram P0: balasan fail-closed saat pengambilan Knowledge
+ * Pack atau parsing gagal karena error tak terduga (mis. provider/DB
+ * bermasalah) -- BUKAN pesan yang tidak dikenali (lihat
+ * buildUnrecognizedMessageReply). Order/draft TIDAK PERNAH tersimpan pada
+ * kondisi ini; pesan asli pengirim tetap aman di event ledger.
+ */
+export function buildProcessingErrorReply(): string {
+  return "Order Anda belum bisa diproses saat ini karena gangguan teknis. Pesan Anda sudah kami terima dengan aman — silakan kirim ulang beberapa saat lagi atau hubungi admin.";
 }

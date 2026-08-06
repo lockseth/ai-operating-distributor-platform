@@ -14,10 +14,12 @@ import {
   type ResolvedIdentity,
 } from "./repository";
 import type { KnowledgeProvider } from "./knowledge-provider";
-import type { PricedOrder } from "./types";
+import type { KnowledgeContext, PricedOrder } from "./types";
+import type { ExtractedSalesOrder } from "@flowsales/ai";
 import { extractSalesOrder, isLikelyOrderMessage } from "./extraction";
 import { buildPricedOrder } from "./pricing";
 import { detectOrderSource } from "./order-source";
+import { canonicalJsonStringify } from "./normalize";
 import {
   buildConfirmationSummary,
   buildUnrecognizedMessageReply,
@@ -28,6 +30,7 @@ import {
   buildNoPendingOrderReply,
   buildOrderConfirmedReply,
   buildOrderRejectedReply,
+  buildProcessingErrorReply,
 } from "./confirmation";
 import type { DeliveryRepositoryInterface } from "@/lib/delivery/repository";
 import {
@@ -50,12 +53,14 @@ export interface WorkflowDeps {
 
 export type ProcessResult =
   | { outcome: "duplicate_update" }
+  | { outcome: "duplicate_conflict" }
   | { outcome: "ignored_update_type" }
   | { outcome: "enrollment_claimed" }
   | { outcome: "enrollment_rejected" }
   | { outcome: "unregistered" }
   | { outcome: "voice_pending" }
   | { outcome: "not_order" }
+  | { outcome: "processing_error" }
   | { outcome: "draft_created"; orderId: string }
   | { outcome: "corrected_draft_updated"; orderId: string }
   | { outcome: "order_rejected"; reason: string }
@@ -63,6 +68,24 @@ export type ProcessResult =
   | { outcome: "awaiting_correction"; orderId: string }
   | { outcome: "no_pending_order" }
   | { outcome: "delivery"; result: DeliveryProcessResult };
+
+/**
+ * missingFields gabungan dari hasil ekstraksi (extraction.ts, ambiguitas
+ * alias/nama toko/produk) DAN hasil pricing (pricing.ts, ambiguitas resolusi
+ * id via fallback nama kanonik -- lihat pricing.ts, customers.name/products.name
+ * TIDAK unique per company). Draft TETAP dibuat (customerId/productId sengaja
+ * null saat ambigu, bukan ditolak) -- konsisten dengan pola NOT_FOUND yang
+ * sudah ada, hanya menambah alasan review di missing_fields.
+ */
+function mergeAmbiguityMissingFields(extractedMissingFields: string[], priced: PricedOrder): string[] {
+  const ambiguityFields: string[] = [];
+  if (priced.customerAmbiguous) ambiguityFields.push("customer.ambiguous");
+  priced.items.forEach((item, i) => {
+    if (item.productAmbiguous) ambiguityFields.push(`items[${i}].productName.ambiguous`);
+  });
+  const merged = new Set([...extractedMissingFields, ...ambiguityFields]);
+  return Array.from(merged);
+}
 
 const CONFIRM_KEYWORD = "KONFIRMASI";
 const CHANGE_KEYWORD = "UBAH";
@@ -75,7 +98,26 @@ export async function processTelegramUpdate(
   const existingEvent = await deps.repository.findEventByUpdateId(
     update.update_id,
   );
-  if (existingEvent) return { outcome: "duplicate_update" };
+  if (existingEvent) {
+    // update_id sama TAPI payload berbeda dari yang tersimpan -- BUKAN retry
+    // biasa. Fail closed: jangan diperlakukan seperti duplicate_update biasa
+    // (yang sudah aman, tidak menulis apa pun), catat sebagai conflict, dan
+    // JANGAN PERNAH menyentuh raw_payload yang sudah tersimpan. rawPayload
+    // null berarti event ini memang tidak pernah menyimpan payload (mis.
+    // handshake chat belum terdaftar, lihat insertEvent di bawah) -- tidak
+    // ada dasar pembanding, perlakukan seperti retry biasa.
+    if (existingEvent.rawPayload !== null && existingEvent.rawPayload !== undefined) {
+      const unchanged =
+        canonicalJsonStringify(existingEvent.rawPayload) === canonicalJsonStringify(update);
+      if (!unchanged) {
+        console.error(
+          `[Telegram] update_id ${update.update_id} conflict: payload baru berbeda dari yang sudah tersimpan (event ${existingEvent.id}). Ditolak fail-closed, raw_payload asli tidak diubah.`,
+        );
+        return { outcome: "duplicate_conflict" };
+      }
+    }
+    return { outcome: "duplicate_update" };
+  }
 
   const message = update.message;
   if (!message) {
@@ -337,16 +379,35 @@ async function handleNewOrderText(
   eventId: string,
   deps: WorkflowDeps,
 ): Promise<ProcessResult> {
-  const knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
-  const extracted = extractSalesOrder(text, knowledge);
+  let knowledge: KnowledgeContext, extracted: ExtractedSalesOrder, priced: PricedOrder;
+  try {
+    // Parser deterministik (extractSalesOrder/buildPricedOrder) didesain
+    // untuk tidak pernah throw pada input tak valid -- satu-satunya
+    // kegagalan realistis di sini adalah provider Knowledge Pack (mis.
+    // Supabase/DB bermasalah). Fail closed: event ditandai 'error' eksplisit
+    // (bukan tersangkut selamanya di 'received'), pesan asli TETAP tersimpan
+    // (sudah di-insert sebelum fungsi ini dipanggil), dan TIDAK ADA order
+    // yang tercipta.
+    knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
+    extracted = extractSalesOrder(text, knowledge);
+    priced = buildPricedOrder(extracted, knowledge);
+  } catch (err) {
+    console.error(`[Telegram] gagal memproses order (event ${eventId}):`, err);
+    await deps.repository.updateEventStatus(
+      eventId,
+      "error",
+      null,
+      err instanceof Error ? err.message : "unknown_processing_error",
+    );
+    await deps.sender.sendMessage(chatId, buildProcessingErrorReply());
+    return { outcome: "processing_error" };
+  }
 
   if (!isLikelyOrderMessage(extracted)) {
     await deps.repository.updateEventStatus(eventId, "not_order");
     await deps.sender.sendMessage(chatId, buildUnrecognizedMessageReply());
     return { outcome: "not_order" };
   }
-
-  const priced = buildPricedOrder(extracted, knowledge);
 
   let created;
   try {
@@ -356,7 +417,7 @@ async function handleNewOrderText(
       priced,
       knowledgeVersion: knowledge.knowledgeVersion,
       extractionConfidence: extracted.confidence,
-      missingFields: extracted.missingFields,
+      missingFields: mergeAmbiguityMissingFields(extracted.missingFields, priced),
       telegramEventId: eventId,
       orderSource: detectOrderSource(text),
     });
@@ -392,16 +453,30 @@ async function handleCorrection(
   deps: WorkflowDeps,
 ): Promise<ProcessResult> {
   const previous = await deps.repository.getOrder(pendingOrderId);
-  const knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
-  const extracted = extractSalesOrder(text, knowledge);
+
+  let knowledge: KnowledgeContext, extracted: ExtractedSalesOrder, priced: PricedOrder;
+  try {
+    // Lihat catatan fail-closed yang sama di handleNewOrderText.
+    knowledge = await deps.knowledgeProvider.getContext(identity.companyId);
+    extracted = extractSalesOrder(text, knowledge);
+    priced = buildPricedOrder(extracted, knowledge);
+  } catch (err) {
+    console.error(`[Telegram] gagal memproses koreksi order (event ${eventId}):`, err);
+    await deps.repository.updateEventStatus(
+      eventId,
+      "error",
+      null,
+      err instanceof Error ? err.message : "unknown_processing_error",
+    );
+    await deps.sender.sendMessage(chatId, buildProcessingErrorReply());
+    return { outcome: "processing_error" };
+  }
 
   if (!isLikelyOrderMessage(extracted)) {
     await deps.repository.updateEventStatus(eventId, "not_order");
     await deps.sender.sendMessage(chatId, buildUnrecognizedMessageReply());
     return { outcome: "not_order" };
   }
-
-  const priced = buildPricedOrder(extracted, knowledge);
 
   if (previous) {
     await submitDiffAsCandidates(
@@ -421,7 +496,7 @@ async function handleCorrection(
       priced,
       knowledgeVersion: knowledge.knowledgeVersion,
       extractionConfidence: extracted.confidence,
-      missingFields: extracted.missingFields,
+      missingFields: mergeAmbiguityMissingFields(extracted.missingFields, priced),
       orderSource: detectOrderSource(text),
     });
   } catch (err) {

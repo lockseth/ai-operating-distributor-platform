@@ -6,8 +6,9 @@
 
 import { describe, it, expect } from "vitest";
 import { processTelegramUpdate, type WorkflowDeps } from "./workflow";
-import { InMemorySalesOrderRepository } from "./repository";
+import { InMemorySalesOrderRepository, DuplicateUpdateEventError } from "./repository";
 import { InMemoryKnowledgeProvider } from "./knowledge-provider";
+import type { KnowledgeProvider } from "./knowledge-provider";
 import { RecordingTelegramSender } from "@/lib/telegram/client";
 import type { TelegramUpdate } from "@/lib/telegram/client";
 import type { KnowledgeContext } from "./types";
@@ -644,5 +645,164 @@ describe("Telegram Sales Order workflow", () => {
     expect(reply).toContain("Barang Utuh"); // ringkasan item
     expect(reply).toContain(`Rp${Math.round(order!.priced.estimatedTotal).toLocaleString("id-ID")}`); // total
     expect(reply).toContain("butuh review"); // status review (tidak ada discount policy -> requiresReview)
+  });
+
+  // ---------------------------------------------------------------------
+  // Gate Parser Telegram P0 — idempotency hardening, ambiguitas, fail-closed.
+  // ---------------------------------------------------------------------
+
+  it("27. toko ambigu (dua customer nama sama persis) -> draft TETAP dibuat, customerId null, TIDAK memilih kandidat pertama, balasan berisi peringatan", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        { aliasText: "toko kembar-a", customerId: "cust-a", customerName: "Toko Kembar", customerCode: "CA", updatedAt: "2026-01-01T00:00:00Z" },
+        { aliasText: "toko kembar-b", customerId: "cust-b", customerName: "Toko Kembar", customerCode: "CB", updatedAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+    registerSales(deps.repository);
+
+    const result = await processTelegramUpdate(
+      textUpdate(110, "Order Toko Kembar:\nBarang S 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.customerId).toBeNull();
+    expect(order?.priced.customerAmbiguous).toBe(true);
+    expect(order?.priced.customerName).toBe("Toko Kembar"); // teks mentah tetap ditampilkan
+    expect(deps.sender.sent[0]!.text).toContain("lebih dari satu toko");
+  });
+
+  it("28. produk ambigu (dua produk nama sama persis) -> draft TETAP dibuat, productId null, TIDAK memilih kandidat pertama, balasan berisi peringatan", async () => {
+    const deps = makeDeps({
+      productAliases: [
+        { aliasText: "cat kembar-a", productId: "prod-a", productName: "Cat Kembar", productCode: "PA", updatedAt: "2026-01-01T00:00:00Z" },
+        { aliasText: "cat kembar-b", productId: "prod-b", productName: "Cat Kembar", productCode: "PB", updatedAt: "2026-01-01T00:00:00Z" },
+      ],
+    });
+    registerSales(deps.repository);
+
+    const result = await processTelegramUpdate(
+      textUpdate(111, "Order Toko T:\nCat Kembar 2 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.items[0]!.productId).toBeNull();
+    expect(order?.priced.items[0]!.productAmbiguous).toBe(true);
+    expect(deps.sender.sent[0]!.text).toContain("lebih dari satu produk");
+  });
+
+  it("29. duplicate concurrent (race) pada insertEvent -> request kedua ditolak di level 'DB' (unique constraint), bukan diam-diam menimpa event pertama", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+
+    // Simulasikan dua request bersamaan yang SAMA-SAMA lolos pre-check
+    // findEventByUpdateId (race) sebelum salah satu sempat insertEvent.
+    const preCheck1 = await deps.repository.findEventByUpdateId(70);
+    const preCheck2 = await deps.repository.findEventByUpdateId(70);
+    expect(preCheck1).toBeNull();
+    expect(preCheck2).toBeNull();
+
+    const first = await deps.repository.insertEvent({
+      telegramUpdateId: 70,
+      companyId: COMPANY_ID,
+      telegramIdentityId: "identity-1",
+      messageType: "text",
+      processingStatus: "received",
+      rawPayload: { marker: "first" },
+    });
+    expect(first.id).toBeDefined();
+
+    await expect(
+      deps.repository.insertEvent({
+        telegramUpdateId: 70,
+        companyId: COMPANY_ID,
+        telegramIdentityId: "identity-1",
+        messageType: "text",
+        processingStatus: "received",
+        rawPayload: { marker: "second" },
+      }),
+    ).rejects.toThrow(DuplicateUpdateEventError);
+
+    // Hanya SATU event kanonik yang tersimpan -- payload request pertama,
+    // TIDAK tertimpa oleh request kedua yang kalah race.
+    const record = deps.repository.getEventRecord(70);
+    expect(record?.rawPayload).toEqual({ marker: "first" });
+  });
+
+  it("30. update_id sama dengan payload BERBEDA -> ditolak sebagai conflict (fail-closed), raw_payload asli TIDAK berubah, tidak ada order kedua", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+
+    const first = await processTelegramUpdate(
+      textUpdate(80, "Order Toko K:\nBarang Q 1 dus harga 10000"),
+      deps,
+    );
+    expect(first.outcome).toBe("draft_created");
+    const originalRecord = deps.repository.getEventRecord(80);
+    const originalPayload = originalRecord?.rawPayload;
+    expect(originalPayload).not.toBeNull();
+
+    // update_id SAMA (80) tapi isi pesan berbeda -- bukan retry sah (Telegram
+    // tidak pernah mengubah isi update untuk update_id yang sama), harus
+    // ditolak fail-closed, bukan diperlakukan sebagai duplicate biasa.
+    const conflicting = await processTelegramUpdate(
+      textUpdate(80, "Order Toko LAIN:\nBarang Beda 9 dus harga 99999"),
+      deps,
+    );
+    expect(conflicting.outcome).toBe("duplicate_conflict");
+
+    const afterRecord = deps.repository.getEventRecord(80);
+    expect(afterRecord?.rawPayload).toEqual(originalPayload); // tidak diubah sama sekali
+    expect(deps.sender.sent.length).toBe(1); // tidak ada balasan/order tambahan dari request konflik
+  });
+
+  it("31. Knowledge Pack provider gagal (mis. DB down) -> fail-closed: event ditandai error, TIDAK ADA order tercipta, pesan asli tetap tersimpan, balasan generik dikirim", async () => {
+    class ThrowingKnowledgeProvider implements KnowledgeProvider {
+      async getContext(): Promise<KnowledgeContext> {
+        throw new Error("simulated provider/DB failure");
+      }
+      async submitCandidate(): Promise<void> {
+        // no-op
+      }
+    }
+
+    const repository = new InMemorySalesOrderRepository();
+    const deps: WorkflowDeps = {
+      repository,
+      knowledgeProvider: new ThrowingKnowledgeProvider(),
+      sender: new RecordingTelegramSender(),
+      deliveryRepository: new InMemoryDeliveryRepository(),
+      enrollmentRepository: new InMemoryTelegramEnrollmentRepository(),
+    };
+    registerSales(repository);
+
+    const result = await processTelegramUpdate(
+      textUpdate(90, "Order Toko M:\nBarang R 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("processing_error");
+
+    const record = repository.getEventRecord(90);
+    expect(record?.status).toBe("error");
+    expect(record?.rawPayload).not.toBeNull(); // pesan asli tetap aman tersimpan
+    expect((deps.sender as RecordingTelegramSender).sent[0]!.text).toContain("gangguan teknis");
+  });
+
+  it("32. pesan asli tersimpan byte-for-byte meski mengandung emoji/karakter khusus/typo", async () => {
+    const deps = makeDeps();
+    registerSales(deps.repository);
+    const text = "Order Toko Emoji 🎉😀:\nBarang Ünïcödé — typo ringgan 2 dus harga 10000";
+
+    const result = await processTelegramUpdate(textUpdate(100, text), deps);
+    expect(result.outcome).toBe("draft_created");
+
+    const record = deps.repository.getEventRecord(100);
+    const storedPayload = record?.rawPayload as TelegramUpdate | null;
+    expect(storedPayload?.message?.text).toBe(text);
   });
 });

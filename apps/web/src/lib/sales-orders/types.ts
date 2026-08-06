@@ -60,6 +60,8 @@ export interface PricedOrderItem {
   productName: string;
   productCode: string | null;
   productId: string | null;
+  /** TRUE bila teks produk cocok dengan LEBIH DARI SATU produk berbeda -- productId sengaja null, jangan menebak. */
+  productAmbiguous: boolean;
   quantity: number;
   unit: string | null;
   unitPrice: number;
@@ -74,6 +76,8 @@ export interface PricedOrderItem {
 export interface PricedOrder {
   customerName: string | null;
   customerId: string | null;
+  /** TRUE bila teks toko cocok dengan LEBIH DARI SATU customer berbeda -- customerId sengaja null, jangan menebak. */
+  customerAmbiguous: boolean;
   items: PricedOrderItem[];
   subtotal: number;
   totalDiscount: number;

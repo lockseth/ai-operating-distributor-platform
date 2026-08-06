@@ -62,3 +62,27 @@ export function parseDecimalNumber(raw: string | null | undefined): number | nul
 export function formatIDR(amount: number): string {
   return `Rp${Math.round(amount).toLocaleString("id-ID")}`;
 }
+
+function sortKeysDeep(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeysDeep);
+  if (value !== null && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return Object.keys(record)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = sortKeysDeep(record[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+/**
+ * JSON.stringify dengan key object diurutkan secara rekursif — dipakai untuk
+ * membandingkan dua payload Telegram (mis. update_id sama, cek konflik
+ * payload di workflow.ts) tanpa false-positive akibat urutan key JSONB yang
+ * tidak dijamin sama dengan urutan asli saat pulang-pergi lewat Postgres.
+ */
+export function canonicalJsonStringify(value: unknown): string {
+  return JSON.stringify(sortKeysDeep(value));
+}
