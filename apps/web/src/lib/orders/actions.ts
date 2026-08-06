@@ -108,6 +108,8 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       throw new Error("Tidak punya akses untuk membuat sales order");
     case "invalid_customer":
       throw new Error("Customer tidak ditemukan");
+    case "customer_not_owned":
+      throw new Error("Toko ini sudah diatribusikan ke Sales lain — order ditolak.");
     case "invalid_sales_id":
       throw new Error("Salesperson tidak valid");
     case "invalid_product":
@@ -173,6 +175,8 @@ export async function updateOrderAction(
       throw new Error("Hanya order berstatus Draft atau Confirmed yang dapat diedit");
     case "invalid_customer":
       throw new Error("Customer tidak ditemukan");
+    case "customer_not_owned":
+      throw new Error("Toko ini sudah diatribusikan ke Sales lain — order ditolak.");
     case "invalid_sales_id":
       throw new Error("Salesperson tidak valid");
     case "invalid_product":

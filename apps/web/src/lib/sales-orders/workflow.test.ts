@@ -805,4 +805,152 @@ describe("Telegram Sales Order workflow", () => {
     const storedPayload = record?.rawPayload as TelegramUpdate | null;
     expect(storedPayload?.message?.text).toBe(text);
   });
+
+  // ---------------------------------------------------------------------
+  // Gate 3E-D3-A -- Sales Auto-Attribution Enforcement (Telegram)
+  // ---------------------------------------------------------------------
+
+  it("33. toko dikenali dan milik Sales pemesan sendiri -> draft dibuat, attribution = Sales pemesan", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko milik sendiri",
+          customerId: "cust-own",
+          customerName: "Toko Milik Sendiri",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("cust-own", {
+      companyId: COMPANY_ID,
+      isActive: true,
+      assignedSalesId: USER_ID,
+    });
+
+    const result = await processTelegramUpdate(
+      textUpdate(101, "Order Toko Milik Sendiri:\nBarang A 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.customerId).toBe("cust-own");
+    const audit = deps.repository.getAuditTrail();
+    expect(audit.find((e) => e.entityId === result.orderId)?.actorId).toBe(USER_ID);
+  });
+
+  it("34. toko dikenali tapi milik Sales LAIN -> order ditolak (customer_not_owned), tidak ada draft tersimpan, balasan aman", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko sales lain",
+          customerId: "cust-other-sales",
+          customerName: "Toko Sales Lain",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("cust-other-sales", {
+      companyId: COMPANY_ID,
+      isActive: true,
+      assignedSalesId: "user-other-sales",
+    });
+
+    const result = await processTelegramUpdate(
+      textUpdate(102, "Order Toko Sales Lain:\nBarang B 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("customer_not_owned");
+
+    expect(deps.repository.getEventRecord(102)?.status).toBe("not_order");
+    const reply = deps.sender.sent[0]!.text;
+    expect(reply).toContain("Toko ini terdaftar milik Sales lain");
+    // Tidak membocorkan identitas pemilik toko yang sebenarnya.
+    expect(reply).not.toContain("user-other-sales");
+  });
+
+  it("35. toko dikenali tapi BELUM ter-attribute (assignedSalesId kosong) -> draft tetap dibuat (kontrak existing, bukan self-claim)", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko belum ada sales",
+          customerId: "cust-unassigned",
+          customerName: "Toko Belum Ada Sales",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("cust-unassigned", { companyId: COMPANY_ID, isActive: true });
+
+    const result = await processTelegramUpdate(
+      textUpdate(103, "Order Toko Belum Ada Sales:\nBarang C 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.customerId).toBe("cust-unassigned");
+  });
+
+  it("36. UBAH lalu koreksi mengarah ke toko milik Sales lain -> koreksi ditolak, draft ASLI tidak berubah (tidak ada mutasi parsial)", async () => {
+    const deps = makeDeps({
+      customerAliases: [
+        {
+          aliasText: "toko lama",
+          customerId: "cust-mine",
+          customerName: "Toko Lama",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          aliasText: "toko sales lain koreksi",
+          customerId: "cust-other-sales-2",
+          customerName: "Toko Sales Lain Koreksi",
+          customerCode: null,
+          updatedAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    registerSales(deps.repository);
+    deps.repository.seedCustomer("cust-mine", {
+      companyId: COMPANY_ID,
+      isActive: true,
+      assignedSalesId: USER_ID,
+    });
+    deps.repository.seedCustomer("cust-other-sales-2", {
+      companyId: COMPANY_ID,
+      isActive: true,
+      assignedSalesId: "user-other-sales-2",
+    });
+
+    const created = await processTelegramUpdate(
+      textUpdate(104, "Order Toko Lama:\nBarang D 1 dus harga 10000"),
+      deps,
+    );
+    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const ubah = await processTelegramUpdate(textUpdate(105, "UBAH"), deps);
+    expect(ubah.outcome).toBe("awaiting_correction");
+
+    const corrected = await processTelegramUpdate(
+      textUpdate(106, "Order Toko Sales Lain Koreksi:\nBarang D 1 dus harga 10000"),
+      deps,
+    );
+    expect(corrected.outcome).toBe("order_rejected");
+    if (corrected.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(corrected.reason).toBe("customer_not_owned");
+
+    // Draft asli tidak berubah -- masih menunjuk toko semula, bukan toko yang ditolak.
+    const order = await deps.repository.getOrder(created.orderId);
+    expect(order?.priced.customerId).toBe("cust-mine");
+  });
 });

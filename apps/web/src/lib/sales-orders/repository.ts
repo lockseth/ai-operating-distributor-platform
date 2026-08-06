@@ -51,6 +51,7 @@ export interface PersistedOrder {
  */
 export type DraftOrderRejectionCode =
   | "invalid_customer"
+  | "customer_not_owned"
   | "invalid_product"
   | "invalid_quantity"
   | "forbidden";
@@ -192,6 +193,7 @@ function isDraftOrderRejectionCode(
 ): value is DraftOrderRejectionCode {
   return (
     value === "invalid_customer" ||
+    value === "customer_not_owned" ||
     value === "invalid_product" ||
     value === "invalid_quantity" ||
     value === "forbidden"
@@ -652,6 +654,8 @@ export interface InMemoryOrderAuditEvent {
 interface InMemoryMasterRow {
   companyId: string;
   isActive: boolean;
+  /** Gate 3E-D3-A: null/undefined = toko belum ter-attribute (diizinkan). */
+  assignedSalesId?: string | null;
 }
 
 export class InMemorySalesOrderRepository implements SalesOrderTelegramRepository {
@@ -717,11 +721,16 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
    * NULL (tidak ter-match Knowledge Pack) sengaja TIDAK divalidasi -- fallback
    * raw-text tetap diterima & direview manusia (lihat pricing.ts/knowledge-provider.ts).
    */
-  private validateDraftInput(companyId: string, priced: PricedOrder): void {
+  private validateDraftInput(companyId: string, priced: PricedOrder, actingSalesId: string): void {
     if (priced.customerId !== null) {
       const c = this.customers.get(priced.customerId);
       if (!c || c.companyId !== companyId || !c.isActive) {
         throw new DraftOrderRejectedError("invalid_customer", "invalid customer");
+      }
+      // Gate 3E-D3-A: toko yang SUDAH dimiliki Sales lain ditolak fail-closed;
+      // toko belum ter-attribute (assignedSalesId null/undefined) diizinkan.
+      if (c.assignedSalesId != null && c.assignedSalesId !== actingSalesId) {
+        throw new DraftOrderRejectedError("customer_not_owned", "customer owned by another sales");
       }
     }
     for (const item of priced.items) {
@@ -828,7 +837,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     telegramEventId: string;
     orderSource: OrderSource;
   }): Promise<PersistedOrder> {
-    this.validateDraftInput(input.companyId, input.priced);
+    this.validateDraftInput(input.companyId, input.priced, input.salesId);
     const id = this.nextId("order");
     const orderNumber = `SO-TEST-${this.seq}`;
     const order: PersistedOrder = {
@@ -870,7 +879,7 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
     const existing = this.orders.get(orderId);
     if (!existing) throw new Error("Order not found");
     if (existing.status !== "draft") return existing; // guard, no-op
-    this.validateDraftInput(input.companyId, input.priced);
+    this.validateDraftInput(input.companyId, input.priced, input.actorId);
 
     const updated: PersistedOrder = {
       ...existing,

@@ -3,9 +3,27 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { logAuditEvent } from "@/lib/actions/audit";
+
+// Gate 3E-D3-A: sumber kebenaran attribution toko adalah actor tepercaya, bukan
+// field client. Role di array ini mempertahankan workflow assignment existing
+// (boleh menetapkan toko ke Sales mana pun); role di luar ini (mis. sales)
+// SELALU diatribusikan ke dirinya sendiri, field assigned_sales_id dari client
+// diabaikan sepenuhnya. Ditegakkan ulang di RLS customers_insert/customers_update
+// (migration 20260919000001) sebagai enforcement utama -- ini mencegah error
+// RLS pada alur normal Sales membuat/mengedit toko miliknya sendiri.
+const ATTRIBUTION_BYPASS_ROLES = ["owner", "manager", "admin", "super_admin"];
+
+function resolveAssignedSalesId(
+  actorId: string,
+  actorRoles: string[],
+  clientValue: string | null
+): string | null {
+  if (hasRole(actorRoles, ATTRIBUTION_BYPASS_ROLES)) return clientValue || null;
+  return actorId;
+}
 
 export interface CustomerFormData {
   name: string;
@@ -42,7 +60,7 @@ export async function createCustomerAction(data: CustomerFormData): Promise<void
       address:           data.address || null,
       city:              data.city || null,
       coverage_area_id:  data.coverage_area_id || null,
-      assigned_sales_id: data.assigned_sales_id || null,
+      assigned_sales_id: resolveAssignedSalesId(user.id, user.roles, data.assigned_sales_id),
       notes:             data.notes || null,
       is_active:         true,
       custom_fields:     data.custom_fields ?? {},
@@ -88,7 +106,7 @@ export async function updateCustomerAction(
       address:           data.address || null,
       city:              data.city || null,
       coverage_area_id:  data.coverage_area_id || null,
-      assigned_sales_id: data.assigned_sales_id || null,
+      assigned_sales_id: resolveAssignedSalesId(user.id, user.roles, data.assigned_sales_id),
       notes:             data.notes || null,
       is_active:         data.is_active,
       custom_fields:     data.custom_fields ?? {},
