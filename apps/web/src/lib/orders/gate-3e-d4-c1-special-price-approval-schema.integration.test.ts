@@ -511,8 +511,11 @@ describeIfDb("Gate 3E-D4-C1: special price approval schema & state machine found
   // ---------------------------------------------------------------------
 
   describe("5. special_price_approval_lines -- snapshot line", () => {
-    async function pendingRequestId(): Promise<string> {
+    async function pendingRequestId(): Promise<{ requestId: string; itemId: string }> {
       const orderId = await makeDraftOrder(companyA, customerA, authIds.salesA1, productA1);
+      const { data: itemRow, error: itemErr } = await service.from("sales_order_items").select("id").eq("order_id", orderId).single();
+      if (itemErr) throw itemErr;
+      const itemId = (itemRow as { id: string }).id;
       const { data, error } = await service.from("special_price_approval_requests").insert({
         company_id: companyA, sales_order_id: orderId, proposal_version: 1, requested_by: authIds.salesA1,
         order_snapshot_hash: `hash-${runTag}-lines-${orderId}`,
@@ -520,13 +523,13 @@ describeIfDb("Gate 3E-D4-C1: special price approval schema & state machine found
       if (error) throw error;
       const id = (data as { id: string }).id;
       spawnedApprovalIds.push(id);
-      return id;
+      return { requestId: id, itemId };
     }
 
     it("5a. INSERT line valid BERHASIL, implied_discount_percentage dihitung SERVER-SIDE (generated column)", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { data, error } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId, policy_id: policyA, policy_scope_snapshot: "global", policy_max_percentage_snapshot: 10 }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId, policy_id: policyA, policy_scope_snapshot: "global", policy_max_percentage_snapshot: 10 }),
       ).select("implied_discount_percentage").single();
       expect(error).toBeNull();
       // master 10000, proposed 9000 -> diskon 10%
@@ -534,31 +537,31 @@ describeIfDb("Gate 3E-D4-C1: special price approval schema & state machine found
     });
 
     it("5b. proposed_unit_price > master_unit_price DITOLAK (chk_spal_price_is_discount)", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { error } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId, master_unit_price: 5000, proposed_unit_price: 6000 }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId, master_unit_price: 5000, proposed_unit_price: 6000 }),
       );
       expect(error).not.toBeNull();
     });
 
     it("5c. master_unit_price <= 0 DITOLAK", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { error } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId, master_unit_price: 0 }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId, master_unit_price: 0 }),
       );
       expect(error).not.toBeNull();
     });
 
     it("5d. proposed_unit_price <= 0 DITOLAK", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { error } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId, proposed_unit_price: 0 }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId, proposed_unit_price: 0 }),
       );
       expect(error).not.toBeNull();
     });
 
     it("5e. product_id dari tenant LAIN (companyB) DITOLAK (AODP_SPAL_PRODUCT_TENANT_MISMATCH)", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId } = await pendingRequestId();
       const { error } = await service.from("special_price_approval_lines").insert(
         baseLine({ approval_request_id: requestId, product_id: productB1 }),
       );
@@ -567,18 +570,18 @@ describeIfDb("Gate 3E-D4-C1: special price approval schema & state machine found
     });
 
     it("5f. policy_id dari tenant LAIN (companyB) DITOLAK (AODP_SPAL_POLICY_TENANT_MISMATCH)", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { error } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId, policy_id: policyB }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId, policy_id: policyB }),
       );
       expect(error).not.toBeNull();
       expect(error!.message).toContain("AODP_SPAL_POLICY_TENANT_MISMATCH");
     });
 
     it("5g. UPDATE line SETELAH dibuat DITOLAK TOTAL, termasuk lewat service-role (AODP_SPAL_IMMUTABLE)", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { data: line } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId }),
       ).select("id").single();
 
       const { error } = await service.from("special_price_approval_lines").update({ proposed_unit_price: 8000 }).eq("id", (line as { id: string }).id);
@@ -587,9 +590,9 @@ describeIfDb("Gate 3E-D4-C1: special price approval schema & state machine found
     });
 
     it("5h. Delete line lewat client authenticated DITOLAK", async () => {
-      const requestId = await pendingRequestId();
+      const { requestId, itemId } = await pendingRequestId();
       const { data: line } = await service.from("special_price_approval_lines").insert(
-        baseLine({ approval_request_id: requestId }),
+        baseLine({ approval_request_id: requestId, sales_order_item_id: itemId }),
       ).select("id").single();
 
       const ownerClient = await signIn(`${runTag}-ownerA@itest.test`);
