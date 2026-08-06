@@ -95,7 +95,7 @@ export default async function EditOrderPage({
     }>;
   };
 
-  if (!["draft", "confirmed"].includes(order.status)) {
+  if (order.status !== "draft") {
     redirect(`/dashboard/orders/${id}`);
   }
 

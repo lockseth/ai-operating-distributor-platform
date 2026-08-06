@@ -442,4 +442,145 @@ describeIfDb("Gate 3E-D4-B1: sales_order_items mutation boundary (DB-backed, Pos
       await service.from("sales_orders").delete().eq("id", orderId);
     });
   });
+
+  // ---------------------------------------------------------------------
+  // 10. Gate 3E-D4-B2 -- update_sales_order_atomic (RPC canonical) menolak
+  //    order confirmed/status final lain TANPA KECUALI, termasuk untuk
+  //    actor ownership-bypass. Sebelum gate ini RPC menerima 'draft' ATAU
+  //    'confirmed' (migration 20260919000001:318) -- ini adalah jalur
+  //    bypass canonical (bukan direct-client) yang ditutup gate 3E-D4-B2.
+  // ---------------------------------------------------------------------
+  describe("10. Gate 3E-D4-B2 -- RPC canonical menolak mutasi order confirmed/final", () => {
+    it("10a. sales1 (pemilik order) DITOLAK (invalid_status) mengubah order miliknya yang sudah confirmed lewat RPC, item/total/tax/audit/KPI TIDAK berubah", async () => {
+      const { data: itemsBefore } = await service.from("sales_order_items").select("id, unit_price, quantity").eq("order_id", sales1ConfirmedOrderId);
+      const { data: orderBefore } = await service.from("sales_orders")
+        .select("notes, total_amount, tax_amount, final_amount").eq("id", sales1ConfirmedOrderId).single();
+      const { count: auditBefore } = await service.from("audit_logs")
+        .select("id", { count: "exact", head: true }).eq("entity_id", sales1ConfirmedOrderId).eq("action", "order.update");
+      const { count: kpiBefore } = await service.from("sales_kpi_achievement_events")
+        .select("id", { count: "exact", head: true }).eq("order_id", sales1ConfirmedOrderId);
+
+      const { data, error } = await service.rpc("update_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: sales1ConfirmedOrderId,
+        p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "percobaan edit confirmed", p_delivery_date: null,
+        p_discount_amount: 0,
+        p_items: [{ product_id: productId, quantity: 99, unit_price: 1, discount_amount: 0, total_amount: 99, notes: null }],
+      });
+      expect(error).toBeNull();
+      expect((data ?? [])[0]?.result_outcome).toBe("invalid_status");
+
+      const { data: itemsAfter } = await service.from("sales_order_items").select("id, unit_price, quantity").eq("order_id", sales1ConfirmedOrderId);
+      expect(itemsAfter).toEqual(itemsBefore);
+      const { data: orderAfter } = await service.from("sales_orders")
+        .select("status, notes, total_amount, tax_amount, final_amount").eq("id", sales1ConfirmedOrderId).single();
+      expect((orderAfter as { status: string }).status).toBe("confirmed");
+      expect((orderAfter as { notes: string | null }).notes).toBe((orderBefore as { notes: string | null }).notes);
+      expect((orderAfter as { total_amount: number }).total_amount).toBe((orderBefore as { total_amount: number }).total_amount);
+      expect((orderAfter as { tax_amount: number }).tax_amount).toBe((orderBefore as { tax_amount: number }).tax_amount);
+      expect((orderAfter as { final_amount: number }).final_amount).toBe((orderBefore as { final_amount: number }).final_amount);
+      const { count: auditAfter } = await service.from("audit_logs")
+        .select("id", { count: "exact", head: true }).eq("entity_id", sales1ConfirmedOrderId).eq("action", "order.update");
+      expect(auditAfter).toBe(auditBefore);
+      const { count: kpiAfter } = await service.from("sales_kpi_achievement_events")
+        .select("id", { count: "exact", head: true }).eq("order_id", sales1ConfirmedOrderId);
+      expect(kpiAfter).toBe(kpiBefore);
+    });
+
+    it("10b. owner (ownership-bypass, orders.manage) TETAP DITOLAK (invalid_status) mengubah order confirmed lewat RPC -- draft-only berlaku universal, bukan cuma Sales", async () => {
+      const { data, error } = await service.rpc("update_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: authIds.owner, p_order_id: sales1ConfirmedOrderId,
+        p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "percobaan owner edit confirmed", p_delivery_date: null,
+        p_discount_amount: 0,
+        p_items: [{ product_id: productId, quantity: 1, unit_price: 1, discount_amount: 0, total_amount: 1, notes: null }],
+      });
+      expect(error).toBeNull();
+      expect((data ?? [])[0]?.result_outcome).toBe("invalid_status");
+      const { data: orderRow } = await service.from("sales_orders").select("notes").eq("id", sales1ConfirmedOrderId).single();
+      expect((orderRow as { notes: string | null }).notes).not.toBe("percobaan owner edit confirmed");
+    });
+
+    it("10c. admin (bypass role) TETAP DITOLAK (invalid_status) mengubah order confirmed lewat RPC", async () => {
+      const { data, error } = await service.rpc("update_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: authIds.admin, p_order_id: sales1ConfirmedOrderId,
+        p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "percobaan admin edit confirmed", p_delivery_date: null,
+        p_discount_amount: 0,
+        p_items: [{ product_id: productId, quantity: 1, unit_price: 1, discount_amount: 0, total_amount: 1, notes: null }],
+      });
+      expect(error).toBeNull();
+      expect((data ?? [])[0]?.result_outcome).toBe("invalid_status");
+    });
+
+    it("10d. Status final lain (cancelled) juga ditolak lewat RPC, bukan cuma confirmed", async () => {
+      const cancelledOrder = await createDraftOrder("sales1", "CANC");
+      await service.from("sales_orders").update({ status: "cancelled" }).eq("id", cancelledOrder.orderId);
+
+      const { data, error } = await service.rpc("update_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: authIds.owner, p_order_id: cancelledOrder.orderId,
+        p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "percobaan edit cancelled", p_delivery_date: null,
+        p_discount_amount: 0,
+        p_items: [{ product_id: productId, quantity: 1, unit_price: 1, discount_amount: 0, total_amount: 1, notes: null }],
+      });
+      expect(error).toBeNull();
+      expect((data ?? [])[0]?.result_outcome).toBe("invalid_status");
+
+      await service.from("sales_order_items").delete().eq("order_id", cancelledOrder.orderId);
+      await service.from("sales_orders").delete().eq("id", cancelledOrder.orderId);
+    });
+
+    it("10e. sales1 (pemilik) TETAP BISA mengubah draft miliknya lewat RPC (regresi -- draft-only bukan berarti seluruh update ditolak)", async () => {
+      const draftForUpdate = await createDraftOrder("sales1", "STILLOK");
+      const { data, error } = await service.rpc("update_sales_order_atomic", {
+        p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: draftForUpdate.orderId,
+        p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "masih boleh diedit selagi draft", p_delivery_date: null,
+        p_discount_amount: 0,
+        p_items: [{ product_id: productId, quantity: 3, unit_price: 10000, discount_amount: 0, total_amount: 30000, notes: null }],
+      });
+      expect(error).toBeNull();
+      expect((data ?? [])[0]?.result_outcome).toBe("updated");
+
+      await service.from("sales_order_items").delete().eq("order_id", draftForUpdate.orderId);
+      await service.from("sales_orders").delete().eq("id", draftForUpdate.orderId);
+    });
+
+    it("10f. Race update-vs-confirm: hasil akhir konsisten, tidak ada partial mutation -- lock parent row (FOR UPDATE, sama di kedua RPC) menjamin salah satu resolusi penuh", async () => {
+      const raceOrder = await createDraftOrder("sales1", "RACE");
+      const { data: originalItemsRaw } = await service.from("sales_order_items").select("unit_price, quantity").eq("order_id", raceOrder.orderId);
+      const originalSnapshot = (originalItemsRaw ?? []).map((r) => ({
+        unit_price: Number((r as { unit_price: number | string }).unit_price),
+        quantity: Number((r as { quantity: number | string }).quantity),
+      }));
+
+      const [updateResult] = await Promise.all([
+        service.rpc("update_sales_order_atomic", {
+          p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: raceOrder.orderId,
+          p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "race update", p_delivery_date: null,
+          p_discount_amount: 0,
+          p_items: [{ product_id: productId, quantity: 7, unit_price: 777, discount_amount: 0, total_amount: 5439, notes: null }],
+        }),
+        service.rpc("confirm_sales_order_atomic", {
+          p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: raceOrder.orderId, p_payment_terms_days: null,
+        }),
+      ]);
+
+      const { data: finalOrder } = await service.from("sales_orders").select("status").eq("id", raceOrder.orderId).single();
+      expect((finalOrder as { status: string }).status).toBe("confirmed");
+
+      const { data: finalItemsRaw } = await service.from("sales_order_items").select("unit_price, quantity").eq("order_id", raceOrder.orderId);
+      const finalSnapshot = (finalItemsRaw ?? []).map((r) => ({
+        unit_price: Number((r as { unit_price: number | string }).unit_price),
+        quantity: Number((r as { quantity: number | string }).quantity),
+      }));
+
+      const outcome = (updateResult.data ?? [])[0]?.result_outcome;
+      expect(["updated", "invalid_status"]).toContain(outcome);
+      if (outcome === "updated") {
+        expect(finalSnapshot).toEqual([{ unit_price: 777, quantity: 7 }]);
+      } else {
+        expect(finalSnapshot).toEqual(originalSnapshot);
+      }
+
+      await service.from("sales_order_items").delete().eq("order_id", raceOrder.orderId);
+      await service.from("sales_orders").delete().eq("id", raceOrder.orderId);
+    });
+  });
 });

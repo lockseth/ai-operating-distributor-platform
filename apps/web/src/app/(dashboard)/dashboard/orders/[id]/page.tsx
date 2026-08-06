@@ -100,7 +100,7 @@ export default async function OrderDetailPage({
   const canCreate  = hasPermission(user.permissions, "orders.create");
   const canEdit    = hasPermission(user.permissions, "orders.update");
   const canCancel  = hasPermission(user.permissions, "orders.delete") || canEdit;
-  const isEditable = ["draft", "confirmed"].includes(order.status);
+  const isEditable = order.status === "draft";
   const isCancellable = !["delivered", "invoiced", "paid", "cancelled"].includes(order.status);
 
   // --- Delivery Verification (tahap 2 vertical slice) ---

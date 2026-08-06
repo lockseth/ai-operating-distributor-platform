@@ -172,7 +172,7 @@ export async function updateOrderAction(
     case "not_found":
       throw new Error("Order tidak ditemukan");
     case "invalid_status":
-      throw new Error("Hanya order berstatus Draft atau Confirmed yang dapat diedit");
+      throw new Error("Hanya order berstatus Draft yang dapat diedit");
     case "invalid_customer":
       throw new Error("Customer tidak ditemukan");
     case "customer_not_owned":
