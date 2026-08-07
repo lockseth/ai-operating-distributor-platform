@@ -50,13 +50,12 @@ export default async function EditCustomerPage({
       .eq("company_id", user.company_id)
       .single(),
 
+    // Membership role sebenarnya ada di user_roles/roles (bukan kolom
+    // users.roles yang tidak ada) -- pola sama dengan kpi/setup/page.tsx.
     supabase
-      .from("users")
-      .select("id, full_name")
-      .eq("company_id", user.company_id)
-      .eq("is_active", true)
-      .contains("roles", ["sales"])
-      .order("full_name"),
+      .from("user_roles")
+      .select("user:users!user_id(id, full_name, is_active), role:roles!role_id(name)")
+      .eq("company_id", user.company_id),
 
     // Aktif + wilayah yang sedang di-assign (walau sudah nonaktif) supaya
     // histori tetap terlihat -- tidak boleh dipilih ulang bila bukan yang
@@ -71,7 +70,14 @@ export default async function EditCustomerPage({
   if (!customerResult.data) notFound();
 
   const customer   = customerResult.data as unknown as Customer;
-  const salesUsers = (salesResult.data ?? []) as unknown as SalesUser[];
+  const salesRoleRows = (salesResult.data ?? []) as unknown as {
+    user: { id: string; full_name: string; is_active: boolean } | null;
+    role: { name: string } | null;
+  }[];
+  const salesUsers: SalesUser[] = salesRoleRows
+    .filter((r) => r.role?.name === "sales" && r.user?.is_active === true)
+    .map((r) => ({ id: r.user!.id, full_name: r.user!.full_name }))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
   const allAreas = ((areaResult.data ?? []) as { id: string; name: string; is_active: boolean }[]).map((a) => ({
     id: a.id,
     name: a.name,
