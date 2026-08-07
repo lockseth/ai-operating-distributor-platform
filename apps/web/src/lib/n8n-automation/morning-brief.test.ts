@@ -22,6 +22,7 @@ function projectionWithTargets(): SalesKpiAchievementProjection {
     effectiveCall: { kpiCode: "EFFECTIVE_CALL", target: 5, actual: 2, remaining: 3, achievementPercentage: 40, pacingStatus: "ON_TRACK" },
     orderCount: { kpiCode: "ORDER_COUNT", target: 8, actual: 3, remaining: 5, achievementPercentage: 38, pacingStatus: "ON_TRACK" },
     revenue: { kpiCode: "REVENUE", target: 10_000_000, actual: 4_000_000, remaining: 6_000_000, achievementPercentage: 40, pacingStatus: "ON_TRACK" },
+    noo: { kpiCode: "NOO", target: 2, actual: 1, remaining: 1, achievementPercentage: 50, pacingStatus: "ON_TRACK" },
     sourceFreshness: "COMPLETE",
   };
 }

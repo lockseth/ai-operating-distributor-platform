@@ -42,10 +42,10 @@ async function createJulyPeriod(
 }
 
 describe("Sales KPI definition contract — Waluyo v1 + Gate 3E-D0-F3", () => {
-  it("mengaktifkan tepat empat KPI governed: CALL, EFFECTIVE_CALL, ORDER_COUNT, REVENUE", () => {
+  it("mengaktifkan tepat lima KPI governed: CALL, EFFECTIVE_CALL, ORDER_COUNT, REVENUE, NOO", () => {
     expect(
       WALUYO_SALES_KPI_DEFINITIONS.map((definition) => definition.code),
-    ).toEqual(["CALL", "EFFECTIVE_CALL", "ORDER_COUNT", "REVENUE"]);
+    ).toEqual(["CALL", "EFFECTIVE_CALL", "ORDER_COUNT", "REVENUE", "NOO"]);
   });
 
   it("tidak memiliki AR, Collection, weight, atau composite score (REVENUE order-based diizinkan sejak Gate 3E-D0-F3)", () => {
@@ -78,6 +78,7 @@ describe("Sales KPI definition contract — Waluyo v1 + Gate 3E-D0-F3", () => {
     expect(isSalesKpiCode("EFFECTIVE_CALL")).toBe(true);
     expect(isSalesKpiCode("ORDER_COUNT")).toBe(true);
     expect(isSalesKpiCode("REVENUE")).toBe(true);
+    expect(isSalesKpiCode("NOO")).toBe(true);
     expect(isSalesKpiCode("AR_COLLECTION")).toBe(false);
     expect(isSalesKpiCode("COLLECTION")).toBe(false);
   });
@@ -179,7 +180,7 @@ describe("Configurable KPI Foundation repository", () => {
       }),
     ).resolves.toEqual({
       outcome: "initialized",
-      definitionCount: 4,
+      definitionCount: 5,
     });
     await expect(
       repository.initializeFoundation({
@@ -188,9 +189,9 @@ describe("Configurable KPI Foundation repository", () => {
       }),
     ).resolves.toEqual({
       outcome: "already_initialized",
-      definitionCount: 4,
+      definitionCount: 5,
     });
-    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(4);
+    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(5);
     expect(
       repository
         .getAuditTrail(COMPANY_A)
@@ -415,8 +416,8 @@ describe("Configurable KPI Foundation repository", () => {
       companyId: COMPANY_B,
       actorId: "owner-b",
     });
-    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(4);
-    expect(repository.getDefinitions(COMPANY_B)).toHaveLength(4);
+    expect(repository.getDefinitions(COMPANY_A)).toHaveLength(5);
+    expect(repository.getDefinitions(COMPANY_B)).toHaveLength(5);
     expect(
       repository
         .getAuditTrail(COMPANY_A)

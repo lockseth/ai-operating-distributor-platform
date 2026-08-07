@@ -50,6 +50,15 @@ export const WALUYO_SALES_KPI_DEFINITIONS: ReadonlyArray<
     measurementSource: "CONFIRMED_SALES_ORDER_REVENUE",
     version: 1,
   },
+  {
+    code: "NOO",
+    name: "NOO / Buka Toko Baru",
+    description:
+      "Jumlah toko baru produktif -- customer yang sales order confirmed PERTAMA KALInya jatuh pada periode ini, sepanjang histori tenant.",
+    unit: "COUNT",
+    measurementSource: "FIRST_CONFIRMED_ORDER_PER_CUSTOMER",
+    version: 1,
+  },
 ] as const;
 
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

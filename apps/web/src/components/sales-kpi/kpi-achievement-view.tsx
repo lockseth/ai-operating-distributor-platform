@@ -181,15 +181,16 @@ export function KpiAchievementView({
 
       {!loading && projection && (
         <div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
             <AchievementCard label="Call" line={projection.call} />
             <AchievementCard label="Effective Call" line={projection.effectiveCall} />
             <AchievementCard label="Order Count" line={projection.orderCount} />
             <AchievementCard label="Revenue" line={projection.revenue} format="currency" />
+            <AchievementCard label="NOO / Buka Toko Baru" line={projection.noo} />
           </div>
           {projection.sourceFreshness === "DATA_INSUFFICIENT" && (
             <p className="mt-3 text-xs text-gray-400">
-              Data belum cukup -- belum ada target CALL, EFFECTIVE_CALL, ORDER_COUNT, maupun REVENUE yang dikonfigurasi untuk salesman/periode ini.
+              Data belum cukup -- belum ada target CALL, EFFECTIVE_CALL, ORDER_COUNT, REVENUE, maupun NOO yang dikonfigurasi untuk salesman/periode ini.
             </p>
           )}
         </div>

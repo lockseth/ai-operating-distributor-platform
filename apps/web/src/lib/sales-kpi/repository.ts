@@ -447,6 +447,7 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       EFFECTIVE_CALL: 0,
       ORDER_COUNT: 0,
       REVENUE: 0,
+      NOO: 0,
     };
     for (const row of (eventRows ?? []) as {
       kpi_code: SalesKpiCode;
@@ -482,6 +483,12 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
       actuals.REVENUE,
       periodBounds,
     );
+    const noo = computeAchievementLine(
+      "NOO",
+      targets.get("NOO") ?? null,
+      actuals.NOO,
+      periodBounds,
+    );
 
     return {
       outcome: "ok",
@@ -496,11 +503,13 @@ export class SupabaseSalesKpiRepository implements SalesKpiRepository {
         effectiveCall,
         orderCount,
         revenue,
+        noo,
         sourceFreshness:
           call.target === null &&
           effectiveCall.target === null &&
           orderCount.target === null &&
-          revenue.target === null
+          revenue.target === null &&
+          noo.target === null
             ? "DATA_INSUFFICIENT"
             : "COMPLETE",
       },
@@ -1309,6 +1318,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       activeTargets.find((t) => t.kpiCode === "ORDER_COUNT")?.targetValue ?? null;
     const targetRevenue =
       activeTargets.find((t) => t.kpiCode === "REVENUE")?.targetValue ?? null;
+    const targetNoo = activeTargets.find((t) => t.kpiCode === "NOO")?.targetValue ?? null;
 
     const relevantEvents = this.achievementEvents.filter(
       (event) =>
@@ -1328,6 +1338,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
     const actualEc = actualFor("EFFECTIVE_CALL");
     const actualOrderCount = actualFor("ORDER_COUNT");
     const actualRevenue = actualFor("REVENUE");
+    const actualNoo = actualFor("NOO");
 
     const periodBounds = { startDate: period.startDate, endDate: period.endDate };
     const call = computeAchievementLine("CALL", targetCall, actualCall, periodBounds);
@@ -1349,6 +1360,7 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
       actualRevenue,
       periodBounds,
     );
+    const noo = computeAchievementLine("NOO", targetNoo, actualNoo, periodBounds);
 
     return {
       outcome: "ok",
@@ -1363,11 +1375,13 @@ export class InMemorySalesKpiRepository implements SalesKpiRepository {
         effectiveCall,
         orderCount,
         revenue,
+        noo,
         sourceFreshness:
           call.target === null &&
           effectiveCall.target === null &&
           orderCount.target === null &&
-          revenue.target === null
+          revenue.target === null &&
+          noo.target === null
             ? "DATA_INSUFFICIENT"
             : "COMPLETE",
       },

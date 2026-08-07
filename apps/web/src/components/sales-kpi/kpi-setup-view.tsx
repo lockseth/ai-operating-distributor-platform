@@ -162,6 +162,12 @@ function SalesmanCalibrationRow({
   const [orderSaving, setOrderSaving] = useState(false);
   const [orderSavedNote, setOrderSavedNote] = useState<string | null>(null);
 
+  const [nooTarget, setNooTarget] = useState("");
+  const [nooReason, setNooReason] = useState("");
+  const [nooError, setNooError] = useState<string | null>(null);
+  const [nooSaving, setNooSaving] = useState(false);
+  const [nooSavedNote, setNooSavedNote] = useState<string | null>(null);
+
   async function applyCalibrationData(
     baselineResult: Awaited<ReturnType<typeof getKpiCalibrationBaselineAction>>,
     projectionResult: Awaited<ReturnType<typeof getSalesKpiAchievementProjectionAction>>,
@@ -191,6 +197,11 @@ function SalesmanCalibrationRow({
       setRevenueTarget(
         projectionResult.projection.revenue.target !== null
           ? String(projectionResult.projection.revenue.target)
+          : "",
+      );
+      setNooTarget(
+        projectionResult.projection.noo.target !== null
+          ? String(projectionResult.projection.noo.target)
           : "",
       );
     }
@@ -311,6 +322,37 @@ function SalesmanCalibrationRow({
       await reload();
     } else {
       setOrderError(revenueResult.error ?? "Gagal menyimpan target Revenue.");
+    }
+  }
+
+  async function handleSaveNoo() {
+    setNooError(null);
+    setNooSavedNote(null);
+    const nooValue = Number(nooTarget);
+    if (!Number.isInteger(nooValue) || nooValue < 0) {
+      setNooError("Target NOO harus bilangan bulat non-negatif (jumlah toko).");
+      return;
+    }
+    if (nooReason.trim().length < 3) {
+      setNooError("Alasan perubahan wajib diisi (minimal 3 karakter).");
+      return;
+    }
+
+    setNooSaving(true);
+    const nooResult = await setSalesKpiTargetAction({
+      periodId,
+      salespersonId: salesman.id,
+      kpiCode: "NOO",
+      targetValue: nooValue,
+      changeReason: nooReason,
+    });
+    setNooSaving(false);
+    if (nooResult.ok) {
+      setNooSavedNote("Target tersimpan.");
+      setNooReason("");
+      await reload();
+    } else {
+      setNooError(nooResult.error ?? "Gagal menyimpan target NOO.");
     }
   }
 
@@ -439,6 +481,56 @@ function SalesmanCalibrationRow({
           )}
           {orderError && <p className="mt-2 text-sm text-red-600">{orderError}</p>}
           {orderSavedNote && <p className="mt-2 text-sm text-green-600">{orderSavedNote}</p>}
+        </div>
+      )}
+
+      {!loading && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
+          <p className="text-xs font-medium text-gray-500">
+            Target NOO / Buka Toko Baru (jumlah toko baru produktif -- customer dengan sales order confirmed pertama kalinya)
+          </p>
+          <div className="mt-1 flex flex-wrap items-end gap-3">
+            <label className="flex items-center gap-2 text-sm">
+              Target (jumlah toko)
+              <input
+                type="number"
+                min={0}
+                disabled={!canEdit}
+                className="w-24 rounded-lg border border-gray-300 px-2 py-1 text-sm disabled:bg-gray-50"
+                value={nooTarget}
+                onChange={(e) => setNooTarget(e.target.value)}
+              />
+            </label>
+            {projection && (
+              <p className="text-xs text-gray-500">
+                Realisasi: {projection.noo.actual} toko
+                {projection.noo.target !== null ? ` / ${projection.noo.target}` : ""}
+              </p>
+            )}
+          </div>
+          {canEdit && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <input
+                className="min-w-[16rem] flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                placeholder="Alasan perubahan (wajib)"
+                value={nooReason}
+                onChange={(e) => setNooReason(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={nooSaving}
+                onClick={handleSaveNoo}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {nooSaving ? "Menyimpan..." : "Simpan Target"}
+              </button>
+            </div>
+          )}
+          {!canEdit && (
+            <p className="mt-2 text-xs text-gray-400">Periode terkunci -- target tidak dapat diubah.</p>
+          )}
+          {nooError && <p className="mt-2 text-sm text-red-600">{nooError}</p>}
+          {nooSavedNote && <p className="mt-2 text-sm text-green-600">{nooSavedNote}</p>}
         </div>
       )}
 
