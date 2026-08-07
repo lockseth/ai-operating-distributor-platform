@@ -149,6 +149,15 @@ function IconTarget() {
   );
 }
 
+function IconVisit() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.828 0l-4.243-4.243a8 8 0 1111.314 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
 function IconMenu() {
   return (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -167,6 +176,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Modul",
     items: [
       { label: "WhatsApp AI",   href: "/dashboard/whatsapp",   icon: <IconChat />,       roles: ["super_admin", "owner", "manager", "admin"] },
+      { label: "Kunjungan Sales", href: "/dashboard/sales-visits", icon: <IconVisit />,  roles: ["sales"] },
       { label: "Sales Order",   href: "/dashboard/orders",     icon: <IconOrders />,     permission: "orders.view" },
       { label: "AI Dispatch Planner", href: "/dashboard/dispatch", icon: <IconDispatch />, permission: "dispatch.view" },
       { label: "Laporan Sales", href: "/dashboard/reports",    icon: <IconChart />,      permission: "reports.view" },
