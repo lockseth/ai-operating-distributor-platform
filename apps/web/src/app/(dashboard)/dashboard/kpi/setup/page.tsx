@@ -30,6 +30,12 @@ export default async function SalesKpiSetupPage() {
 
   const supabase = await createClient();
 
+  const { count: definitionCount } = await supabase
+    .from("sales_kpi_definitions")
+    .select("id", { count: "exact", head: true })
+    .eq("company_id", user.company_id)
+    .is("superseded_at", null);
+
   const { data: periodRows } = await supabase
     .from("sales_kpi_periods")
     .select("id, name, start_date, end_date, status")
@@ -67,6 +73,7 @@ export default async function SalesKpiSetupPage() {
           status: p.status,
         }))}
         salesmen={salesmen}
+        foundationInitialized={(definitionCount ?? 0) >= 5}
       />
     </div>
   );

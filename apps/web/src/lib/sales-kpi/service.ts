@@ -27,7 +27,7 @@ export const WALUYO_SALES_KPI_DEFINITIONS: ReadonlyArray<
     code: "EFFECTIVE_CALL",
     name: "Effective Call",
     description:
-      "Call valid yang menghasilkan Sales Order confirmed dengan order_source FIELD_VISIT.",
+      "Call valid yang melibatkan pertemuan dengan pihak toko serta aktivitas penjualan substantif -- dari Kunjungan Sales maupun dari Sales Order confirmed order_source FIELD_VISIT yang terhubung ke Call yang sama. Sales Order tidak wajib.",
     unit: "COUNT",
     measurementSource: "CONFIRMED_FIELD_VISIT_ORDER",
     version: 1,

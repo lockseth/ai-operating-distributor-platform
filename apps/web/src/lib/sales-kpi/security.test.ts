@@ -178,4 +178,22 @@ describe("Configurable Sales KPI security contracts", () => {
       "Achievement measurements are intentionally outside this foundation phase",
     );
   });
+
+  it("Gate 3E-D5-C: initializeSalesKpiFoundationAction tidak menerima parameter apa pun -- company/actor selalu dari session", () => {
+    const start = actions.indexOf("export async function initializeSalesKpiFoundationAction(");
+    expect(start).toBeGreaterThan(-1);
+    expect(actions.slice(start, start + 100)).toContain(
+      "export async function initializeSalesKpiFoundationAction(): Promise<SalesKpiActionResult>",
+    );
+  });
+
+  it("Gate 3E-D5-C: foundation_not_initialized tidak disamarkan sebagai pesan generik pada target actions", () => {
+    for (const fn of ["setSalesKpiTargetAction", "setSalesKpiTargetsCalibratedAction"]) {
+      const start = actions.indexOf(`export async function ${fn}`);
+      const end = actions.indexOf("\n}\n", start);
+      const body = actions.slice(start, end);
+      expect(body).toContain('"foundation_not_initialized"');
+      expect(body).toMatch(/foundation_not_initialized[\s\S]{0,80}\?\s*"KPI belum diinisialisasi/);
+    }
+  });
 });

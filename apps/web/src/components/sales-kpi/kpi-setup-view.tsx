@@ -5,6 +5,7 @@ import {
   createSalesKpiPeriodAction,
   getKpiCalibrationBaselineAction,
   getSalesKpiAchievementProjectionAction,
+  initializeSalesKpiFoundationAction,
   setSalesKpiPeriodStatusAction,
   setSalesKpiTargetAction,
   setSalesKpiTargetsCalibratedAction,
@@ -31,6 +32,7 @@ interface SalesmanOption {
 interface KpiSetupViewProps {
   periods: PeriodOption[];
   salesmen: SalesmanOption[];
+  foundationInitialized: boolean;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -132,6 +134,49 @@ function NewPeriodForm({ onCreated }: { onCreated: () => void }) {
         </button>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+    </div>
+  );
+}
+
+function FoundationInitSection({ initialized }: { initialized: boolean }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (initialized) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-1.5 text-sm text-green-700">
+        <span aria-hidden>✓</span>
+        KPI Foundation siap (5 definisi KPI aktif)
+      </div>
+    );
+  }
+
+  async function handleInitialize() {
+    setSaving(true);
+    setError(null);
+    const result = await initializeSalesKpiFoundationAction();
+    setSaving(false);
+    if (result.ok) {
+      window.location.reload();
+    } else {
+      setError(result.error ?? "Gagal menginisialisasi KPI.");
+    }
+  }
+
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+      <p className="text-sm text-amber-800">
+        KPI belum diinisialisasi untuk tenant ini -- target dan achievement belum dapat disimpan/ditampilkan.
+      </p>
+      <button
+        type="button"
+        disabled={saving}
+        onClick={handleInitialize}
+        className="mt-2 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+      >
+        {saving ? "Menginisialisasi..." : "Inisialisasi KPI"}
+      </button>
+      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>
   );
 }
@@ -561,7 +606,7 @@ function SalesmanCalibrationRow({
   );
 }
 
-export function KpiSetupView({ periods: initialPeriods, salesmen }: KpiSetupViewProps) {
+export function KpiSetupView({ periods: initialPeriods, salesmen, foundationInitialized }: KpiSetupViewProps) {
   const [periods, setPeriods] = useState(initialPeriods);
   const [periodId, setPeriodId] = useState(initialPeriods[0]?.id ?? "");
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -592,6 +637,8 @@ export function KpiSetupView({ periods: initialPeriods, salesmen }: KpiSetupView
 
   return (
     <div className="space-y-4">
+      <FoundationInitSection initialized={foundationInitialized} />
+
       <div className="flex flex-wrap items-center gap-3">
         <label className="text-sm">
           <span className="mb-1 block text-xs font-medium text-gray-500">Periode</span>

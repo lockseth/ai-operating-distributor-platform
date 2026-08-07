@@ -247,7 +247,17 @@ export async function setSalesKpiTargetAction(
       ? "Periode sudah dikunci; target tidak dapat diubah."
       : result.outcome === "salesperson_not_eligible"
         ? "Salesman tidak aktif atau bukan anggota tenant ini."
-        : "Gagal menyimpan target KPI.";
+        : result.outcome === "foundation_not_initialized"
+          ? "KPI belum diinisialisasi untuk tenant ini. Klik \"Inisialisasi KPI\" terlebih dahulu."
+          : result.outcome === "forbidden"
+            ? "Tidak berwenang mengubah target KPI."
+            : result.outcome === "unsupported_kpi" || result.outcome === "invalid_target"
+              ? "Nilai target KPI tidak valid."
+              : result.outcome === "reason_required"
+                ? "Alasan perubahan wajib diisi."
+                : result.outcome === "period_not_found"
+                  ? "Periode KPI tidak ditemukan."
+                  : "Gagal menyimpan target KPI.";
   return { ok: false, outcome: result.outcome, error };
 }
 
@@ -572,6 +582,12 @@ export async function setSalesKpiTargetsCalibratedAction(
           ? "Salesman tidak aktif atau bukan anggota tenant ini."
           : result.outcome === "reason_required"
             ? "Alasan perubahan wajib diisi."
-            : "Gagal menyimpan target KPI.";
+            : result.outcome === "foundation_not_initialized"
+              ? "KPI belum diinisialisasi untuk tenant ini. Klik \"Inisialisasi KPI\" terlebih dahulu."
+              : result.outcome === "forbidden"
+                ? "Tidak berwenang mengubah target KPI."
+                : result.outcome === "invalid_call_target" || result.outcome === "invalid_ec_target"
+                  ? "Nilai target KPI tidak valid."
+                  : "Gagal menyimpan target KPI.";
   return { ok: false, outcome: result.outcome, error };
 }

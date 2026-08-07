@@ -65,12 +65,13 @@ describe("Sales KPI definition contract — Waluyo v1 + Gate 3E-D0-F3", () => {
     ).toBe("IDR");
   });
 
-  it("measurement source EC mengunci confirmed field-visit order", () => {
+  it("EC description mencerminkan kontrak final Gate 3E-D5-B: Sales Order tidak wajib", () => {
     const ec = WALUYO_SALES_KPI_DEFINITIONS.find(
       (definition) => definition.code === "EFFECTIVE_CALL",
     );
     expect(ec?.measurementSource).toBe("CONFIRMED_FIELD_VISIT_ORDER");
-    expect(ec?.description).toContain("order_source FIELD_VISIT");
+    expect(ec?.description).toContain("tidak wajib");
+    expect(ec?.description).not.toMatch(/^Call valid yang menghasilkan Sales Order confirmed/);
   });
 
   it("runtime code guard fail-closed untuk KPI lain", () => {
