@@ -1342,4 +1342,74 @@ describe("Telegram Sales Order workflow", () => {
     const order = await deps.repository.getOrder(result.orderId);
     expect(order?.priced.items[0]!.unit).toBe("kg");
   });
+
+  // ---------------------------------------------------------------------
+  // Remediation UAT SO-2608-0002 -- reproduksi PERSIS raw_payload hosted
+  // (mcbwgvtkhykrrtvbpeys): "Kirim ke Warna Jaya\ncat exterior 20 kilo 10
+  // ember" gagal (not_order) sebelum fix; harus draft_created dengan
+  // customer/produk/harga/unit yang benar setelah fix.
+  // ---------------------------------------------------------------------
+
+  it("45. reproduksi PERSIS UAT SO-2608-0002: 'Kirim ke Warna Jaya' baris tersendiri + 'cat exterior 20 kilo 10 ember' -> customer, produk (prefix DEMO-), harga master, dan satuan (ember->pail) semua resolve benar", async () => {
+    const customers = [{ name: "DEMO-Toko Warna Jaya Bangunan", id: "cust-demo-warna-jaya" }];
+    const products = [{ name: "DEMO-Cat Tembok Eksterior 20kg", id: "prod-demo-cat-eksterior", price: 620_000 }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const result = await processTelegramUpdate(
+      textUpdate(140, "Kirim ke Warna Jaya\ncat exterior 20 kilo 10 ember"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.customerId).toBe("cust-demo-warna-jaya");
+    expect(order?.priced.items[0]!.productId).toBe("prod-demo-cat-eksterior");
+    expect(order?.priced.items[0]!.unitPrice).toBe(620_000); // harga master, bukan Rp0
+    expect(order?.priced.items[0]!.unit).toBe("pail"); // ember -> pail
+    expect(order?.priced.items[0]!.quantity).toBe(10);
+    expect(order?.priced.estimatedTotal).toBe(6_200_000);
+  });
+
+  it("46. dua customer BERBEDA sama-sama mengandung kata 'Warna Jaya' setelah perbaikan tokenisasi -> tetap ambigu, DITOLAK, tidak menebak", async () => {
+    const customers = [
+      { name: "DEMO-Toko Warna Jaya Bangunan", id: "cust-warna-jaya-a-46" },
+      { name: "DEMO-Toko Warna Jaya Elektrik", id: "cust-warna-jaya-b-46" },
+    ];
+    const products = [{ name: "Barang Aman 46", id: "prod-aman-46", price: 10000 }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const result = await processTelegramUpdate(
+      textUpdate(141, "Order Warna Jaya:\nBarang Aman 46 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_customer");
+    expect(deps.repository.getEventRecord(141)?.status).toBe("not_order");
+  });
+
+  it("47. word-containment TIDAK menemukan kandidat apa pun bila katalog kanonik company ini kosong (knowledge.products/customers sudah company_id-scoped di knowledge-provider.ts -- produk tenant lain tidak pernah masuk ke sini sama sekali) -> order DITOLAK, bukan menebak dari katalog tenant lain", async () => {
+    const customers = [{ name: "Toko Katalog Kosong 47", id: "cust-kosong-47" }];
+    const deps = makeDeps({
+      ...customerKnowledge(customers),
+      products: [], // meniru: tidak ada produk terdaftar untuk company ini sama sekali
+    });
+    registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
+
+    const result = await processTelegramUpdate(
+      textUpdate(142, "Order Toko Katalog Kosong 47:\ncat exterior 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_product");
+  });
 });

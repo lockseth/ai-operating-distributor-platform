@@ -43,4 +43,40 @@ describe("containsAllWords — word-containment deterministic, bukan fuzzy", () 
   it("identik persis -> match (kasus trivial, tetap dites eksplisit)", () => {
     expect(containsAllWords("Toko Warna Jaya", "Toko Warna Jaya")).toBe(true);
   });
+
+  // ---------------------------------------------------------------------
+  // Remediation UAT SO-2608-0002 -- bukti langsung dari raw_payload hosted:
+  // "Kirim ke Warna Jaya\ncat exterior 20 kilo 10 ember" gagal dipetakan ke
+  // master "DEMO-Toko Warna Jaya Bangunan" / "DEMO-Cat Tembok Eksterior
+  // 20kg" karena tiga bug tokenisasi generik (bukan spesifik data ini).
+  // ---------------------------------------------------------------------
+
+  it("prefix menempel via tanda hubung (mis. 'DEMO-Cat') -> kata pertama tetap terdeteksi terpisah, generik untuk PREFIX APA PUN bukan cuma 'DEMO-'", () => {
+    expect(containsAllWords("cat exterior", "DEMO-Cat Tembok Eksterior 20kg")).toBe(true);
+    // Bukti generik: prefix lain (bukan "demo") juga terpisah, bukan hardcode literal "demo".
+    expect(containsAllWords("cat exterior", "STOK-Cat Tembok Eksterior 20kg")).toBe(true);
+  });
+
+  it("angka menempel dengan satuan (mis. '20kg') -> tetap terpisah jadi kata angka + kata satuan", () => {
+    expect(containsAllWords("cat 20 kg", "Cat Tembok 20kg")).toBe(true);
+  });
+
+  it("ejaan Inggris umum vs ejaan Indonesia baku (exterior/eksterior, x<->ks) -> dianggap kata yang sama, deterministic (bukan fuzzy)", () => {
+    expect(containsAllWords("exterior", "Eksterior")).toBe(true);
+    expect(containsAllWords("index", "Indeks")).toBe(true);
+  });
+
+  it("sinonim satuan generik (kilo->kg) ikut dinormalisasi saat pencocokan kata, bukan hanya saat menentukan field unit final", () => {
+    expect(containsAllWords("20 kilo", "20kg")).toBe(true);
+  });
+
+  it("kombinasi PENUH bug nyata UAT: 'cat exterior 20 kilo' (teks Sales) vs 'DEMO-Cat Tembok Eksterior 20kg' (master) -> match", () => {
+    expect(containsAllWords("cat exterior 20 kilo", "DEMO-Cat Tembok Eksterior 20kg")).toBe(true);
+  });
+
+  it("perbaikan tokenisasi TIDAK melonggarkan uniqueness -- overlap sebagian pada nama berprefix tetap tidak match", () => {
+    // "cat interior" tidak boleh cocok dengan "DEMO-Cat Tembok Eksterior
+    // 20kg" (produk BERBEDA) hanya karena sama-sama diawali "DEMO-Cat".
+    expect(containsAllWords("cat interior", "DEMO-Cat Tembok Eksterior 20kg")).toBe(false);
+  });
 });

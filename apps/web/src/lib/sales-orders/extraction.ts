@@ -21,7 +21,7 @@
 
 import type { ExtractedSalesOrder, ExtractedSalesOrderItem, DiscountType } from "@flowsales/ai";
 import type { KnowledgeContext } from "./types";
-import { normalizeAliasKey, parseIndonesianAmount, parseDecimalNumber } from "./normalize";
+import { normalizeAliasKey, parseIndonesianAmount, parseDecimalNumber, GENERIC_UNIT_SYNONYMS } from "./normalize";
 
 // Grammar dasar bahasa Indonesia untuk order lisan/tulisan sales — generik,
 // bukan pengetahuan spesifik tenant.
@@ -162,20 +162,6 @@ function resolveProductAlias(
   return { name: match.productName, code: match.productCode, ambiguous: false };
 }
 
-// Gate 3E-D4-C7 (Temuan #4): sinonim satuan bahasa Indonesia UMUM (bukan
-// data spesifik tenant, pola sama dengan GENERIC_UNIT_WORDS/parseIndonesianAmount
-// "ribu"/"juta") -- normalisasi deterministic (kamus tetap, bukan
-// similarity score), dipakai HANYA sebagai fallback SETELAH knowledge_unit_
-// aliases spesifik-tenant tidak menemukan kecocokan. Tidak menebak satuan
-// yang tidak dikenali sama sekali -- teks mentah tetap dipertahankan.
-const GENERIC_UNIT_SYNONYMS: Record<string, string> = {
-  kilo: "kg",
-  kilogram: "kg",
-  kilogr: "kg",
-  liter: "ltr",
-  literan: "ltr",
-};
-
 function resolveUnitAlias(unitRaw: string, knowledge: KnowledgeContext): string {
   const key = normalizeAliasKey(unitRaw);
   const match = knowledge.unitAliases.find((a) => normalizeAliasKey(a.aliasText) === key);
@@ -294,6 +280,20 @@ export function extractSalesOrder(rawText: string, knowledge: KnowledgeContext):
       if (marker.deliveryPhrase) deliveryNote = marker.deliveryPhrase;
       nonDeliveryLines.push(marker.remainder);
       continue;
+    }
+    // Gate 3E-D4-C7 remediation (UAT SO-2608-0002): "Kirim ke X" pada BARIS
+    // TERSENDIRI (bukan menyatu dengan item, lihat detectInlineStoreMarker
+    // di atas) sebelumnya HANYA diperlakukan sebagai delivery note murni --
+    // nama toko di dalamnya tidak pernah ditangkap sebagai customer,
+    // sehingga pesan seperti "Kirim ke Warna Jaya\n<item baris lain>"
+    // berakhir customerName=null. KIRIM_KE_INLINE_PATTERN dicoba di SINI
+    // juga (regex yang SAMA, tidak baru) tanpa syarat "remainder harus
+    // terlihat seperti item" -- baris ini tetap diperlakukan sebagai
+    // delivery note APA ADANYA (tidak diubah), hanya SEKALIGUS menyumbang
+    // kandidat customer bila belum ada dari sumber lain.
+    const kirimKeMatch = line.match(KIRIM_KE_INLINE_PATTERN);
+    if (kirimKeMatch && kirimKeMatch[1] && inlineCustomerCandidate === null) {
+      inlineCustomerCandidate = kirimKeMatch[1].trim();
     }
     if (DELIVERY_LINE_PATTERN.test(line)) {
       const withoutKeyword = line.replace(/^kirim\s*/i, "").trim();

@@ -8,14 +8,69 @@ export function normalizeAliasKey(text: string): string {
   return text.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-/** Kata utuh, tanda baca penempel (koma/titik/titik dua/dll) dilepas -- BUKAN pelonggaran ejaan per-huruf. */
+// Gate 3E-D4-C7 (Temuan #4 + remediation UAT SO-2608-0002): sinonim satuan
+// bahasa Indonesia UMUM (bukan data spesifik tenant, pola sama dengan
+// GENERIC_UNIT_WORDS/parseIndonesianAmount "ribu"/"juta") -- normalisasi
+// deterministic (kamus tetap, bukan similarity score). Sumber TUNGGAL,
+// dipakai baik oleh resolveUnitAlias (extraction.ts, hasil akhir field
+// unit) MAUPUN wordSet di bawah (containsAllWords, supaya "20 kilo" pada
+// teks Sales dan "20kg" pada nama kanonik produk dianggap kata yang SAMA
+// saat dibandingkan, bukan hanya saat menentukan unit final).
+export const GENERIC_UNIT_SYNONYMS: Record<string, string> = {
+  kilo: "kg",
+  kilogram: "kg",
+  kilogr: "kg",
+  liter: "ltr",
+  literan: "ltr",
+  // "ember" (wadah/bucket, kosakata umum Indonesia) <-> "pail" (istilah
+  // industri cat/kimia untuk wadah yang sama) -- bukan istilah spesifik
+  // satu tenant/produk, dipakai luas di perdagangan cat/bahan bangunan.
+  ember: "pail",
+};
+
+/**
+ * Gate 3E-D4-C7 remediation (UAT SO-2608-0002): ejaan Indonesia BAKU untuk
+ * kata serapan Latin/Inggris secara KONSISTEN mengganti huruf "x" dengan
+ * "ks" (aturan EYD, bukan per-kata: exterior/eksterior, export/ekspor,
+ * complex/kompleks, taxi/taksi, extra/ekstra, index/indeks -- SEMUA
+ * mengikuti pola yang sama). Deterministic murni (satu aturan huruf,
+ * diterapkan sama ke KEDUA sisi perbandingan) -- BUKAN fuzzy/similarity
+ * score/AI guessing. "DEMO-Cat Tembok Eksterior 20kg" (master) vs "cat
+ * exterior" (ejaan Inggris umum Sales lapangan) hanya cocok setelah aturan
+ * ini diterapkan ke keduanya.
+ */
+function normalizeIndonesianSpelling(word: string): string {
+  return word.replace(/x/g, "ks");
+}
+
+/**
+ * Pisahkan token pada BATAS angka<->huruf (mis. "20kg" -> "20","kg") --
+ * aturan tokenisasi generik (angka dan satuan sering ditulis menempel di
+ * master data), BUKAN pengetahuan spesifik satu produk/tenant.
+ */
+function splitDigitLetterBoundary(word: string): string[] {
+  return word
+    .replace(/([a-z])(\d)/g, "$1 $2")
+    .replace(/(\d)([a-z])/g, "$1 $2")
+    .split(" ")
+    .filter((w) => w.length > 0);
+}
+
+/**
+ * Kata utuh, tanda baca DAN tanda hubung penempel dilepas (mis. "DEMO-Cat"
+ * -> "demo","cat" -- prefix apa pun yang menempel via tanda hubung, bukan
+ * hardcode literal "demo"), angka<->huruf yang menempel dipisah, ejaan
+ * Indonesia/Inggris umum dinormalisasi (lihat normalizeIndonesianSpelling)
+ * -- BUKAN pelonggaran ejaan per-huruf/fuzzy.
+ */
 function wordSet(text: string): Set<string> {
-  return new Set(
-    normalizeAliasKey(text)
-      .split(" ")
-      .map((w) => w.replace(/^[.,:;!?()"'`-]+|[.,:;!?()"'`-]+$/g, ""))
-      .filter((w) => w.length > 0),
-  );
+  const words = normalizeAliasKey(text)
+    .split(/[\s,.:;!?()"'`-]+/)
+    .flatMap((w) => splitDigitLetterBoundary(w))
+    .map((w) => normalizeIndonesianSpelling(w))
+    .filter((w) => w.length > 0)
+    .map((w) => GENERIC_UNIT_SYNONYMS[w] ?? w);
+  return new Set(words);
 }
 
 function isWordSubset(small: Set<string>, big: Set<string>): boolean {
