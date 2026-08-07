@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { calcAchievementPct, calcGap } from "@/lib/sales-reports/summary";
+import { SALES_KPI_CODES } from "@/lib/sales-kpi/types";
+import type { SalesKpiCode } from "@/lib/sales-kpi/types";
 import type {
   ExecutiveContributor,
   ModuleContribution,
@@ -8,6 +10,56 @@ import type {
   ExecutiveInsight,
   ExecutiveAction,
 } from "../types";
+
+// =============================================================================
+// Governed KPI aggregate (tenant-wide, periode ACTIVE) -- satu-satunya source
+// of truth untuk tile CALL/EFFECTIVE_CALL/ORDER_COUNT/REVENUE/NOO (Gate Owner
+// BI-B). Murni fungsi agregasi baris (tanpa I/O) supaya bisa diuji unit tanpa
+// DB -- pola sama dengan sixMonthWindowStart di owner-metrics.ts (Gate Owner
+// BI-A).
+// =============================================================================
+
+export interface GovernedKpiAggregate {
+  target: number;
+  achieved: number;
+  hasTarget: boolean;
+}
+
+interface GovernedKpiTargetRow {
+  target_value: number;
+  kpi_definition: { code: SalesKpiCode } | { code: SalesKpiCode }[] | null;
+}
+
+interface GovernedKpiEventRow {
+  kpi_code: SalesKpiCode;
+  event_type: "CREDITED" | "REVERSED";
+  value: number | string | null;
+}
+
+export function aggregateGovernedKpis(
+  targetRows: GovernedKpiTargetRow[],
+  eventRows: GovernedKpiEventRow[],
+): Record<SalesKpiCode, GovernedKpiAggregate> {
+  const result = Object.fromEntries(
+    SALES_KPI_CODES.map((code) => [code, { target: 0, achieved: 0, hasTarget: false }]),
+  ) as Record<SalesKpiCode, GovernedKpiAggregate>;
+
+  for (const row of targetRows) {
+    const definition = Array.isArray(row.kpi_definition) ? row.kpi_definition[0] : row.kpi_definition;
+    const code = definition?.code;
+    if (!code || !(code in result)) continue;
+    result[code].target += row.target_value;
+    result[code].hasTarget = true;
+  }
+
+  for (const row of eventRows) {
+    if (!(row.kpi_code in result)) continue;
+    const sign = row.event_type === "CREDITED" ? 1 : -1;
+    result[row.kpi_code].achieved += sign * Number(row.value ?? 0);
+  }
+
+  return result;
+}
 
 // =============================================================================
 // Contributor: FlowSales AI
@@ -50,10 +102,12 @@ export const flowsalesContributor: ExecutiveContributor = {
     const day14 = new Date(now.getTime() - 14 * 86400_000);
     const todayIso = isoDate(now);
 
-    // ── Governed KPI REVENUE (sales_kpi_*) -- SATU-SATUNYA source of truth
-    // untuk tile achieved_revenue_month/gap_revenue (Gate 3E-D0-F3). TIDAK
-    // lagi dari sales_reports.target_revenue/achieved_revenue (self-report
-    // aktivitas, bukan KPI Dashboard Owner -- lihat lock decision #2/#6).
+    // ── Governed KPI aggregate tenant-wide, periode ACTIVE (sales_kpi_*) --
+    // SATU-SATUNYA source of truth untuk kelima tile KPI governed:
+    // CALL/EFFECTIVE_CALL/ORDER_COUNT/REVENUE/NOO (Gate Owner BI-B; REVENUE
+    // sendiri sudah governed sejak Gate 3E-D0-F3/Owner BI-A). TIDAK lagi dari
+    // sales_reports.target_*/achieved_* (self-report aktivitas, bukan KPI
+    // Dashboard Owner -- lihat lock decision #2/#6).
     const activePeriodRes = await supabase
       .from("sales_kpi_periods")
       .select("id, start_date, end_date")
@@ -64,49 +118,31 @@ export const flowsalesContributor: ExecutiveContributor = {
       | { id: string; start_date: string; end_date: string }
       | null;
 
-    let governedRevenueTarget = 0;
-    let governedRevenueAchieved = 0;
-    let hasGovernedRevenueTarget = false;
+    let governedKpis = aggregateGovernedKpis([], []);
     if (activePeriod) {
-      const definitionRes = await supabase
-        .from("sales_kpi_definitions")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("code", "REVENUE")
-        .is("superseded_at", null)
-        .maybeSingle();
-      const revenueDefinitionId = (definitionRes.data as { id: string } | null)?.id ?? null;
-
-      if (revenueDefinitionId) {
-        const [targetsRes, eventsRes] = await Promise.all([
-          supabase
-            .from("sales_kpi_targets")
-            .select("target_value")
-            .eq("company_id", companyId)
-            .eq("period_id", activePeriod.id)
-            .eq("kpi_definition_id", revenueDefinitionId)
-            .eq("status", "ACTIVE"),
-          supabase
-            .from("sales_kpi_achievement_events")
-            .select("event_type, value")
-            .eq("company_id", companyId)
-            .eq("kpi_code", "REVENUE")
-            .gte("business_date", activePeriod.start_date)
-            .lte("business_date", activePeriod.end_date),
-        ]);
-        const targetRows = (targetsRes.data ?? []) as { target_value: number }[];
-        const eventRows = (eventsRes.data ?? []) as {
-          event_type: string;
-          value: number | string | null;
-        }[];
-        hasGovernedRevenueTarget = targetRows.length > 0;
-        governedRevenueTarget = targetRows.reduce((s, r) => s + r.target_value, 0);
-        governedRevenueAchieved = eventRows.reduce(
-          (s, r) => s + (r.event_type === "CREDITED" ? 1 : -1) * Number(r.value ?? 0),
-          0,
-        );
-      }
+      const [targetsRes, eventsRes] = await Promise.all([
+        supabase
+          .from("sales_kpi_targets")
+          .select("target_value, kpi_definition:sales_kpi_definitions(code)")
+          .eq("company_id", companyId)
+          .eq("period_id", activePeriod.id)
+          .eq("status", "ACTIVE"),
+        supabase
+          .from("sales_kpi_achievement_events")
+          .select("kpi_code, event_type, value")
+          .eq("company_id", companyId)
+          .gte("business_date", activePeriod.start_date)
+          .lte("business_date", activePeriod.end_date),
+      ]);
+      governedKpis = aggregateGovernedKpis(
+        (targetsRes.data ?? []) as GovernedKpiTargetRow[],
+        (eventsRes.data ?? []) as GovernedKpiEventRow[],
+      );
     }
+
+    const governedRevenueTarget = governedKpis.REVENUE.target;
+    const governedRevenueAchieved = governedKpis.REVENUE.achieved;
+    const hasGovernedRevenueTarget = governedKpis.REVENUE.hasTarget;
     const revenueDataInsufficient = !activePeriod || !hasGovernedRevenueTarget;
     const gapRevenueGoverned = calcGap(governedRevenueTarget, governedRevenueAchieved);
     const pctRevenueGoverned =
@@ -200,16 +236,12 @@ export const flowsalesContributor: ExecutiveContributor = {
       });
     }
 
-    if (reports.length > 0) {
-      health.push({
-        key: "oa_achievement",
-        label: "Pencapaian OA",
-        score: Math.min(100, pctOa),
-        weight: 2,
-        reason: `OA tercapai ${achievedOa} dari target ${targetOa} outlet (${pctOa}%)`,
-        trend: pctOa >= 100 ? "up" : pctOa >= 70 ? "neutral" : "down",
-      });
-    }
+    // OA (sales_reports.target_oa/achieved_oa) SENGAJA TIDAK dimasukkan ke
+    // Business Health Score (Gate Owner BI-B, product decision). OA adalah
+    // self-report legacy, bukan KPI governed -- NOO (sales_kpi_*) adalah KPI
+    // governed untuk akuisisi toko baru dan sudah dihitung di governedKpis.NOO
+    // / tile "noo_period" di bawah. Legacy OA tetap ditampilkan sebagai info
+    // self-report (tile "oa_month"), tapi tidak pernah memengaruhi skor.
 
     if (salesUsers.length > 0) {
       const disciplinePct = Math.round(
@@ -239,6 +271,35 @@ export const flowsalesContributor: ExecutiveContributor = {
       reason: `${orders7} order 7 hari terakhir vs ${ordersPrev7} order 7 hari sebelumnya`,
       trend: orders7 > ordersPrev7 ? "up" : orders7 < ordersPrev7 ? "down" : "neutral",
     });
+
+    // ── KPI governed (CALL/EFFECTIVE_CALL/ORDER_COUNT/NOO) -- REVENUE punya
+    // 3 tile tersendiri di atas (Gate 3E-D0-F3/Owner BI-A), keempat KPI ini
+    // memakai satu bentuk tile ringkas achieved/target + persentase (Gate
+    // Owner BI-B).
+    const countFmt = (n: number) => n.toLocaleString("id-ID");
+    function buildGovernedKpiTile(
+      code: SalesKpiCode,
+      key: string,
+      label: string,
+      targetLabel: string,
+    ): ExecutiveKpi {
+      const g = governedKpis[code];
+      const dataInsufficient = !activePeriod || !g.hasTarget;
+      const pct = g.hasTarget && g.target > 0 ? calcAchievementPct(g.target, g.achieved) : null;
+      return {
+        key,
+        label,
+        value: dataInsufficient ? "Data belum cukup" : `${countFmt(g.achieved)}/${countFmt(g.target)}`,
+        subValue: !activePeriod
+          ? "belum ada periode KPI aktif"
+          : !g.hasTarget
+            ? `${targetLabel} belum ditetapkan di KPI Setup`
+            : `${pct}% pencapaian periode berjalan`,
+        accent: dataInsufficient ? "amber" : pct !== null && pct >= 100 ? "green" : pct !== null && pct >= 70 ? "indigo" : "amber",
+        trend: pct === null ? "neutral" : pct >= 100 ? "up" : pct >= 70 ? "neutral" : "down",
+        trendLabel: pct !== null ? `${pct}% dari target` : "data belum cukup",
+      };
+    }
 
     // ── KPI ──
     const kpis: ExecutiveKpi[] = [
@@ -296,13 +357,27 @@ export const flowsalesContributor: ExecutiveContributor = {
       },
       {
         key: "oa_month",
-        label: "OA Bulan Ini",
+        label: "OA Bulan Ini (Self-Report — Legacy)",
         value: `${achievedOa}/${targetOa}`,
-        subValue: "outlet aktif tercapai vs target",
-        accent: pctOa >= 100 ? "green" : pctOa >= 70 ? "indigo" : "amber",
-        trend: pctOa >= 100 ? "up" : "neutral",
-        trendLabel: `${pctOa}% pencapaian OA`,
+        subValue: "Self-report harian, bukan KPI resmi — lihat NOO Periode KPI Aktif untuk akuisisi toko baru governed",
+        accent: "amber",
+        trend: "neutral",
+        trendLabel: "info self-report, tidak memengaruhi Business Health",
       },
+      buildGovernedKpiTile("CALL", "call_period", "Call Periode KPI Aktif", "target Call"),
+      buildGovernedKpiTile(
+        "EFFECTIVE_CALL",
+        "effective_call_period",
+        "Effective Call Periode KPI Aktif",
+        "target Effective Call",
+      ),
+      buildGovernedKpiTile(
+        "ORDER_COUNT",
+        "order_count_period",
+        "Order Count Periode KPI Aktif",
+        "target Order Count",
+      ),
+      buildGovernedKpiTile("NOO", "noo_period", "NOO Periode KPI Aktif", "target NOO"),
       {
         key: "sales_reported_today",
         label: "Sales Lapor Hari Ini",

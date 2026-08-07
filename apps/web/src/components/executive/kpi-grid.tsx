@@ -5,6 +5,10 @@ import {
   Store,
   ClipboardList,
   ShoppingCart,
+  Phone,
+  PhoneCall,
+  ListOrdered,
+  MapPin,
 } from "lucide-react";
 import { KpiCard } from "@/components/ui/kpi-card";
 import type { ExecutiveKpi } from "@/lib/executive/types";
@@ -18,6 +22,10 @@ const KPI_ICONS: Record<string, React.ReactNode> = {
   achieved_revenue_month: <Activity className="h-4 w-4" />,
   gap_revenue: <Target className="h-4 w-4" />,
   oa_month: <Store className="h-4 w-4" />,
+  call_period: <Phone className="h-4 w-4" />,
+  effective_call_period: <PhoneCall className="h-4 w-4" />,
+  order_count_period: <ListOrdered className="h-4 w-4" />,
+  noo_period: <MapPin className="h-4 w-4" />,
   sales_reported_today: <ClipboardList className="h-4 w-4" />,
   orders_7d: <ShoppingCart className="h-4 w-4" />,
 };
