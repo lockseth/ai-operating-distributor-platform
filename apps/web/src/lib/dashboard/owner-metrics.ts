@@ -82,6 +82,14 @@ const MONTH_LABELS: Record<number, string> = {
   9: "Sep", 10: "Okt", 11: "Nov", 12: "Des",
 };
 
+/**
+ * Awal window rolling 6 bulan (bulan berjalan + 5 bulan sebelumnya), dihitung
+ * deterministik dari `now` -- bukan tanggal kalender tetap (Gate Owner BI-A).
+ */
+export function sixMonthWindowStart(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth() - 5, 1);
+}
+
 function linearForecast(values: number[]): number {
   const n = values.length;
   if (n < 2) return values[0] ?? 0;
@@ -104,7 +112,7 @@ export async function fetchOwnerDashboardData(
   const supabase = await createClient();
 
   const now = new Date();
-  const sixMonthsAgo = new Date("2026-01-01");
+  const sixMonthsAgo = sixMonthWindowStart(now);
   const thirtyDaysAgo = new Date(now);
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const fortyFiveDaysAgo = new Date(now);

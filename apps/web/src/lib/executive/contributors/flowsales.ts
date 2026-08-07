@@ -165,13 +165,10 @@ export const flowsalesContributor: ExecutiveContributor = {
       }[]
     ).filter((u) => u.user_roles?.some((ur) => ur.role?.name === "sales"));
 
-    // ── Agregat bulan berjalan dari laporan harian ──
-    const targetRevenue = reports.reduce((s, r) => s + r.target_revenue, 0);
-    const achievedRevenue = reports.reduce((s, r) => s + r.achieved_revenue, 0);
+    // ── Agregat bulan berjalan dari laporan harian (OA saja -- Revenue
+    //    memakai governedRevenueTarget/Achieved di atas, Gate Owner BI-A) ──
     const targetOa = reports.reduce((s, r) => s + r.target_oa, 0);
     const achievedOa = reports.reduce((s, r) => s + r.achieved_oa, 0);
-    const gapRevenue = calcGap(targetRevenue, achievedRevenue);
-    const pctRevenue = calcAchievementPct(targetRevenue, achievedRevenue);
     const pctOa = calcAchievementPct(targetOa, achievedOa);
 
     // Sisa hari kerja: ambil dari laporan terbaru yang mengisinya
@@ -188,15 +185,22 @@ export const flowsalesContributor: ExecutiveContributor = {
     // ── Health components ──
     const health: HealthComponent[] = [];
 
-    if (reports.length > 0) {
+    // Pencapaian Omzet -- governed KPI REVENUE (sales_kpi_*), bukan lagi
+    // pctRevenue self-report (Gate Owner BI-A). Digerbangi keberadaan target
+    // governed (pctRevenueGoverned !== null), bukan reports.length, supaya
+    // health score tetap benar walau belum ada laporan harian bulan ini.
+    if (pctRevenueGoverned !== null) {
       health.push({
         key: "sales_achievement",
         label: "Pencapaian Omzet",
-        score: Math.min(100, pctRevenue),
+        score: Math.min(100, pctRevenueGoverned),
         weight: 3,
-        reason: `Omzet dilaporkan ${formatIDR(achievedRevenue)} dari target ${formatIDR(targetRevenue)} (${pctRevenue}%)`,
-        trend: pctRevenue >= 100 ? "up" : pctRevenue >= 70 ? "neutral" : "down",
+        reason: `Omzet tercapai ${formatIDR(governedRevenueAchieved)} dari target ${formatIDR(governedRevenueTarget)} (${pctRevenueGoverned}%)`,
+        trend: pctRevenueGoverned >= 100 ? "up" : pctRevenueGoverned >= 70 ? "neutral" : "down",
       });
+    }
+
+    if (reports.length > 0) {
       health.push({
         key: "oa_achievement",
         label: "Pencapaian OA",
@@ -345,34 +349,39 @@ export const flowsalesContributor: ExecutiveContributor = {
         rationale: "Tanpa laporan, target dan gap tidak terpantau",
         href: "/dashboard/reports",
       });
-    } else {
-      if (gapRevenue > 0 && pctRevenue < 70) {
+    }
+
+    // Gap/pencapaian omzet -- governed KPI REVENUE (Gate Owner BI-A), bukan
+    // lagi pctRevenue/gapRevenue self-report. Digerbangi keberadaan target
+    // governed, independen dari reports.length di atas.
+    if (pctRevenueGoverned !== null) {
+      if (gapRevenueGoverned > 0 && pctRevenueGoverned < 70) {
         insights.push({
           module: "flowsales",
           severity: "critical",
-          title: `Pencapaian omzet baru ${pctRevenue}%`,
-          narrative: `Gap omzet ${formatIDR(gapRevenue)} terhadap target bulan ini${latestRemaining > 0 ? `; dengan sisa ${latestRemaining} hari kerja dibutuhkan ±${formatIDR(Math.ceil(gapRevenue / latestRemaining))} per hari` : ""}.`,
+          title: `Pencapaian omzet baru ${pctRevenueGoverned}%`,
+          narrative: `Gap omzet ${formatIDR(gapRevenueGoverned)} terhadap target periode KPI aktif${latestRemaining > 0 ? `; dengan sisa ${latestRemaining} hari kerja dibutuhkan ±${formatIDR(Math.ceil(gapRevenueGoverned / latestRemaining))} per hari` : ""}.`,
         });
         actions.push({
           module: "flowsales",
           priority: "URGENT",
           action: "Review pencapaian sales & susun rencana kejar target",
-          rationale: `Pencapaian ${pctRevenue}%, gap ${formatIDR(gapRevenue)}`,
+          rationale: `Pencapaian ${pctRevenueGoverned}%, gap ${formatIDR(gapRevenueGoverned)}`,
           href: "/dashboard/reports",
         });
-      } else if (gapRevenue > 0) {
+      } else if (gapRevenueGoverned > 0) {
         insights.push({
           module: "flowsales",
           severity: "info",
-          title: `Pencapaian omzet ${pctRevenue}% — on track`,
-          narrative: `Sisa gap ${formatIDR(gapRevenue)}${latestRemaining > 0 ? ` dengan sisa ${latestRemaining} hari kerja` : ""}; ritme saat ini masih memadai.`,
+          title: `Pencapaian omzet ${pctRevenueGoverned}% — on track`,
+          narrative: `Sisa gap ${formatIDR(gapRevenueGoverned)}${latestRemaining > 0 ? ` dengan sisa ${latestRemaining} hari kerja` : ""}; ritme saat ini masih memadai.`,
         });
       } else {
         insights.push({
           module: "flowsales",
           severity: "info",
-          title: "Target omzet bulan ini tercapai",
-          narrative: `Omzet dilaporkan ${formatIDR(achievedRevenue)} melampaui target ${formatIDR(targetRevenue)}.`,
+          title: "Target omzet periode KPI aktif tercapai",
+          narrative: `Omzet tercapai ${formatIDR(governedRevenueAchieved)} melampaui target ${formatIDR(governedRevenueTarget)}.`,
         });
       }
     }
