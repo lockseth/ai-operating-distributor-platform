@@ -39,7 +39,15 @@ export default async function ManagerDashboardPage() {
       .from("sales_orders")
       .select("*", { count: "exact", head: true })
       .eq("company_id", user.company_id)
-      .in("status", ["pending", "confirmed"]),
+      // Gate 3E-D4-C7: 'pending' bukan status yang pernah ada di
+      // sales_orders_status_check (draft/confirmed/processing/delivering/
+      // delivered/invoiced/paid/cancelled/pending_owner_approval) -- filter
+      // lama tidak pernah cocok baris apa pun, sehingga draft (termasuk
+      // draft Telegram menunggu KONFIRMASI Sales) TIDAK PERNAH terhitung di
+      // sini. 'draft' adalah status yang benar untuk "Perlu konfirmasi" --
+      // sengaja TIDAK termasuk 'pending_owner_approval' (itu menunggu Owner,
+      // bukan Sales -- kontrak berbeda, tidak boleh disamakan).
+      .eq("status", "draft"),
   ]);
 
   return (

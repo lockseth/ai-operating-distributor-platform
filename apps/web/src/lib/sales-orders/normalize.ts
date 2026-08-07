@@ -8,6 +8,43 @@ export function normalizeAliasKey(text: string): string {
   return text.toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+/** Kata utuh, tanda baca penempel (koma/titik/titik dua/dll) dilepas -- BUKAN pelonggaran ejaan per-huruf. */
+function wordSet(text: string): Set<string> {
+  return new Set(
+    normalizeAliasKey(text)
+      .split(" ")
+      .map((w) => w.replace(/^[.,:;!?()"'`-]+|[.,:;!?()"'`-]+$/g, ""))
+      .filter((w) => w.length > 0),
+  );
+}
+
+function isWordSubset(small: Set<string>, big: Set<string>): boolean {
+  for (const w of small) {
+    if (!big.has(w)) return false;
+  }
+  return true;
+}
+
+/**
+ * Gate 3E-D4-C7 (Temuan #4 -- field-language parsing): TRUE bila kata-kata
+ * `a` adalah SUBSET dari kata-kata `b` ATAU sebaliknya (urutan/posisi bebas,
+ * tanda baca penempel diabaikan) -- bukan substring berurutan, bukan
+ * similarity score/typo-tolerant. Dua arah SENGAJA didukung: sales sering
+ * menyingkat ("Warna Jaya" utk "Toko Warna Jaya Bangunan" -- teks lebih
+ * PENDEK dari master) tapi kadang juga menambah konteks ("Toko Baru, repeat
+ * order" -- teks lebih PANJANG dari master "Toko Baru"). Deterministic
+ * murni -- dipakai HANYA sebagai fallback SAAT exact alias-match gagal (0
+ * kandidat). Uniqueness (hanya boleh resolve bila SATU kandidat berbeda)
+ * WAJIB tetap diperiksa terpisah oleh pemanggil (resolveUnique) -- fungsi
+ * ini hanya predikat kecocokan per-kandidat, bukan pemilih kandidat.
+ */
+export function containsAllWords(a: string, b: string): boolean {
+  const wordsA = wordSet(a);
+  const wordsB = wordSet(b);
+  if (wordsA.size === 0 || wordsB.size === 0) return false;
+  return isWordSubset(wordsA, wordsB) || isWordSubset(wordsB, wordsA);
+}
+
 /**
  * Parse angka Rupiah dalam gaya penulisan bebas orang Indonesia:
  * "450000", "450.000", "450,000", "450 ribu", "1.5 juta", "Rp450rb", dst.

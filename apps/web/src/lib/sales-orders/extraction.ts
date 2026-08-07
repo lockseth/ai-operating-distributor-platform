@@ -162,10 +162,25 @@ function resolveProductAlias(
   return { name: match.productName, code: match.productCode, ambiguous: false };
 }
 
+// Gate 3E-D4-C7 (Temuan #4): sinonim satuan bahasa Indonesia UMUM (bukan
+// data spesifik tenant, pola sama dengan GENERIC_UNIT_WORDS/parseIndonesianAmount
+// "ribu"/"juta") -- normalisasi deterministic (kamus tetap, bukan
+// similarity score), dipakai HANYA sebagai fallback SETELAH knowledge_unit_
+// aliases spesifik-tenant tidak menemukan kecocokan. Tidak menebak satuan
+// yang tidak dikenali sama sekali -- teks mentah tetap dipertahankan.
+const GENERIC_UNIT_SYNONYMS: Record<string, string> = {
+  kilo: "kg",
+  kilogram: "kg",
+  kilogr: "kg",
+  liter: "ltr",
+  literan: "ltr",
+};
+
 function resolveUnitAlias(unitRaw: string, knowledge: KnowledgeContext): string {
   const key = normalizeAliasKey(unitRaw);
   const match = knowledge.unitAliases.find((a) => normalizeAliasKey(a.aliasText) === key);
-  return match ? match.canonicalUnit : unitRaw.trim();
+  if (match) return match.canonicalUnit;
+  return GENERIC_UNIT_SYNONYMS[key] ?? unitRaw.trim();
 }
 
 function parseItemLine(

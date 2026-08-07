@@ -69,10 +69,94 @@ function textUpdate(
   };
 }
 
+/**
+ * Gate 3E-D4-C7: sejak harga master WAJIB (product_id harus resolve ke satu
+ * produk aktif berharga > 0, lihat pricing.ts/repository.ts), sebagian besar
+ * skenario "draft_created" di bawah butuh alias + harga master di-seed --
+ * bukan lagi cukup teks bebas seperti sebelum gate ini. Helper ini
+ * menghasilkan productAliases (aliasText = nama persis di pesan, supaya
+ * matched) + products (katalog kanonik/harga master) untuk di-spread ke
+ * makeDeps(seed).
+ */
+function productKnowledge(
+  entries: { name: string; id: string; price: number; active?: boolean }[],
+): Pick<KnowledgeContext, "productAliases" | "products"> {
+  return {
+    productAliases: entries.map((e) => ({
+      aliasText: e.name,
+      productId: e.id,
+      productName: e.name,
+      productCode: null,
+      updatedAt: "2026-01-01T00:00:00Z",
+    })),
+    products: entries.map((e) => ({
+      productId: e.id,
+      productName: e.name,
+      productCode: null,
+      price: e.price,
+      isActive: e.active ?? true,
+    })),
+  };
+}
+
+/**
+ * Gate 3E-D4-C7 (Temuan #4): sejak customer text yang tidak resolve ke satu
+ * customer pasti kini DITOLAK (invalid_customer, zero writes -- lihat
+ * repository.ts/migration 20260929000001), skenario "draft_created" yang
+ * MENYEBUTKAN nama toko butuh alias + katalog kanonik customer di-seed juga
+ * -- pasangan productKnowledge di atas.
+ */
+function customerKnowledge(
+  entries: { name: string; id: string; active?: boolean }[],
+): Pick<KnowledgeContext, "customerAliases" | "customers"> {
+  return {
+    customerAliases: entries.map((e) => ({
+      aliasText: e.name,
+      customerId: e.id,
+      customerName: e.name,
+      customerCode: null,
+      updatedAt: "2026-01-01T00:00:00Z",
+    })),
+    customers: entries.map((e) => ({
+      customerId: e.id,
+      customerName: e.name,
+      customerCode: null,
+      isActive: e.active ?? true,
+    })),
+  };
+}
+
+/** Gate 3E-D4-C7 (Temuan #4): seed sisi repository.customers (validasi tenant/aktif) -- lihat customerKnowledge di atas untuk sisi alias/katalog Knowledge Pack. */
+function seedCustomers(
+  repository: InMemorySalesOrderRepository,
+  entries: { name: string; id: string; active?: boolean; companyId?: string }[],
+): void {
+  for (const e of entries) {
+    repository.seedCustomer(e.id, { companyId: e.companyId ?? COMPANY_ID, isActive: e.active ?? true });
+  }
+}
+
+/** Gate 3E-D4-C7: seed sisi repository.products (validasi tenant/aktif/harga) -- lihat productKnowledge di atas untuk sisi alias/harga Knowledge Pack. */
+function seedProducts(
+  repository: InMemorySalesOrderRepository,
+  entries: { name: string; id: string; price: number; active?: boolean; companyId?: string }[],
+): void {
+  for (const e of entries) {
+    repository.seedProduct(e.id, { companyId: e.companyId ?? COMPANY_ID, isActive: e.active ?? true, price: e.price });
+  }
+}
+
 describe("Telegram Sales Order workflow", () => {
   it("1. pesan order lengkap -> draft dibuat, total & diskon terhitung benar", async () => {
-    const deps = makeDeps();
+    const products = [
+      { name: "Cat Mawar Putih", id: "prod-cat-mawar", price: 450_000 },
+      { name: "Thinner Super", id: "prod-thinner", price: 175_000 },
+    ];
+    const customers = [{ name: "Toko Sinar Jaya", id: "cust-sinar-jaya-1" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = [
       "Order Toko Sinar Jaya:",
       "Cat Mawar Putih 20 dus harga 450 ribu diskon 5%",
@@ -100,8 +184,10 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("2. order tanpa nama toko -> customer.name null, item tetap terekstrak", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Cat Mawar Putih", id: "prod-cat-mawar-2", price: 450_000 }];
+    const deps = makeDeps(productKnowledge(products));
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
     const text = "Cat Mawar Putih 5 dus harga 450 ribu";
 
     const result = await processTelegramUpdate(textUpdate(2, text), deps);
@@ -116,8 +202,16 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("3. produk lebih dari satu -> semua item terekstrak dengan urutan benar", async () => {
-    const deps = makeDeps();
+    const products = [
+      { name: "Produk A", id: "prod-a-3", price: 10000 },
+      { name: "Produk B", id: "prod-b-3", price: 20000 },
+      { name: "Produk C", id: "prod-c-3", price: 30000 },
+    ];
+    const customers = [{ name: "Toko Multi", id: "cust-multi-3" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = [
       "Order Toko Multi:",
       "Produk A 3 dus harga 10000",
@@ -142,8 +236,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("4. diskon persen dihitung benar", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang X", id: "prod-x-4", price: 100000 }];
+    const customers = [{ name: "Toko D", id: "cust-d-4" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko D:\nBarang X 10 dus harga 100000 diskon 10%";
 
     const result = await processTelegramUpdate(textUpdate(4, text), deps);
@@ -158,8 +256,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("5. diskon nominal dihitung benar", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang Y", id: "prod-y-5", price: 100000 }];
+    const customers = [{ name: "Toko E", id: "cust-e-5" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko E:\nBarang Y 10 dus harga 100000 potongan 50000";
 
     const result = await processTelegramUpdate(textUpdate(5, text), deps);
@@ -212,8 +314,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("8. duplicate update_id -> tidak diproses ulang, tidak ada pesan baru", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang Z", id: "prod-z-8", price: 10000 }];
+    const customers = [{ name: "Toko F", id: "cust-f-8" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko F:\nBarang Z 2 dus harga 10000";
 
     const first = await processTelegramUpdate(textUpdate(8, text), deps);
@@ -226,8 +332,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("9. KONFIRMASI berulang tidak membuat transaksi ganda", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang W", id: "prod-w-9", price: 50000 }];
+    const customers = [{ name: "Toko G", id: "cust-g-9" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const created = await processTelegramUpdate(
       textUpdate(9, "Order Toko G:\nBarang W 1 dus harga 50000"),
       deps,
@@ -274,8 +384,20 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("11. UBAH lalu koreksi -> draft yang sama diperbarui + knowledge_candidate tersimpan (pending)", async () => {
-    const deps = makeDeps();
+    // Gate 3E-D4-C7: "MW Putih" sekarang WAJIB resolve ke produk aktif
+    // berharga valid juga (bukan lagi fallback raw-text yang diizinkan
+    // Gate 3E-B) -- di-seed sebagai alias produk BERBEDA dari "Cat Mawar
+    // Putih" supaya submitDiffAsCandidates (before/after productName beda)
+    // tetap teruji apa adanya, hanya tanpa mengandalkan unmatched product.
+    const products = [
+      { name: "MW Putih", id: "prod-mw-putih-11", price: 450_000 },
+      { name: "Cat Mawar Putih", id: "prod-cat-mawar-11", price: 450_000 },
+    ];
+    const customers = [{ name: "Toko H", id: "cust-h-11" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
 
     const created = await processTelegramUpdate(
       textUpdate(30, "Order Toko H:\nMW Putih 20 ds harga 450 ribu"),
@@ -315,7 +437,11 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("12. diskon melebihi discount policy -> discount_exception true, requires_discount_review true", async () => {
+    const products = [{ name: "Barang V", id: "prod-v-12", price: 100000 }];
+    const customers = [{ name: "Toko I", id: "cust-i-12" }];
     const deps = makeDeps({
+      ...productKnowledge(products),
+      ...customerKnowledge(customers),
       discountPolicies: [
         {
           scope: "global",
@@ -328,6 +454,8 @@ describe("Telegram Sales Order workflow", () => {
       ],
     });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
 
     const result = await processTelegramUpdate(
       textUpdate(40, "Order Toko I:\nBarang V 5 dus harga 100000 diskon 20%"),
@@ -343,8 +471,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("13. diskon tanpa discount policy sama sekali -> requires_discount_review true, TANPA limit yang diarang", async () => {
-    const deps = makeDeps(); // tidak ada discount policy sama sekali
+    const products = [{ name: "Barang U", id: "prod-u-13", price: 100000 }];
+    const customers = [{ name: "Toko J", id: "cust-j-13" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) }); // tidak ada discount policy sama sekali
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
 
     const result = await processTelegramUpdate(
       textUpdate(41, "Order Toko J:\nBarang U 5 dus harga 100000 diskon 3%"),
@@ -391,8 +523,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("15. order source terdeteksi dari teks dan tersimpan pada draft (WA)", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Sabun Cuci", id: "prod-sabun-15", price: 60_000 }];
+    const customers = [{ name: "Toko Melati", id: "cust-melati-15" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = [
       "Order Toko Melati, dari WA toko:",
       "Sabun Cuci 5 dus harga 60 ribu",
@@ -407,8 +543,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("16. order source default OTHER ketika tidak ada penanda, order tetap dibuat (tidak ditolak)", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Gula", id: "prod-gula-16", price: 250_000 }];
+    const customers = [{ name: "Toko Abadi", id: "cust-abadi-16" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko Abadi:\nGula 10 dus harga 250 ribu";
 
     const result = await processTelegramUpdate(textUpdate(16, text), deps);
@@ -421,8 +561,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("17. UBAH lalu koreksi -> order source ikut diperbarui sesuai teks koreksi terbaru", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Sapu", id: "prod-sapu-17", price: 20_000 }];
+    const customers = [{ name: "Toko Baru", id: "cust-baru-17" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
 
     const first = await processTelegramUpdate(
       textUpdate(17, "Order Toko Baru:\nSapu 3 pcs harga 20 ribu"),
@@ -447,7 +591,17 @@ describe("Telegram Sales Order workflow", () => {
   // ---------------------------------------------------------------------
 
   it("18. dua sales berbeda -> masing-masing membuat order sendiri, tidak saling menyamar", async () => {
-    const deps = makeDeps();
+    const products = [
+      { name: "Barang A", id: "prod-a-18", price: 10000 },
+      { name: "Barang B", id: "prod-b-18", price: 20000 },
+    ];
+    const customers = [
+      { name: "Toko Satu", id: "cust-satu-18" },
+      { name: "Toko Dua", id: "cust-dua-18" },
+    ];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const CHAT_ID_2 = 2002;
     registerSales(deps.repository, CHAT_ID); // sales 1
     deps.repository.seedIdentity(CHAT_ID_2, {
@@ -483,8 +637,14 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("19. quantity ilegal (0) -> order ditolak, tidak ada draft tersimpan", async () => {
-    const deps = makeDeps();
+    // Produk WAJIB tetap resolve valid (Gate 3E-D4-C7) supaya penolakan yang
+    // teruji di sini murni karena quantity, bukan tertutup oleh invalid_product.
+    const products = [{ name: "Barang Kosong", id: "prod-kosong-19", price: 10000 }];
+    const customers = [{ name: "Toko Nol", id: "cust-nol-19" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     // "0 dus" berhasil di-parse regex (bukan missing field) tapi ilegal secara bisnis.
     const text = "Order Toko Nol:\nBarang Kosong 0 dus harga 10000";
 
@@ -550,6 +710,7 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("22. produk dikenali tapi nonaktif -> order ditolak", async () => {
+    const customers = [{ name: "Toko E", id: "cust-e-22" }];
     const deps = makeDeps({
       productAliases: [
         {
@@ -560,8 +721,10 @@ describe("Telegram Sales Order workflow", () => {
           updatedAt: "2026-01-01T00:00:00Z",
         },
       ],
+      ...customerKnowledge(customers),
     });
     registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
     deps.repository.seedProduct("product-inactive", { companyId: COMPANY_ID, isActive: false });
 
     const result = await processTelegramUpdate(
@@ -574,6 +737,7 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("23. produk dikenali tapi milik tenant lain -> order ditolak", async () => {
+    const customers = [{ name: "Toko F", id: "cust-f-23" }];
     const deps = makeDeps({
       productAliases: [
         {
@@ -584,8 +748,10 @@ describe("Telegram Sales Order workflow", () => {
           updatedAt: "2026-01-01T00:00:00Z",
         },
       ],
+      ...customerKnowledge(customers),
     });
     registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
     deps.repository.seedProduct("product-foreign", { companyId: "company-OTHER", isActive: true });
 
     const result = await processTelegramUpdate(
@@ -631,8 +797,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("26. respons sukses menyebut nomor order, toko, ringkasan item, total, dan status review", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang Utuh", id: "prod-utuh-26", price: 50000 }];
+    const customers = [{ name: "Toko Lengkap", id: "cust-lengkap-26" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko Lengkap:\nBarang Utuh 3 dus harga 50000 diskon 3%";
 
     const result = await processTelegramUpdate(textUpdate(67, text), deps);
@@ -651,49 +821,50 @@ describe("Telegram Sales Order workflow", () => {
   // Gate Parser Telegram P0 — idempotency hardening, ambiguitas, fail-closed.
   // ---------------------------------------------------------------------
 
-  it("27. toko ambigu (dua customer nama sama persis) -> draft TETAP dibuat, customerId null, TIDAK memilih kandidat pertama, balasan berisi peringatan", async () => {
+  it("27. toko ambigu (dua customer nama sama persis) -> customerId null -> Gate 3E-D4-C7 Temuan #4: order DITOLAK (invalid_customer, zero writes) -- kontrak baru tidak lagi mengizinkan customer tidak cocok tepat satu lolos sebagai draft", async () => {
+    const products = [{ name: "Barang S", id: "prod-s-27", price: 10000 }];
     const deps = makeDeps({
+      ...productKnowledge(products),
       customerAliases: [
         { aliasText: "toko kembar-a", customerId: "cust-a", customerName: "Toko Kembar", customerCode: "CA", updatedAt: "2026-01-01T00:00:00Z" },
         { aliasText: "toko kembar-b", customerId: "cust-b", customerName: "Toko Kembar", customerCode: "CB", updatedAt: "2026-01-01T00:00:00Z" },
       ],
     });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
 
     const result = await processTelegramUpdate(
       textUpdate(110, "Order Toko Kembar:\nBarang S 1 dus harga 10000"),
       deps,
     );
-    expect(result.outcome).toBe("draft_created");
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
-
-    const order = await deps.repository.getOrder(result.orderId);
-    expect(order?.priced.customerId).toBeNull();
-    expect(order?.priced.customerAmbiguous).toBe(true);
-    expect(order?.priced.customerName).toBe("Toko Kembar"); // teks mentah tetap ditampilkan
-    expect(deps.sender.sent[0]!.text).toContain("lebih dari satu toko");
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_customer");
+    expect(deps.repository.getEventRecord(110)?.status).toBe("not_order");
+    // Balasan meminta klarifikasi (nama lebih spesifik), bukan sekadar "tidak dikenali" generik.
+    expect(deps.sender.sent[0]!.text).toContain("lebih spesifik");
   });
 
-  it("28. produk ambigu (dua produk nama sama persis) -> draft TETAP dibuat, productId null, TIDAK memilih kandidat pertama, balasan berisi peringatan", async () => {
+  it("28. produk ambigu (dua produk nama sama persis) -> productId null -> Gate 3E-D4-C7: order DITOLAK (invalid_product, zero writes) -- kontrak harga baru tidak lagi mengizinkan produk tidak cocok tepat satu lolos sebagai draft", async () => {
+    const customers = [{ name: "Toko T", id: "cust-t-28" }];
     const deps = makeDeps({
       productAliases: [
         { aliasText: "cat kembar-a", productId: "prod-a", productName: "Cat Kembar", productCode: "PA", updatedAt: "2026-01-01T00:00:00Z" },
         { aliasText: "cat kembar-b", productId: "prod-b", productName: "Cat Kembar", productCode: "PB", updatedAt: "2026-01-01T00:00:00Z" },
       ],
+      ...customerKnowledge(customers),
     });
     registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
 
     const result = await processTelegramUpdate(
       textUpdate(111, "Order Toko T:\nCat Kembar 2 dus harga 10000"),
       deps,
     );
-    expect(result.outcome).toBe("draft_created");
-    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
-
-    const order = await deps.repository.getOrder(result.orderId);
-    expect(order?.priced.items[0]!.productId).toBeNull();
-    expect(order?.priced.items[0]!.productAmbiguous).toBe(true);
-    expect(deps.sender.sent[0]!.text).toContain("lebih dari satu produk");
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_product");
+    expect(deps.repository.getEventRecord(111)?.status).toBe("not_order");
   });
 
   it("29. duplicate concurrent (race) pada insertEvent -> request kedua ditolak di level 'DB' (unique constraint), bukan diam-diam menimpa event pertama", async () => {
@@ -735,8 +906,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("30. update_id sama dengan payload BERBEDA -> ditolak sebagai conflict (fail-closed), raw_payload asli TIDAK berubah, tidak ada order kedua", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang Q", id: "prod-q-30", price: 10000 }];
+    const customers = [{ name: "Toko K", id: "cust-k-30" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
 
     const first = await processTelegramUpdate(
       textUpdate(80, "Order Toko K:\nBarang Q 1 dus harga 10000"),
@@ -794,8 +969,12 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("32. pesan asli tersimpan byte-for-byte meski mengandung emoji/karakter khusus/typo", async () => {
-    const deps = makeDeps();
+    const products = [{ name: "Barang Ünïcödé — typo ringgan", id: "prod-emoji-32", price: 10000 }];
+    const customers = [{ name: "Toko Emoji 🎉😀", id: "cust-emoji-32" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
     const text = "Order Toko Emoji 🎉😀:\nBarang Ünïcödé — typo ringgan 2 dus harga 10000";
 
     const result = await processTelegramUpdate(textUpdate(100, text), deps);
@@ -811,7 +990,9 @@ describe("Telegram Sales Order workflow", () => {
   // ---------------------------------------------------------------------
 
   it("33. toko dikenali dan milik Sales pemesan sendiri -> draft dibuat, attribution = Sales pemesan", async () => {
+    const products = [{ name: "Barang A", id: "prod-a-33", price: 10000 }];
     const deps = makeDeps({
+      ...productKnowledge(products),
       customerAliases: [
         {
           aliasText: "toko milik sendiri",
@@ -823,6 +1004,7 @@ describe("Telegram Sales Order workflow", () => {
       ],
     });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
     deps.repository.seedCustomer("cust-own", {
       companyId: COMPANY_ID,
       isActive: true,
@@ -877,7 +1059,9 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("35. toko dikenali tapi BELUM ter-attribute (assignedSalesId kosong) -> draft tetap dibuat (kontrak existing, bukan self-claim)", async () => {
+    const products = [{ name: "Barang C", id: "prod-c-35", price: 10000 }];
     const deps = makeDeps({
+      ...productKnowledge(products),
       customerAliases: [
         {
           aliasText: "toko belum ada sales",
@@ -889,6 +1073,7 @@ describe("Telegram Sales Order workflow", () => {
       ],
     });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
     deps.repository.seedCustomer("cust-unassigned", { companyId: COMPANY_ID, isActive: true });
 
     const result = await processTelegramUpdate(
@@ -902,7 +1087,9 @@ describe("Telegram Sales Order workflow", () => {
   });
 
   it("36. UBAH lalu koreksi mengarah ke toko milik Sales lain -> koreksi ditolak, draft ASLI tidak berubah (tidak ada mutasi parsial)", async () => {
+    const products = [{ name: "Barang D", id: "prod-d-36", price: 10000 }];
     const deps = makeDeps({
+      ...productKnowledge(products),
       customerAliases: [
         {
           aliasText: "toko lama",
@@ -921,6 +1108,7 @@ describe("Telegram Sales Order workflow", () => {
       ],
     });
     registerSales(deps.repository);
+    seedProducts(deps.repository, products);
     deps.repository.seedCustomer("cust-mine", {
       companyId: COMPANY_ID,
       isActive: true,
@@ -952,5 +1140,206 @@ describe("Telegram Sales Order workflow", () => {
     // Draft asli tidak berubah -- masih menunjuk toko semula, bukan toko yang ditolak.
     const order = await deps.repository.getOrder(created.orderId);
     expect(order?.priced.customerId).toBe("cust-mine");
+  });
+
+  // ---------------------------------------------------------------------
+  // Gate 3E-D4-C7 -- Command KONFIRMASI toleran typo tunggal (bukti langsung
+  // raw_payload SO-2608-0001, hosted mcbwgvtkhykrrtvbpeys: Salma mengetik
+  // "Konfimasi", huruf 'r' hilang, GAGAL dikenali dan jatuh ke parser order
+  // sebelum fix ini).
+  // ---------------------------------------------------------------------
+
+  it("37. draft menunggu konfirmasi + typo tunggal 'Konfimasi' (huruf hilang) -> TETAP dikenali sebagai KONFIRMASI, order confirmed, tidak diteruskan ke parser order", async () => {
+    const products = [{ name: "Barang Typo", id: "prod-typo-37", price: 10000 }];
+    const customers = [{ name: "Toko Typo", id: "cust-typo-37" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const created = await processTelegramUpdate(
+      textUpdate(120, "Order Toko Typo:\nBarang Typo 1 dus harga 10000"),
+      deps,
+    );
+    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    // Reproduksi PERSIS input asli Salma (bukan skenario yang dikarang).
+    const result = await processTelegramUpdate(textUpdate(121, "Konfimasi"), deps);
+    expect(result.outcome).toBe("confirmed");
+    if (result.outcome !== "confirmed") throw new Error("unexpected outcome");
+    expect(result.orderId).toBe(created.orderId);
+
+    const order = await deps.repository.getOrder(created.orderId);
+    expect(order?.status).toBe("confirmed");
+    // Command TIDAK PERNAH masuk parser order -- tidak ada draft/order baru
+    // tercipta akibat "Konfimasi", event ditandai processed (bukan not_order).
+    expect(deps.repository.getEventRecord(121)?.status).toBe("processed");
+  });
+
+  it("38. retry command typo yang sama ('Konfimasi' dua kali) -> idempotent, tidak ada efek KPI/order ganda", async () => {
+    const products = [{ name: "Barang Typo Dua", id: "prod-typo-38", price: 10000 }];
+    const customers = [{ name: "Toko Typo Dua", id: "cust-typo-38" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const created = await processTelegramUpdate(
+      textUpdate(122, "Order Toko Typo Dua:\nBarang Typo Dua 1 dus harga 10000"),
+      deps,
+    );
+    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const first = await processTelegramUpdate(textUpdate(123, "Konfimasi"), deps);
+    expect(first.outcome).toBe("confirmed");
+    if (first.outcome !== "confirmed") throw new Error("unexpected outcome");
+    expect(first.alreadyConfirmed).toBe(false);
+
+    const second = await processTelegramUpdate(textUpdate(124, "Konfimasi"), deps);
+    expect(second.outcome).toBe("confirmed");
+    if (second.outcome !== "confirmed") throw new Error("unexpected outcome");
+    expect(second.alreadyConfirmed).toBe(true);
+    expect(second.orderId).toBe(first.orderId);
+  });
+
+  it("39. toleransi typo TIDAK menyebabkan teks order baru yang mirip pendek salah dikenali sebagai KONFIRMASI (batas blast-radius: panjang teks jauh berbeda dari 10 huruf 'KONFIRMASI')", async () => {
+    const products = [{ name: "Barang Aman", id: "prod-aman-39", price: 10000 }];
+    const customers = [{ name: "Toko Aman", id: "cust-aman-39" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const created = await processTelegramUpdate(
+      textUpdate(125, "Order Toko Aman:\nBarang Aman 1 dus harga 10000"),
+      deps,
+    );
+    if (created.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    // Pesan pendek TIDAK NYAMBUNG dengan "KONFIRMASI" (beda total, bukan
+    // sekadar satu huruf hilang) -- harus tetap diperlakukan sebagai upaya
+    // order baru (draft lama tidak berubah), bukan disalahartikan konfirmasi.
+    const result = await processTelegramUpdate(textUpdate(126, "oke siap"), deps);
+    expect(result.outcome).not.toBe("confirmed");
+
+    const order = await deps.repository.getOrder(created.orderId);
+    expect(order?.status).toBe("draft"); // draft asli TIDAK ikut ter-konfirmasi
+  });
+
+  // ---------------------------------------------------------------------
+  // Gate 3E-D4-C7 Temuan #4 -- field-language parsing: variasi bahasa
+  // lapangan Sales dipetakan via word-containment (bukan exact alias),
+  // HANYA jika hasilnya unik; ambigu/tidak ditemukan -> zero writes.
+  // ---------------------------------------------------------------------
+
+  it("40. customer disingkat ('Warna Jaya' utk 'Toko Warna Jaya Bangunan') TANPA alias terpublikasi -> resolve via katalog kanonik langsung, draft dibuat dengan customerId yang benar", async () => {
+    const products = [{ name: "Cat tembok exterior 20 kg", id: "prod-cat-ext-40", price: 125_000 }];
+    const deps = makeDeps({
+      ...productKnowledge(products),
+      // SENGAJA tanpa customerAliases -- membuktikan fallback bekerja dari
+      // katalog kanonik customers langsung, bukan hanya via alias terpublikasi.
+      customers: [{ customerId: "cust-warna-jaya-40", customerName: "Toko Warna Jaya Bangunan", customerCode: null, isActive: true }],
+    });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    deps.repository.seedCustomer("cust-warna-jaya-40", { companyId: COMPANY_ID, isActive: true });
+
+    const result = await processTelegramUpdate(
+      textUpdate(130, "Order Warna Jaya:\nCat tembok exterior 20 kg 10 pail"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.customerId).toBe("cust-warna-jaya-40");
+    expect(order?.priced.items[0]!.productId).toBe("prod-cat-ext-40");
+    expect(order?.priced.items[0]!.unitPrice).toBe(125_000); // harga master, bukan 0
+  });
+
+  it("41. product name disingkat ('cat exterior' utk 'Cat Tembok Exterior 20 Kg') TANPA alias -> resolve via katalog kanonik, harga master benar (bukan Rp0)", async () => {
+    const customers = [{ name: "Toko Cat Jaya", id: "cust-catjaya-41" }];
+    const deps = makeDeps({
+      ...customerKnowledge(customers),
+      products: [{ productId: "prod-ext-41", productName: "Cat Tembok Exterior 20 Kg", productCode: null, price: 130_000, isActive: true }],
+    });
+    registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
+    deps.repository.seedProduct("prod-ext-41", { companyId: COMPANY_ID, isActive: true, price: 130_000 });
+
+    const result = await processTelegramUpdate(
+      textUpdate(131, "Order Toko Cat Jaya:\ncat exterior 10 pail"),
+      deps,
+    );
+    expect(result.outcome).toBe("draft_created");
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.items[0]!.productId).toBe("prod-ext-41");
+    expect(order?.priced.items[0]!.unitPrice).toBe(130_000);
+    expect(order?.priced.estimatedTotal).toBe(1_300_000); // 10 x 130.000, BUKAN Rp0
+  });
+
+  it("42. product name via word-containment cocok LEBIH DARI SATU produk kanonik -> ambigu, order DITOLAK (invalid_product), TIDAK menebak salah satu", async () => {
+    const customers = [{ name: "Toko Cat Ganda", id: "cust-catganda-42" }];
+    const deps = makeDeps({
+      ...customerKnowledge(customers),
+      products: [
+        { productId: "prod-ext-red-42", productName: "Cat Tembok Exterior Merah", productCode: null, price: 130_000, isActive: true },
+        { productId: "prod-ext-blue-42", productName: "Cat Tembok Exterior Biru", productCode: null, price: 130_000, isActive: true },
+      ],
+    });
+    registerSales(deps.repository);
+    seedCustomers(deps.repository, customers);
+    deps.repository.seedProduct("prod-ext-red-42", { companyId: COMPANY_ID, isActive: true, price: 130_000 });
+    deps.repository.seedProduct("prod-ext-blue-42", { companyId: COMPANY_ID, isActive: true, price: 130_000 });
+
+    const result = await processTelegramUpdate(
+      textUpdate(132, "Order Toko Cat Ganda:\ncat tembok exterior 10 pail"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_product");
+    expect(deps.repository.getEventRecord(132)?.status).toBe("not_order");
+  });
+
+  it("43. customer sama sekali TIDAK ditemukan di katalog manapun (bukan exact, bukan containment) -> order DITOLAK, zero writes, balasan meminta klarifikasi", async () => {
+    const products = [{ name: "Barang Aneka", id: "prod-aneka-43", price: 10000 }];
+    const deps = makeDeps({
+      ...productKnowledge(products),
+      customers: [{ customerId: "cust-lain-43", customerName: "Toko Sama Sekali Berbeda", customerCode: null, isActive: true }],
+    });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    deps.repository.seedCustomer("cust-lain-43", { companyId: COMPANY_ID, isActive: true });
+
+    const result = await processTelegramUpdate(
+      textUpdate(133, "Order Toko Antah Berantah:\nBarang Aneka 1 dus harga 10000"),
+      deps,
+    );
+    expect(result.outcome).toBe("order_rejected");
+    if (result.outcome !== "order_rejected") throw new Error("unexpected outcome");
+    expect(result.reason).toBe("invalid_customer");
+    expect(deps.repository.getEventRecord(133)?.status).toBe("not_order");
+    expect(deps.sender.sent[0]!.text).toContain("lebih spesifik");
+  });
+
+  it("44. satuan sinonim umum ('kilo') dinormalisasi ke bentuk kanonik ('kg') tanpa perlu alias tenant", async () => {
+    const products = [{ name: "Beras Premium", id: "prod-beras-44", price: 15_000 }];
+    const customers = [{ name: "Toko Sembako Jaya", id: "cust-sembako-44" }];
+    const deps = makeDeps({ ...productKnowledge(products), ...customerKnowledge(customers) });
+    registerSales(deps.repository);
+    seedProducts(deps.repository, products);
+    seedCustomers(deps.repository, customers);
+
+    const result = await processTelegramUpdate(
+      textUpdate(134, "Order Toko Sembako Jaya:\nBeras Premium 20 kilo harga 15000"),
+      deps,
+    );
+    if (result.outcome !== "draft_created") throw new Error("unexpected outcome");
+
+    const order = await deps.repository.getOrder(result.orderId);
+    expect(order?.priced.items[0]!.unit).toBe("kg");
   });
 });

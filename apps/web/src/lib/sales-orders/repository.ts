@@ -677,6 +677,8 @@ interface InMemoryMasterRow {
   isActive: boolean;
   /** Gate 3E-D3-A: null/undefined = toko belum ter-attribute (diizinkan). */
   assignedSalesId?: string | null;
+  /** Gate 3E-D4-C7: harga master (products.price) -- hanya relevan untuk seedProduct. */
+  price?: number;
 }
 
 export class InMemorySalesOrderRepository implements SalesOrderTelegramRepository {
@@ -748,10 +750,14 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
 
   /**
    * Mirror validasi create_draft_sales_order_atomic/update_draft_sales_order_atomic
-   * (migration 20260908000001_gate_3e_b_order_intake_validation.sql) supaya
-   * skenario DoD Gate 3E-B bisa diuji tanpa Supabase hidup. customerId/productId
-   * NULL (tidak ter-match Knowledge Pack) sengaja TIDAK divalidasi -- fallback
-   * raw-text tetap diterima & direview manusia (lihat pricing.ts/knowledge-provider.ts).
+   * (terakhir: migration 20260929000001_gate_3e_d4_c7_telegram_draft_master_
+   * price_enforcement.sql) supaya skenario DoD Gate 3E-B/3E-D4-C7 bisa diuji
+   * tanpa Supabase hidup. customerName NULL (tidak ada teks toko sama sekali
+   * di pesan) TETAP diizinkan lolos dengan customerId null (kontrak existing,
+   * bukan bagian gate ini) -- tapi customerName ADA sedangkan customerId
+   * TIDAK resolve (NOT_FOUND/ambigu) sekarang DITOLAK (Gate 3E-D4-C7 Temuan
+   * #4) -- fallback raw-text HANYA untuk kasus "toko belum disebutkan sama
+   * sekali", bukan lagi "toko disebutkan tapi tidak dikenali".
    */
   private validateDraftInput(companyId: string, priced: PricedOrder, actingSalesId: string): void {
     if (priced.customerId !== null) {
@@ -764,13 +770,24 @@ export class InMemorySalesOrderRepository implements SalesOrderTelegramRepositor
       if (c.assignedSalesId != null && c.assignedSalesId !== actingSalesId) {
         throw new DraftOrderRejectedError("customer_not_owned", "customer owned by another sales");
       }
+    } else if (priced.customerName !== null) {
+      throw new DraftOrderRejectedError("invalid_customer", "customer text not resolved");
     }
     for (const item of priced.items) {
-      if (item.productId !== null) {
-        const p = this.products.get(item.productId);
-        if (!p || p.companyId !== companyId || !p.isActive) {
-          throw new DraftOrderRejectedError("invalid_product", "invalid product");
-        }
+      // Gate 3E-D4-C7: mirror create_draft_sales_order_atomic/update_draft_
+      // sales_order_atomic (migration 20260929000001) -- product_id WAJIB
+      // non-null, aktif, tenant benar, DAN punya harga master > 0. Berbeda
+      // dari sebelumnya (Gate 3E-B): productId null (NOT_FOUND/ambigu) TIDAK
+      // LAGI diizinkan lolos sebagai fallback raw-text untuk order Telegram.
+      const p = item.productId !== null ? this.products.get(item.productId) : undefined;
+      if (
+        item.productId === null ||
+        !p ||
+        p.companyId !== companyId ||
+        !p.isActive ||
+        !(typeof p.price === "number" && p.price > 0)
+      ) {
+        throw new DraftOrderRejectedError("invalid_product", "invalid product");
       }
       if (!(item.quantity > 0)) {
         throw new DraftOrderRejectedError("invalid_quantity", "invalid quantity");

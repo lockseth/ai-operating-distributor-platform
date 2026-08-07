@@ -17,6 +17,8 @@ import type {
   CustomerAliasKnowledge,
   UnitAliasKnowledge,
   DiscountPolicyKnowledge,
+  ProductMasterKnowledge,
+  CustomerMasterKnowledge,
 } from "./types";
 
 export interface KnowledgeProvider {
@@ -43,6 +45,8 @@ function emptyContext(companyId: string): KnowledgeContext {
     customerAliases: [],
     unitAliases: [],
     discountPolicies: [],
+    products: [],
+    customers: [],
     knowledgeVersion: "v0-empty",
   };
 }
@@ -81,28 +85,37 @@ export class SupabaseKnowledgeProvider implements KnowledgeProvider {
   constructor(private readonly supabase: SupabaseClient) {}
 
   async getContext(companyId: string): Promise<KnowledgeContext> {
-    const [productsRes, customersRes, unitsRes, policiesRes] = await Promise.all([
-      this.supabase
-        .from("knowledge_product_aliases")
-        .select("alias_text, updated_at, product:products!product_id(id, name, sku)")
-        .eq("company_id", companyId)
-        .eq("is_active", true),
-      this.supabase
-        .from("knowledge_customer_aliases")
-        .select("alias_text, updated_at, customer:customers!customer_id(id, name, code)")
-        .eq("company_id", companyId)
-        .eq("is_active", true),
-      this.supabase
-        .from("knowledge_unit_aliases")
-        .select("alias_text, canonical_unit, updated_at")
-        .eq("company_id", companyId)
-        .eq("is_active", true),
-      this.supabase
-        .from("knowledge_discount_policies")
-        .select("scope, product_id, customer_id, max_percentage, max_nominal, updated_at")
-        .eq("company_id", companyId)
-        .eq("is_active", true),
-    ]);
+    const [productsRes, customersRes, unitsRes, policiesRes, masterProductsRes, masterCustomersRes] =
+      await Promise.all([
+        this.supabase
+          .from("knowledge_product_aliases")
+          .select("alias_text, updated_at, product:products!product_id(id, name, sku)")
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+        this.supabase
+          .from("knowledge_customer_aliases")
+          .select("alias_text, updated_at, customer:customers!customer_id(id, name, code)")
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+        this.supabase
+          .from("knowledge_unit_aliases")
+          .select("alias_text, canonical_unit, updated_at")
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+        this.supabase
+          .from("knowledge_discount_policies")
+          .select("scope, product_id, customer_id, max_percentage, max_nominal, updated_at")
+          .eq("company_id", companyId)
+          .eq("is_active", true),
+        // Gate 3E-D4-C7: katalog KANONIK produk langsung dari products,
+        // TERPISAH dari query alias di atas (produk bisa punya nol alias
+        // sama sekali) -- sumber harga master DAN fallback word-containment
+        // (Temuan #4 -- lihat pricing.ts) saat alias exact-match gagal.
+        this.supabase.from("products").select("id, name, sku, price, is_active").eq("company_id", companyId),
+        // Gate 3E-D4-C7 (Temuan #4): katalog KANONIK customer, pasangan
+        // query produk di atas -- fallback word-containment customer.
+        this.supabase.from("customers").select("id, name, code, is_active").eq("company_id", companyId),
+      ]);
 
     const productAliases: ProductAliasKnowledge[] = (
       (productsRes.data ?? []) as unknown as {
@@ -158,12 +171,33 @@ export class SupabaseKnowledgeProvider implements KnowledgeProvider {
       updatedAt: r.updated_at,
     }));
 
+    const products: ProductMasterKnowledge[] = (
+      (masterProductsRes.data ?? []) as unknown as {
+        id: string;
+        name: string;
+        sku: string;
+        price: number;
+        is_active: boolean;
+      }[]
+    ).map((r) => ({ productId: r.id, productName: r.name, productCode: r.sku, price: r.price, isActive: r.is_active }));
+
+    const customers: CustomerMasterKnowledge[] = (
+      (masterCustomersRes.data ?? []) as unknown as {
+        id: string;
+        name: string;
+        code: string;
+        is_active: boolean;
+      }[]
+    ).map((r) => ({ customerId: r.id, customerName: r.name, customerCode: r.code, isActive: r.is_active }));
+
     return {
       companyId,
       productAliases,
       customerAliases,
       unitAliases,
       discountPolicies,
+      products,
+      customers,
       knowledgeVersion: computeKnowledgeVersion({ productAliases, customerAliases, unitAliases, discountPolicies }),
     };
   }
@@ -207,6 +241,8 @@ export class InMemoryKnowledgeProvider implements KnowledgeProvider {
       customerAliases: this.seed.customerAliases ?? base.customerAliases,
       unitAliases: this.seed.unitAliases ?? base.unitAliases,
       discountPolicies: this.seed.discountPolicies ?? base.discountPolicies,
+      products: this.seed.products ?? base.products,
+      customers: this.seed.customers ?? base.customers,
       knowledgeVersion: "",
     };
     merged.knowledgeVersion = computeKnowledgeVersion(merged);

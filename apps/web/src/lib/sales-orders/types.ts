@@ -36,6 +36,38 @@ export interface DiscountPolicyKnowledge {
   updatedAt: string;
 }
 
+/**
+ * Gate 3E-D4-C7: katalog KANONIK produk (langsung dari tabel products,
+ * TERPISAH dari ProductAliasKnowledge yang hanya memuat produk yang SUDAH
+ * punya alias terpublikasi) -- dipakai pricing.ts untuk dua hal: (1) harga
+ * master (MENGGANTIKAN, bukan menambah, harga hasil parsing teks Telegram
+ * -- RPC create_draft_sales_order_atomic/update_draft_sales_order_atomic
+ * tetap sumber otoritatif sebenarnya, ini hanya supaya ringkasan draft yang
+ * ditampilkan ke sales SUDAH benar sebelum RPC dipanggil), dan (2) fallback
+ * pencocokan word-containment (lihat normalize.ts:containsAllWords) SAAT
+ * alias exact-match gagal -- produk TANPA alias terpublikasi pun tetap bisa
+ * dipetakan dari variasi bahasa lapangan, bukan hanya via alias manual.
+ */
+export interface ProductMasterKnowledge {
+  productId: string;
+  productName: string;
+  productCode: string | null;
+  price: number;
+  isActive: boolean;
+}
+
+/**
+ * Gate 3E-D4-C7: katalog KANONIK customer (langsung dari tabel customers) --
+ * pasangan CustomerAliasKnowledge, dipakai pricing.ts sebagai fallback
+ * word-containment SAAT alias exact-match gagal. Lihat ProductMasterKnowledge.
+ */
+export interface CustomerMasterKnowledge {
+  customerId: string;
+  customerName: string;
+  customerCode: string | null;
+  isActive: boolean;
+}
+
 /** Snapshot Knowledge Pack aktif satu company — dipakai sekali per ekstraksi. */
 export interface KnowledgeContext {
   companyId: string;
@@ -43,6 +75,10 @@ export interface KnowledgeContext {
   customerAliases: CustomerAliasKnowledge[];
   unitAliases: UnitAliasKnowledge[];
   discountPolicies: DiscountPolicyKnowledge[];
+  /** Gate 3E-D4-C7: katalog kanonik produk -- lihat ProductMasterKnowledge. */
+  products: ProductMasterKnowledge[];
+  /** Gate 3E-D4-C7: katalog kanonik customer -- lihat CustomerMasterKnowledge. */
+  customers: CustomerMasterKnowledge[];
   /** String teraudit: dipakai untuk sales_orders.knowledge_version. */
   knowledgeVersion: string;
 }

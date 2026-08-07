@@ -101,7 +101,7 @@ export function buildOrderRejectedReply(
   code: "invalid_customer" | "customer_not_owned" | "invalid_product" | "invalid_quantity" | "forbidden",
 ): string {
   if (code === "invalid_customer") {
-    return "Toko yang dikenali dari pesan ini tidak aktif atau bukan bagian dari tenant Anda. Order tidak disimpan — mohon periksa kembali nama toko atau hubungi admin/owner.";
+    return "Nama toko pada pesan ini belum bisa dipastikan (tidak ditemukan, cocok dengan lebih dari satu toko terdaftar, tidak aktif, atau bukan bagian dari tenant Anda). Order tidak disimpan — mohon sebutkan nama toko yang lebih spesifik/lengkap, atau hubungi admin/owner.";
   }
   if (code === "customer_not_owned") {
     return "Toko ini terdaftar milik Sales lain. Order tidak disimpan — mohon hubungi admin/owner untuk konfirmasi kepemilikan toko ini.";

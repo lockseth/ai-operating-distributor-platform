@@ -255,7 +255,11 @@ describeIfDb("Gate 3E-D3-B: Telegram draft missing_fields JSONB fix (DB-backed, 
 
     const { data: row } = await service.from("sales_orders").select("missing_fields, final_amount").eq("id", orderId).single();
     expect((row as { missing_fields: unknown[] }).missing_fields).toEqual([]);
-    expect(Number((row as { final_amount: number }).final_amount)).toBe(10000);
+    // Gate 3E-D4-C7: p_items=[] -> final_amount direkomputasi server-side dari
+    // sales_order_items (0, bukan lagi p_final_amount=10000 dari client) --
+    // assersi ini tetap membuktikan hal yang sama (update spoof tidak mengubah
+    // apa pun), hanya nilai baseline-nya sekarang 0 (item kosong), bukan 10000.
+    expect(Number((row as { final_amount: number }).final_amount)).toBe(0);
   });
 
   it("9. draft lengkap TANPA missing fields (NULL dan array kosong) -> tidak ada regresi", async () => {

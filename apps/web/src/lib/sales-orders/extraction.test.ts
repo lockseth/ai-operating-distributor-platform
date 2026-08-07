@@ -15,6 +15,8 @@ function knowledge(overrides: Partial<KnowledgeContext> = {}): KnowledgeContext 
     customerAliases: [],
     unitAliases: [],
     discountPolicies: [],
+    products: [],
+    customers: [],
     knowledgeVersion: "v0-empty",
     ...overrides,
   };

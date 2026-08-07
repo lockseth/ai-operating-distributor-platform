@@ -90,6 +90,40 @@ function mergeAmbiguityMissingFields(extractedMissingFields: string[], priced: P
 const CONFIRM_KEYWORD = "KONFIRMASI";
 const CHANGE_KEYWORD = "UBAH";
 
+/**
+ * Gate 3E-D4-C7: bukti langsung (raw_payload SO-2608-0001, hosted
+ * mcbwgvtkhykrrtvbpeys) menunjukkan Sales mengetik "Konfimasi" (satu huruf
+ * hilang) saat draft sedang menunggu konfirmasi -- exact-match sebelumnya
+ * (trim+uppercase saja) menolaknya sehingga jatuh ke parser order. Toleransi
+ * typo tunggal generik (bukan pengecualian Salma) lewat Levenshtein
+ * distance<=1 terhadap "KONFIRMASI" -- 10 huruf cukup unik sehingga jarak<=1
+ * TIDAK PERNAH kebetulan cocok dengan teks order asli (order text jauh lebih
+ * panjang/berbeda struktur). Sengaja HANYA diterapkan pada perbandingan
+ * KONFIRMASI di alur "sedang menunggu konfirmasi" (bukan CHANGE_KEYWORD yang
+ * pendek/berisiko false-positive, dan bukan standalone "tanpa pending draft"
+ * check) -- lihat pemakaian di bawah.
+ */
+function levenshteinDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp: number[][] = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i++) dp[i]![0] = i;
+  for (let j = 0; j < cols; j++) dp[0]![j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      dp[i]![j] =
+        a[i - 1] === b[j - 1]
+          ? dp[i - 1]![j - 1]!
+          : 1 + Math.min(dp[i - 1]![j]!, dp[i]![j - 1]!, dp[i - 1]![j - 1]!);
+    }
+  }
+  return dp[rows - 1]![cols - 1]!;
+}
+
+function isConfirmCommand(normalizedText: string): boolean {
+  return levenshteinDistance(normalizedText, CONFIRM_KEYWORD) <= 1;
+}
+
 export async function processTelegramUpdate(
   update: TelegramUpdate,
   deps: WorkflowDeps,
@@ -288,7 +322,7 @@ export async function processTelegramUpdate(
 
   // --- Sales sedang diminta KONFIRMASI/UBAH atas draft yang sudah ada ---
   if (conversation.awaiting === "confirmation" && conversation.pendingOrderId) {
-    if (normalizedText === CONFIRM_KEYWORD) {
+    if (isConfirmCommand(normalizedText)) {
       const { order, alreadyConfirmed } = await deps.repository.confirmOrder(
         conversation.pendingOrderId,
         identity.companyId,
