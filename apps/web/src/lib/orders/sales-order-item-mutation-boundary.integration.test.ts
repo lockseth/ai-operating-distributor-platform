@@ -555,7 +555,15 @@ describeIfDb("Gate 3E-D4-B1: sales_order_items mutation boundary (DB-backed, Pos
           p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: raceOrder.orderId,
           p_customer_id: customerId, p_sales_id: authIds.sales1, p_notes: "race update", p_delivery_date: null,
           p_discount_amount: 0,
-          p_items: [{ product_id: productId, quantity: 7, unit_price: 777, discount_amount: 0, total_amount: 5439, notes: null }],
+          // Gate 3E-D6-A: unit_price DIJAGA SAMA DENGAN products.price (master,
+          // lihat createDraftOrder/productId di atas -- price: 10000) supaya
+          // test ini murni menguji lock/atomicity race update-vs-confirm,
+          // BUKAN special-price enforcement (di luar concern test ini -- angka
+          // race sebelumnya, 777, kebetulan < master TANPA policy sehingga
+          // confirm_sales_order_atomic SEKARANG benar menolaknya sebagai harga
+          // khusus tak disetujui bila update menang race, unrelated dengan
+          // invariant lock yang diuji test ini).
+          p_items: [{ product_id: productId, quantity: 7, unit_price: 10000, discount_amount: 0, total_amount: 70000, notes: null }],
         }),
         service.rpc("confirm_sales_order_atomic", {
           p_company_id: companyId, p_actor_id: authIds.sales1, p_order_id: raceOrder.orderId, p_payment_terms_days: null,
@@ -574,7 +582,7 @@ describeIfDb("Gate 3E-D4-B1: sales_order_items mutation boundary (DB-backed, Pos
       const outcome = (updateResult.data ?? [])[0]?.result_outcome;
       expect(["updated", "invalid_status"]).toContain(outcome);
       if (outcome === "updated") {
-        expect(finalSnapshot).toEqual([{ unit_price: 777, quantity: 7 }]);
+        expect(finalSnapshot).toEqual([{ unit_price: 10000, quantity: 7 }]);
       } else {
         expect(finalSnapshot).toEqual(originalSnapshot);
       }
