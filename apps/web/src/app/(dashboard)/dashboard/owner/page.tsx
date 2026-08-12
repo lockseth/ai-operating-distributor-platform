@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { getExecutiveOverview } from "@/lib/executive/service";
-import { getMonthlySalesPerformance } from "@/lib/sales-reports/queries";
+import { getOwnerSalesKpiPerformance } from "@/lib/dashboard/owner-sales-kpi-performance";
 import { fetchOwnerDashboardData } from "@/lib/dashboard/owner-metrics";
 import { BriefingCard } from "@/components/executive/briefing-card";
 import { ActionsCard } from "@/components/executive/actions-card";
@@ -77,14 +77,13 @@ export default async function ExecutiveIntelligencePage() {
     redirect("/dashboard");
   }
 
-  const [overview, salesPerformance, data] = await Promise.all([
+  const [overview, salesKpiPerformance, data] = await Promise.all([
     getExecutiveOverview(user.company_id),
-    getMonthlySalesPerformance(user.company_id),
+    getOwnerSalesKpiPerformance(user.company_id),
     fetchOwnerDashboardData(user.company_id),
   ]);
 
   const tone = RING_TONE[overview.health.tone];
-  const monthLabel = new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const orderColumns = [
     {
@@ -239,7 +238,11 @@ export default async function ExecutiveIntelligencePage() {
       {/* PERFORMA SALES + ORDER TERBARU                       */}
       {/* ════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <SalesPerformanceCard performance={salesPerformance} monthLabel={monthLabel} />
+        <SalesPerformanceCard
+          rows={salesKpiPerformance.rows}
+          periodActive={salesKpiPerformance.periodActive}
+          periodName={salesKpiPerformance.periodName}
+        />
         <ChartCard
           title="Order Terbaru"
           description="10 transaksi terakhir"
