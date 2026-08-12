@@ -205,7 +205,6 @@ export const flowsalesContributor: ExecutiveContributor = {
     //    memakai governedRevenueTarget/Achieved di atas, Gate Owner BI-A) ──
     const targetOa = reports.reduce((s, r) => s + r.target_oa, 0);
     const achievedOa = reports.reduce((s, r) => s + r.achieved_oa, 0);
-    const pctOa = calcAchievementPct(targetOa, achievedOa);
 
     // Sisa hari kerja: ambil dari laporan terbaru yang mengisinya
     const latestRemaining =
