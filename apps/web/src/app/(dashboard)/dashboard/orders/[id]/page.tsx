@@ -15,6 +15,8 @@ import type { OrderStatus } from "@/lib/orders/actions";
 import { ORDER_SOURCE_LABEL, type OrderSource } from "@/lib/sales-orders/order-source";
 import { DisputeReviewPanel, type DisputeRequestView } from "@/components/order-disputes/dispute-review-panel";
 import type { ContactSource, OrderStage, Resolution } from "@/lib/order-disputes/types";
+import { SpecialPriceProposalPanel, type ExistingSpecialPriceProposal } from "@/components/orders/special-price-proposal-panel";
+import { hasRole } from "@/lib/auth/permissions";
 import {
   ChevronLeft, Edit2, Plus, ShoppingCart, User, Calendar,
   Package, FileText,
@@ -43,7 +45,7 @@ interface OrderItem {
   total_amount: number;
   notes: string | null;
   product_name_raw: string | null;
-  product: { name: string; sku: string; unit: string } | null;
+  product: { name: string; sku: string; unit: string; price: number } | null;
 }
 
 interface Order {
@@ -64,7 +66,7 @@ interface Order {
   customer_name_raw: string | null;
   requires_discount_review: boolean | null;
   customer: { id: string; name: string; code: string; phone: string | null; area: string | null } | null;
-  sales:    { full_name: string } | null;
+  sales:    { id: string; full_name: string } | null;
   creator:  { full_name: string } | null;
   items:    OrderItem[];
 }
@@ -86,9 +88,9 @@ export default async function OrderDetailPage({
     .select(`
       *,
       customer:customers!customer_id(id, name, code, phone, area),
-      sales:users!sales_id(full_name),
+      sales:users!sales_id(id, full_name),
       creator:users!created_by(full_name),
-      items:sales_order_items(id, quantity, unit_price, discount_amount, total_amount, notes, product_name_raw, product:products!product_id(name, sku, unit))
+      items:sales_order_items(id, quantity, unit_price, discount_amount, total_amount, notes, product_name_raw, product:products!product_id(name, sku, unit, price))
     `)
     .eq("id", id)
     .eq("company_id", user.company_id)
@@ -185,6 +187,36 @@ export default async function OrderDetailPage({
     reviewedByName: r.reviewed_by_user?.full_name ?? null,
     reviewedAt: r.reviewed_at,
   }));
+
+  // --- Gate 3E-D6-B: Special Price Proposal (murni UI di atas RPC LOCKED
+  // Gate 3E-D4-C2/C3) --- RLS spar_select mengizinkan Sales melihat proposal
+  // order miliknya sendiri (requested_by = auth.uid() OR order.sales_id =
+  // auth.uid()); company_id difilter eksplisit sebagai defense-in-depth,
+  // pola identik disputeRows di atas.
+  const canProposeSpecialPrice =
+    hasRole(user.roles, "sales") &&
+    order.sales?.id === user.id &&
+    order.status === "draft";
+
+  const { data: proposalRow } = await supabase
+    .from("special_price_approval_requests")
+    .select("status, proposal_version, reason, requested_at, decision_reason, decided_at")
+    .eq("company_id", user.company_id)
+    .eq("sales_order_id", order.id)
+    .order("proposal_version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const latestSpecialPriceProposal: ExistingSpecialPriceProposal | null = proposalRow
+    ? {
+        status: (proposalRow as { status: "PENDING" | "APPROVED" | "REJECTED" }).status,
+        proposalVersion: (proposalRow as { proposal_version: number }).proposal_version,
+        reason: (proposalRow as { reason: string | null }).reason,
+        requestedAt: (proposalRow as { requested_at: string }).requested_at,
+        decisionReason: (proposalRow as { decision_reason: string | null }).decision_reason,
+        decidedAt: (proposalRow as { decided_at: string | null }).decided_at,
+      }
+    : null;
 
   let availableDrivers: { id: string; full_name: string }[] = [];
   if (!delivery && order.status === "confirmed" && canManageDelivery) {
@@ -351,7 +383,12 @@ export default async function OrderDetailPage({
                 <td className="px-4 py-3 text-right text-gray-700">
                   {item.quantity.toLocaleString("id-ID")} {item.product?.unit}
                 </td>
-                <td className="px-4 py-3 text-right text-gray-700">{formatIDR(item.unit_price)}</td>
+                <td className="px-4 py-3 text-right text-gray-700">
+                  {formatIDR(item.unit_price)}
+                  {item.product && item.unit_price < item.product.price && (
+                    <p className="text-xs text-amber-600">di bawah harga master ({formatIDR(item.product.price)})</p>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-right text-gray-500">
                   {item.discount_amount > 0 ? formatIDR(item.discount_amount) : "—"}
                 </td>
@@ -387,6 +424,19 @@ export default async function OrderDetailPage({
         salesOrderId={order.id}
         canReview={canReviewDisputes}
         currentUserId={user.id}
+      />
+
+      {/* Special Price Proposal — Gate 3E-D6-B */}
+      <SpecialPriceProposalPanel
+        orderId={order.id}
+        items={order.items.map((item) => ({
+          id: item.id,
+          productLabel: item.product?.name ?? item.product_name_raw ?? "—",
+          unitPrice: item.unit_price,
+          masterPrice: item.product?.price ?? null,
+        }))}
+        canPropose={canProposeSpecialPrice}
+        latestProposal={latestSpecialPriceProposal}
       />
 
       {/* Notes */}
