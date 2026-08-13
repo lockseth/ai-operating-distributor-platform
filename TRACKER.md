@@ -33,9 +33,9 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-13 |
 | Branch | `main` |
-| HEAD | `60e2d9e` — feat(sales-orders): add special price proposal UI (Gate 3E-D6-B) |
+| HEAD | `78b7e76` — docs: add project tracker (== `origin/main`, sudah dipush, fast-forward, ahead/behind 0/0) |
 | Status Phase 3 | **BLOCKED (partial recovery)** — audit closeout 2026-08-12 menemukan 2 gap P0 (lihat Backlog); 1 dari 2 sudah ditutup (Gate 3E-D6-A), sisanya sebagian ditutup (Gate 3E-D6-B: sisi Sales; sisi Owner masih kosong) |
-| Deployment | **Local-only.** Belum ada mutasi hosted terverifikasi sejak audit Phase 3. `.env.local` → Supabase lokal (`127.0.0.1`); `.env.demo.local` → project hosted `AODP-Waluyo-Demo` (tidak disentuh rutin) |
+| Deployment | **Local-only untuk aplikasi/Supabase.** Belum ada mutasi hosted (Supabase) terverifikasi sejak audit Phase 3. Git repo (`origin/main` di GitHub) sudah in sync s.d. `78b7e76` — ini bukan hosted app deployment. `.env.local` → Supabase lokal (`127.0.0.1`); `.env.demo.local` → project hosted `AODP-Waluyo-Demo` (tidak disentuh rutin) |
 | Full LOCK Phase 3 | Belum — menunggu Owner Approval Inbox UI (lihat P0 di bawah) + keputusan Founder atas gap P1/P2 |
 
 ---
@@ -109,7 +109,8 @@ Sumber: `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md` §15–16
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
-| 2026-08-13 | Gate 3E-D6-B (`60e2d9e`) | UI Sales "Ajukan Harga Khusus" di `/dashboard/orders/[id]`, memanggil RPC existing `submit_special_price_proposal_atomic` (session-scoped client, auth.uid()-only). Verifikasi browser end-to-end: submit → status `pending_owner_approval`, badge & panel status tampil benar, tombol hilang saat PENDING, Owner tidak melihat tombol approve/reject. | **PASS** (menutup sebagian P0 #2 — sisi Owner masih kosong) |
+| 2026-08-13 | Closeout Gate 3E-D6-B (`60e2d9e` + `78b7e76`, push fast-forward ke `origin/main`) | Audit ulang commit (scope/security/authority boundary/test 22/22/lint) + audit stacked commit `78b7e76` (TRACKER.md, documentation-only, tidak overclaim status) → push `ff74a2e..78b7e76` fast-forward, `HEAD == origin/main`, ahead/behind 0/0, protected WIP byte-identical. | **OFFICIALLY LOCKED** |
+| 2026-08-13 | Gate 3E-D6-B (`60e2d9e`) | UI Sales "Ajukan Harga Khusus" di `/dashboard/orders/[id]`, memanggil RPC existing `submit_special_price_proposal_atomic` (session-scoped client, auth.uid()-only). Verifikasi browser end-to-end: submit → status `pending_owner_approval`, badge & panel status tampil benar, tombol hilang saat PENDING, Owner tidak melihat tombol approve/reject. | PASS (local) — closeout/lock lihat baris di atas |
 | 2026-08-12 | Gate 3E-D6-A (`ff74a2e`) | `confirm_sales_order_atomic` sekarang selalu re-evaluasi harga item saat ini vs master price/kebijakan diskon sebelum izinkan `confirmed`, menutup kasus "tidak pernah mengajukan proposal" dan "approval partial-coverage". RLS `sales_orders` menutup direct-write ke `confirmed`. | **PASS** (menutup P0 #1) |
 | 2026-08-12 | Audit closeout Phase 3 (`b8051e8`) | Full audit read-only + 1 skenario UAT lokal live-reproduce. Ditemukan 2 gap P0 (lihat Backlog), 8 gap P1/P2. `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md`. | **BLOCKED** |
 | 2026-08-12 | Gate Owner BI-E (`b1b396e`) | Hapus dead code `pctOa` dari kontributor FlowSales dashboard. | PASS |
