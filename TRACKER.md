@@ -31,12 +31,12 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-13 |
+| Tanggal update terakhir | 2026-08-14 |
 | Branch | `main` |
-| HEAD | `78b7e76` — docs: add project tracker (== `origin/main`, sudah dipush, fast-forward, ahead/behind 0/0) |
-| Status Phase 3 | **BLOCKED (partial recovery)** — audit closeout 2026-08-12 menemukan 2 gap P0 (lihat Backlog); 1 dari 2 sudah ditutup (Gate 3E-D6-A), sisanya sebagian ditutup (Gate 3E-D6-B: sisi Sales; sisi Owner masih kosong) |
-| Deployment | **Local-only untuk aplikasi/Supabase.** Belum ada mutasi hosted (Supabase) terverifikasi sejak audit Phase 3. Git repo (`origin/main` di GitHub) sudah in sync s.d. `78b7e76` — ini bukan hosted app deployment. `.env.local` → Supabase lokal (`127.0.0.1`); `.env.demo.local` → project hosted `AODP-Waluyo-Demo` (tidak disentuh rutin) |
-| Full LOCK Phase 3 | Belum — menunggu Owner Approval Inbox UI (lihat P0 di bawah) + keputusan Founder atas gap P1/P2 |
+| HEAD | (lihat commit closeout dokumentasi ini — `== origin/main`, fast-forward, ahead/behind 0/0) |
+| Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
+| Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `465a26f` (mengandung Gate 3E-D6-A `ff74a2e` + 3E-D6-B `60e2d9e`), dikonfirmasi hosted. Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
+| Full LOCK Phase 3 | **Sudah** — lihat closeout final. Owner Approval Inbox UI TETAP belum ada (bukan blocker Phase 3, gate baru terpisah untuk next workstream) |
 
 ---
 
@@ -46,7 +46,7 @@ Rujukan: `docs/product/01_PRD.md` §5, `docs/product/modules/*.md`.
 
 | Modul | Status | Catatan |
 |---|---|---|
-| **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Gap terbuka: approval harga khusus (lihat Backlog P0) |
+| **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Enforcement harga khusus LOCKED & hosted-verified (Gate 3E-D6-A/B); Owner Approval Inbox UI masih next workstream (lihat Backlog) |
 | **FlowSales AI** (laporan sales, KPI, AI Dispatch Planner, Telegram Sales Order Entry, AI Insights) | Matang, aktif dikembangkan | Gate 3E-D4/D5, Owner BI A–E |
 | **Collection Intelligence** | Diimplementasikan sebagai bagian Finance Operations Workspace | `/dashboard/collection` redirect ke `/dashboard/finance/collection` (Gate 2I.x) |
 | **Business Guard AI** (Risk Alert) | **Belum diimplementasi** — UI "Segera Hadir" | `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx` |
@@ -58,46 +58,56 @@ Rujukan: `docs/product/01_PRD.md` §5, `docs/product/modules/*.md`.
 ## Backlog & Gap Diketahui
 
 Sumber: `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md` §15–16
-(audit 2026-08-12), diperbarui dengan progres pasca-audit.
+(audit 2026-08-12) + `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`
+(closeout final 2026-08-14). **Phase 3 sudah LOCKED** — daftar di bawah ini
+sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 
-### P0 — blocking full LOCK Phase 3
+### Next workstream (di luar Phase 3, tidak blocking)
 
-1. ~~Web order create/update RPC tidak validasi `unit_price` terhadap
-   `products.price`/`knowledge_discount_policies`~~ — **DITUTUP** Gate
-   3E-D6-A (`ff74a2e`). `confirm_sales_order_atomic` sekarang selalu
-   re-evaluasi item saat ini terhadap formula harga master/kebijakan diskon;
-   RLS `sales_orders` juga menutup direct-write ke `status=confirmed`.
-2. Special-price approval workflow tidak punya UI:
-   - Sisi Sales (ajukan harga khusus) — **DITUTUP** Gate 3E-D6-B (`60e2d9e`,
-     sesi ini). Entry point di `/dashboard/orders/[id]`, memanggil RPC
-     existing `submit_special_price_proposal_atomic`.
-   - Sisi Owner (approve/reject) — **BELUM ADA**. RPC
-     `decide_special_price_proposal_atomic` masih 0 caller produksi sampai
-     sekarang. **Ini gap P0 terbuka berikutnya.**
+1. ~~Web order create/update RPC tidak validasi `unit_price`...~~ —
+   **DITUTUP** Gate 3E-D6-A (`ff74a2e`), diverifikasi hidup di hosted.
+2. ~~Special-price approval workflow sisi Sales tidak punya UI~~ —
+   **DITUTUP** Gate 3E-D6-B (`60e2d9e`), diverifikasi hidup di hosted.
+3. **Owner Approval Inbox UI belum ada** — Owner tetap bisa memutuskan
+   proposal lewat RPC existing `decide_special_price_proposal_atomic`
+   (locked, teruji, dibuktikan bekerja di hosted lewat sesi Owner nyata),
+   hanya belum ada UI untuk itu. Bukan blocker Phase 3 (bukan gate yang
+   pernah dicharter terpisah) — gate baru terpisah untuk next workstream.
+4. Pesan error Server Action di-redaksi generik oleh Next.js production
+   (app-wide, bukan spesifik D6-A/D6-B) — accepted limitation, follow-up UX
+   kecil terpisah.
+5. Kredensial demo `.env.demo.local` basi (3 akun demo tidak eksis di
+   hosted) — accepted limitation, perlu regenerasi + investigasi kaitan ke
+   #7 di bawah.
+6. React error #418 (hydration) intermiten saat automated testing hosted —
+   root cause tidak 100% dipastikan (kemungkinan artefak tooling), accepted
+   limitation, perlu spot-check manual non-automated.
 
-### P1/P2 — tidak blocking LOCK sendirian, tapi material untuk keputusan Founder
+### Accepted limitations (dari audit 2026-08-12, tidak berubah, tidak blocking)
 
-3. Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 (hosted clean-slate) tidak
+7. Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 (hosted clean-slate) tidak
    pernah di-commit ke git; status eksekusi destruktif di hosted **tidak
    dapat diverifikasi** dari repo. Perlu konfirmasi Founder (akses Studio
-   hosted).
-4. `docs/product/discovery/AODP_WALUYO_SALESMAN_KPI_FINAL.md` (LOCKED) belum
+   hosted). Bukti tambahan 2026-08-14: state hosted saat ini koheren, tenant
+   isolation utuh (tidak menjamin runbook dieksekusi, tapi tidak ada bukti
+   dampak runtime/security).
+8. `docs/product/discovery/AODP_WALUYO_SALESMAN_KPI_FINAL.md` (LOCKED) belum
    diperbarui untuk mencerminkan keputusan Gate 3E-D5-B (EFFECTIVE_CALL tidak
    lagi wajib punya order).
-5. Tidak ada `error.tsx` di route Dashboard Owner; beberapa fetcher Owner BI
+9. Tidak ada `error.tsx` di route Dashboard Owner; beberapa fetcher Owner BI
    tidak fault-isolated (beda dengan kontributor Executive Intelligence).
-6. Dead code `getMonthlySalesPerformance` (0 caller, sejenis `pctOa` yang
-   sudah dibersihkan Gate Owner BI-E).
-7. REVENUE governed belum menyesuaikan credit note/return; NOO belum
-   reversal saat order pembuka toko baru dibatalkan — sudah terdokumentasi
-   eksplisit sebagai accepted risk di migration header, bukan oversight.
-8. Gate 3B/3C/3C-A/3E-D2 (seluruh family) tidak punya dokumen kontrak
-   `docs/` sendiri — hanya commit message + komentar migration.
-9. **3 mekanisme password recovery aktif bersamaan**: email magic-link
-   legacy (`forgot-password-form.tsx`, protected WIP user, live), super-admin
-   DB-only reset, dan Telegram self-service. Perlu klarifikasi Founder apakah
-   email legacy disengaja tetap hidup atau seharusnya dimatikan.
-10. WIP `forgot-password-form.tsx` (protected, belum di-commit) memanggil RPC
+10. Dead code `getMonthlySalesPerformance` (0 caller, sejenis `pctOa` yang
+    sudah dibersihkan Gate Owner BI-E).
+11. REVENUE governed belum menyesuaikan credit note/return; NOO belum
+    reversal saat order pembuka toko baru dibatalkan — sudah terdokumentasi
+    eksplisit sebagai accepted risk di migration header, bukan oversight.
+12. Gate 3B/3C/3C-A/3E-D2 (seluruh family) tidak punya dokumen kontrak
+    `docs/` sendiri — hanya commit message + komentar migration.
+13. **3 mekanisme password recovery aktif bersamaan**: email magic-link
+    legacy (`forgot-password-form.tsx`, protected WIP user, live), super-admin
+    DB-only reset, dan Telegram self-service. Perlu klarifikasi Founder apakah
+    email legacy disengaja tetap hidup atau seharusnya dimatikan.
+14. WIP `forgot-password-form.tsx` (protected, belum di-commit) memanggil RPC
     `begin_self_recovery_password_change` yang migration-nya **hanya ada di
     `supabase/migrations_archive/`**, bukan `supabase/migrations/` aktif —
     akan gagal runtime bila di-deploy apa adanya. Belum diperbaiki karena
@@ -109,6 +119,8 @@ Sumber: `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md` §15–16
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-14 | **Phase 3 Final Hosted Closeout** (`docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`) | Audit menyeluruh seluruh gate wajib Phase 3 + deploy migration D6-A ke hosted (`supabase db push`) + 5 skenario UAT hosted (browser + RPC boundary sesi nyata) membuktikan enforcement harga khusus aktif live di hosted, bukan cuma lokal. 3 catatan residual UAT + residual gate-level lain diputuskan satu per satu — seluruhnya ACCEPTED LIMITATION, tidak ada BLOCKING. | **PHASE 3: 100% OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** |
+| 2026-08-13 | Phase 3 — Hosted Deploy & UAT Ulang Enforcement Harga Khusus | Terapkan migration `20261003000001` (D6-A) ke Supabase hosted `AODP-Waluyo-Demo` (sebelumnya belum diterapkan — blocker P0 nyata). 5 skenario UAT di tenant fixture terisolasi: harga normal PASS, harga khusus tanpa approval DITOLAK fail-closed, proposal via UI D6-B PASS, otorisasi/tenant isolation PASS (level UI dan RPC), approve/reject via RPC existing (bukan UI baru) PASS. | **PASS** — blocker P0 tertutup, dibuktikan hidup di hosted |
 | 2026-08-13 | Closeout Gate 3E-D6-B (`60e2d9e` + `78b7e76`, push fast-forward ke `origin/main`) | Audit ulang commit (scope/security/authority boundary/test 22/22/lint) + audit stacked commit `78b7e76` (TRACKER.md, documentation-only, tidak overclaim status) → push `ff74a2e..78b7e76` fast-forward, `HEAD == origin/main`, ahead/behind 0/0, protected WIP byte-identical. | **OFFICIALLY LOCKED** |
 | 2026-08-13 | Gate 3E-D6-B (`60e2d9e`) | UI Sales "Ajukan Harga Khusus" di `/dashboard/orders/[id]`, memanggil RPC existing `submit_special_price_proposal_atomic` (session-scoped client, auth.uid()-only). Verifikasi browser end-to-end: submit → status `pending_owner_approval`, badge & panel status tampil benar, tombol hilang saat PENDING, Owner tidak melihat tombol approve/reject. | PASS (local) — closeout/lock lihat baris di atas |
 | 2026-08-12 | Gate 3E-D6-A (`ff74a2e`) | `confirm_sales_order_atomic` sekarang selalu re-evaluasi harga item saat ini vs master price/kebijakan diskon sebelum izinkan `confirmed`, menutup kasus "tidak pernah mengajukan proposal" dan "approval partial-coverage". RLS `sales_orders` menutup direct-write ke `confirmed`. | **PASS** (menutup P0 #1) |
@@ -136,7 +148,9 @@ import. Tidak direkonstruksi ulang di sini — lihat `git log` (commit sebelum
 - Scope MVP: `docs/product/01_PRD.md`
 - Arsitektur teknis: `docs/architecture/02_TECH_ARCHITECTURE.md`
 - Spec per modul: `docs/product/modules/*.md`
-- Audit closeout Phase 3 (paling detail, jadi baseline gap saat ini):
-  `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md`
+- Audit closeout Phase 3 historis (2026-08-12, RESULT: BLOCKED — status
+  historis, tidak diubah): `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md`
+- **Closeout final Phase 3 (2026-08-14, 100% OFFICIALLY LOCKED — rujukan
+  status terkini)**: `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`
 - Sprint plan awal: `docs/development/sprints/*.md`
 - Aturan kerja Claude Code: `CLAUDE.md`
