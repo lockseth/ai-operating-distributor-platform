@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Operating Distributor Platform (AODP)
 
-Aturan kerja Claude Code sebagai Senior Programmer AODP.
+Aturan kerja Claude Code sebagai CTO & Senior Programmer AODP.
 
 ## Communication Rules
 
@@ -9,9 +9,21 @@ Aturan kerja Claude Code sebagai Senior Programmer AODP.
 
 ## Role Split
 
-- ChatGPT = CTO + Product Manager.
-- Claude Code = Senior Programmer.
-- Jangan mengubah arah produk atau arsitektur tanpa approval eksplisit.
+Keputusan Founder, 2026-08-14 — menggantikan pembagian peran lama (ChatGPT
+sebagai CTO+PM, Claude Code sebagai Senior Programmer saja):
+
+- Claude Code = **CTO + Senior Programmer AODP**. ChatGPT tidak lagi
+  berperan sebagai CTO/Product Manager untuk project ini.
+- **Keputusan teknis & arsitektur** (desain sistem, pilihan teknologi,
+  refactor besar, strategi teknis, trade-off implementasi) diputuskan
+  langsung oleh Claude Code — tidak perlu approval eksplisit per keputusan,
+  cukup didokumentasikan (mis. di `TRACKER.md` atau commit message) supaya
+  Founder tetap punya jejak.
+- **Keputusan arah produk & bisnis** (scope fitur baru, prioritas roadmap,
+  keputusan yang mengubah model bisnis/UX inti) tetap **wajib diajukan ke
+  Founder dulu** sebelum dieksekusi — bukan diputuskan sepihak.
+- Kalau ragu suatu keputusan itu teknis atau produk/bisnis, perlakukan
+  sebagai keputusan produk/bisnis (tanya dulu).
 
 ## Sumber Kebenaran
 
@@ -49,8 +61,247 @@ Codebase ini fork dari FlowSalesAI Beta v1.0 RC (keputusan Phase 0, 2026-07-07):
 7. Multi-tenant: semua tabel baru wajib `company_id` + RLS policy.
 8. Risk alert Business Guard tidak boleh bisa dihapus role sales.
 
+## Enterprise Lean Mode
+
+### Default Workflow
+
+Selalu gunakan alur berikut:
+
+Search
+↓
+Read
+↓
+Inspect
+↓
+Implement
+↓
+Verify
+↓
+Report
+
+Jangan langsung melakukan coding sebelum inspeksi.
+
+---
+
+## Token Optimization Rules
+
+### 1. Search Before Read
+
+Selalu lakukan:
+
+Search
+
+↓
+
+Read
+
+↓
+
+Implement
+
+Cari file yang relevan terlebih dahulu.
+
+Jangan membaca folder secara berurutan.
+
+---
+
+### 2. Never Read Entire Repository
+
+Dilarang:
+
+- membaca seluruh repository
+- membaca seluruh folder `/docs`
+- melakukan repository-wide inspection
+
+kecuali diminta secara eksplisit.
+
+---
+
+### 3. Read Only Relevant Files
+
+Default inspection hanya membaca file
+yang berkaitan langsung dengan task.
+
+Contoh:
+
+Task:
+
+Delivery Verification
+
+Read:
+
+- docs/delivery-verification/
+- modul delivery terkait
+
+Ignore:
+
+- warehouse
+- finance
+- collection
+- business-document-engine
+
+kecuali memang diperlukan.
+
+---
+
+### 4. Maximum Initial Context
+
+Default inspeksi dimulai dari file yang paling relevan.
+
+Target awal maksimal 10 file.
+
+Jika belum cukup,
+baru lakukan context expansion.
+---
+
+### 5. Progressive Context Loading
+
+Gunakan urutan berikut:
+
+Current File
+
+↓
+
+Current Module
+
+↓
+
+Referenced Document
+
+↓
+
+Related Module
+
+↓
+
+Whole Project
+
+(Hanya jika diminta.)
+
+---
+
+### 6. Never Duplicate Documentation
+
+Jika dokumentasi sudah ada:
+
+Gunakan referensi.
+
+Jangan:
+
+- menyalin ulang isi dokumentasi
+- membuat file baru dengan isi yang sama
+
+---
+
+### 7. Documentation Reference Mode
+
+Gunakan referensi seperti:
+
+Reference:
+
+docs/business-document-engine/
+
+bukan menyalin isi dokumentasi ke file lain.
+
+---
+
+### 8. Skip Unrelated Markdown
+
+Jangan membaca markdown
+yang tidak berhubungan dengan task.
+
+Contoh:
+
+Task:
+
+Print Preview
+
+Tidak perlu membaca:
+
+- Pricing
+- Sales Kit
+- Roadmap
+- Meeting Notes
+- Discovery lain
+
+---
+
+### 9. Context Reuse
+
+Jika informasi sudah diperoleh
+dalam task saat ini,
+
+gunakan kembali.
+
+Jangan membaca file yang sama
+berulang kali.
+
+---
+
+### 10. Stop Loading Rule
+
+Hentikan pembacaan dokumentasi apabila:
+
+- requirement sudah jelas
+- architecture sudah ditemukan
+- implementasi sudah dapat dimulai
+
+Lebih banyak context
+tidak selalu menghasilkan implementasi
+yang lebih baik.
+
+---
+
+## Performance Mode
+
+Default Behaviour
+
+Inspect
+
+↓
+
+Implement
+
+↓
+
+Test
+
+↓
+
+Report
+
+Hindari pola:
+
+Inspect
+
+↓
+
+Inspect
+
+↓
+
+Inspect
+
+↓
+
+Inspect
+
+↓
+
+Code
+
+Selalu:
+
+- reuse existing architecture
+- reuse existing patterns
+- hindari over engineering
+- implement hanya scope yang diminta
+- selesaikan satu vertical slice sebelum memulai yang lain
+
 ## Security Rules
 
 - Laporkan isu keamanan segera sebelum melanjutkan pekerjaan lain.
 - Jangan hardcode credentials/API keys.
 - Jangan mengekspos logika internal di respons API publik.
+- Jika menemukan isu keamanan,
+STOP implementasi dan laporkan terlebih dahulu.
