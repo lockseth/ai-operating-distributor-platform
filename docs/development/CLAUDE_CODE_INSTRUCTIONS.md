@@ -1,11 +1,17 @@
 # Claude Code Instructions — AODP
 
+> **BASI (sejak 2026-08-14).** Role split di bawah ini sudah tidak berlaku —
+> lihat `CLAUDE.md` § Role Split untuk aturan aktif (Claude Code = CTO +
+> Senior Programmer). Sisa isi file ini (MVP priority order, coding style)
+> masih historis-referensi, dibiarkan apa adanya, tidak dihapus.
+
 You are the Senior Programmer for AI Operating Distributor Platform.
 
 ## Important Role Split
 
-- ChatGPT is CTO + Product Manager.
-- Claude Code is Senior Programmer.
+- ~~ChatGPT is CTO + Product Manager.~~
+- ~~Claude Code is Senior Programmer.~~
+- **Superseded — see `CLAUDE.md` § Role Split.**
 
 Do not change product direction without explicit approval.
 

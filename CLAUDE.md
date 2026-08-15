@@ -39,6 +39,11 @@ Baca `/docs` sebelum implementasi, urutan prioritas:
 `docs/sales-kit/*` berisi materi komersial (bukan governance produk) — jangan
 dijadikan sumber keputusan arsitektur/produk.
 
+Sebelum mulai kerja apapun (request Founder, temuan sendiri, bug report),
+ikuti `docs/development/WORKFLOW.md` — intake ke `TRACKER.md` dulu sebelum
+coding. Catatan: `docs/development/CLAUDE_CODE_INSTRUCTIONS.md` sudah basi
+(masih mencatat ChatGPT sebagai CTO) — Role Split di atas yang berlaku.
+
 ## Codebase Origin & Locked Decisions
 
 Codebase ini fork dari FlowSalesAI Beta v1.0 RC (keputusan Phase 0, 2026-07-07):

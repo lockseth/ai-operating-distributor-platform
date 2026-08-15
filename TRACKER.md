@@ -13,17 +13,38 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 
 ## Cara update dokumen ini
 
-1. **Setiap menyelesaikan sebuah gate/milestone** (PASS, PARTIAL, maupun
-   BLOCKED), tambahkan satu baris baru di paling atas tabel
-   [Log Milestone](#log-milestone-terbaru-di-atas) — jangan menimpa baris lama.
-2. Perbarui [Status Ringkas](#status-ringkas) (tanggal, HEAD, gate terakhir).
-3. Jika milestone tsb menutup atau membuka gap baru, perbarui
-   [Backlog & Gap Diketahui](#backlog--gap-diketahui).
-4. Jika progres modul MVP berubah level (mis. placeholder → aktif dibangun),
+1. **Sebelum mulai kerja apapun** (request Founder, temuan CTO, bug report),
+   tambahkan dulu sebagai item di
+   [Sedang Dikerjakan / Berikutnya / Ditunda](#sedang-dikerjakan--berikutnya--ditunda)
+   — jangan mulai kerja tanpa jejak di situ dulu.
+2. **Setiap menyelesaikan sebuah gate/milestone** (PASS, PARTIAL, maupun
+   BLOCKED), pindahkan item itu dari section di atas, lalu tambahkan satu
+   baris baru di paling atas tabel [Log Milestone](#log-milestone-terbaru-di-atas)
+   — jangan menimpa baris lama. **Beri tag asal**: `[TERENCANA]` (memang
+   sudah direncanakan) · `[TEMUAN]` (ditemukan CTO saat audit/kerja lain,
+   tidak direncanakan) · `[REQUEST FOUNDER]` (diminta langsung Founder,
+   di luar rencana berjalan).
+3. Perbarui [Status Ringkas](#status-ringkas) (tanggal, HEAD, gate terakhir).
+4. Jika milestone tsb menutup atau membuka gap baru, perbarui
+   [Backlog & Gap Diketahui](#backlog--gap-diketahui). Kalau membuka gap yang
+   butuh keputusan Founder, tambahkan juga ke section **Ditunda** — jangan
+   biarkan cuma tertulis di tengah paragraf backlog tanpa penanda.
+5. Jika progres modul MVP berubah level (mis. placeholder → aktif dibangun),
    perbarui [Progres Modul MVP](#progres-modul-mvp-prd-5).
-5. Jangan menyalin isi migration/RPC/test ke sini — cukup nama file/gate id
+6. Jangan menyalin isi migration/RPC/test ke sini — cukup nama file/gate id
    dan satu kalimat ringkasan. Detail penuh selalu di `docs/product/readiness/`
    atau commit message aslinya.
+7. **Dokumen gate (`docs/product/readiness/*.md`) wajib di-commit di commit
+   yang sama dengan kode/migration terkait** — jangan dibiarkan untracked.
+   Kalau tereksekusi tapi tidak ke-commit, itu gap yang harus masuk Backlog,
+   bukan dianggap selesai.
+8. **Gate ID baru pakai skema datar `P<fase>.<urutan>`** (mis. `P4.01`,
+   `P4.02`) — jangan menambah sub-suffix baru ke skema lama (`3E-D6-B-H-R1`
+   dst.), itu sudah terlalu dalam untuk dilacak. Skema lama dibiarkan apa
+   adanya di histori, tidak direname retroaktif.
+9. **Sebelum push yang berdampak ke deployment**, cek dulu baris "Deploy
+   pipeline" di [Status Ringkas](#status-ringkas) — jangan asumsi branch mana
+   yang production.
 
 ---
 
@@ -31,14 +52,48 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-14 |
+| Tanggal update terakhir | 2026-08-15 |
 | Branch | `main` |
-| HEAD | (lihat commit closeout dokumentasi ini — `== origin/main`, fast-forward, ahead/behind 0/0) |
+| HEAD | `7fc7875` (fix dashboard Owner + restrukturisasi tracker ini) |
+| Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API setelah salah asumsi sempat terjadi. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. |
 | Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
-| Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `465a26f` (mengandung Gate 3E-D6-A `ff74a2e` + 3E-D6-B `60e2d9e`), dikonfirmasi hosted. Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
+| Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `7fc7875` (production, dikonfirmasi via GitHub Deployments API 2026-08-15). Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
 | Full LOCK Phase 3 | **Sudah** — lihat closeout final. Owner Approval Inbox UI TETAP belum ada (bukan blocker Phase 3, gate baru terpisah untuk next workstream) |
 | Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP** (menggantikan ChatGPT sebagai CTO+PM). Keputusan teknis/arsitektur diputuskan langsung oleh Claude Code (didokumentasikan di sini/commit message); keputusan arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
 | Data Operasional (tenant Waluyo, hosted) | KPI Setup lengkap — 5/5 KPI governed punya target aktif periode Agustus 2026 (Call 15, Effective Call 15, Order Count 15, Revenue Rp100jt, NOO 3 toko). Dashboard Owner sekarang menampilkan progres real untuk semuanya, bukan lagi "Data belum cukup". |
+
+---
+
+## Sedang Dikerjakan / Berikutnya / Ditunda
+
+Ini **bagian prospektif** (apa yang sedang/akan dikerjakan) — beda dari
+[Log Milestone](#log-milestone-terbaru-di-atas) yang **retrospektif** (apa
+yang sudah selesai). Sebelumnya tracker ini tidak punya bagian ini sama
+sekali, sehingga kerja terasa "lompat-lompat" — mulai dari sini semua item
+baru wajib singgah di sini dulu sebelum dikerjakan. Lihat juga
+`docs/development/WORKFLOW.md` untuk alur lengkapnya.
+
+Tag asal: `[REQUEST FOUNDER]` diminta langsung Founder · `[TEMUAN]`
+ditemukan CTO saat audit/kerja lain · `[TERENCANA]` bagian roadmap yang
+memang sudah direncanakan.
+
+### Sedang Dikerjakan
+
+_(kosong — isi saat mulai kerja, pindahkan ke Log Milestone saat selesai)_
+
+### Berikutnya (urutan prioritas, atas = duluan)
+
+_(kosong — isi item yang sudah disepakati arah/scope-nya tapi belum mulai)_
+
+### Ditunda — menunggu keputusan Founder
+
+| Item | Tag | Sejak | Konteks |
+|---|---|---|---|
+| NOO tidak punya mekanisme reversal saat order pembuka toko dibatalkan | `[TEMUAN]` | 2026-08-14 | Menyentuh gate LOCKED 3E-D5-A + definisi bisnis KPI. Detail: Backlog #6b |
+| 3 mekanisme password recovery aktif bersamaan (email legacy, super-admin DB-only, Telegram self-service) — email legacy disengaja atau harus dimatikan? | `[TEMUAN]` | 2026-08-14 | Detail: Backlog #13 |
+| WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Detail: Backlog #14 |
+| Owner Approval Inbox UI (proposal harga khusus) | `[TERENCANA]` | 2026-08-14 | RPC sudah ada & teruji (`decide_special_price_proposal_atomic`), tinggal UI. Detail: Backlog #3 |
+| Halaman drill-down Call/Effective Call lintas-salesman untuk Owner/Manager | `[TEMUAN]` | 2026-08-15 | Detail: Backlog #7 |
 
 ---
 
@@ -140,8 +195,16 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 
 ## Log Milestone (terbaru di atas)
 
+Tag `[TERENCANA]`/`[TEMUAN]`/`[REQUEST FOUNDER]` (lihat legenda di
+[Sedang Dikerjakan / Berikutnya / Ditunda](#sedang-dikerjakan--berikutnya--ditunda))
+berlaku untuk entri **sejak 2026-08-15**. Entri sebelumnya tidak ditandai
+retroaktif — bukan oversight, sengaja tidak ditulis ulang massal untuk
+menghindari risiko salah kategori pada histori yang sudah locked.
+
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-15 | `[REQUEST FOUNDER]` **Restrukturisasi TRACKER.md + `docs/development/WORKFLOW.md` baru** | Founder menilai pengerjaan project "lompat-lompat dan bolong-bolong". Root cause dikonfirmasi lewat audit tracker: tidak ada bagian prospektif (cuma log retrospektif), banyak temuan besar tidak sengaja bukan dari rencana, skema Gate ID sudah terlalu dalam, dokumen gate kadang tidak ke-commit, keputusan pending tidak punya penanda. Perbaikan: tambah section Sedang Dikerjakan/Berikutnya/Ditunda, tagging asal kerja, dokumentasi eksplisit branch production (`main`) setelah insiden salah push ke branch demo hari ini, dan dokumen alur kerja baru `docs/development/WORKFLOW.md`. | **SELESAI** |
+| 2026-08-15 | `[REQUEST FOUNDER]` **Dashboard Owner: badge insight/tindakan jadi clickable + Aksi Cepat diganti sesuai scope owner** (`apps/web/src/app/(dashboard)/dashboard/owner/page.tsx`, commit `7fc7875`) | Founder laporkan 2 masalah dari screenshot: (1) badge "Perlu Tindakan Segera" tidak ada aksi — diperbaiki jadi link yang scroll ke daftar Tindakan Direkomendasikan. (2) Aksi Cepat di hero (Laporan Sales/Buat Order/Pelanggan Baru/Import Data) semuanya tugas data-entry sales/admin, bukan tugas owner — bertentangan dengan prinsip Owner First (Constitution §10, "AI merekomendasikan, owner memutuskan"). Diganti ke Risk Alert/Kelola Pengguna/Laporan Sales (lihat)/Pengaturan, dikonfirmasi Founder via pilihan eksplisit sebelum eksekusi. Sempat salah push ke branch `aodp-architecture-demo-v0.1` (dikira branch demo) — ternyata cuma bikin Preview deployment; production Vercel ternyata dari `main`, dikonfirmasi lewat GitHub Deployments API, lalu di-push ulang ke `main` dan dikonfirmasi live. | **PASS — LIVE DI HOSTED** |
 | 2026-08-15 | **KPI Salesman UI: kartu achievement berwarna penuh + clickable** (`apps/web/src/components/sales-kpi/kpi-achievement-view.tsx`) | Permintaan Founder atas screenshot dashboard KPI Salma: warna status (Tertinggal/Sesuai Target/Di Atas Target) sebelumnya cuma di badge kecil pojok kartu, dan kartu tidak bisa diklik. Perbaikan: background+border seluruh kartu sekarang ikut warna pacing status (amber/hijau/biru/abu2), progress bar ikut tone yang sama. Order Count & Revenue jadi link ke `/dashboard/orders` (filter sales+status=confirmed+rentang tanggal periode aktif), NOO jadi link ke `/dashboard/customers` (filter sales) -- keduanya reuse filter query param yang sudah ada di halaman itu, tanpa halaman baru. Call/Effective Call HANYA diberi link ke `/dashboard/sales-visits` saat user melihat achievement dirinya sendiri (halaman itu role-gated khusus sales, self-only) -- saat Owner/Manager melihat achievement salesman lain, dua kartu itu sengaja TIDAK diberi link (tidak ada halaman aman utk drill-down lintas-salesman saat ini, daripada silent-redirect yang membingungkan). Diverifikasi visual di browser lokal dgn data KPI fiktif (target+order dibuat via RPC yg sama seperti produksi): warna kartu sesuai status dikonfirmasi lewat computed style, link Order Count/Revenue/NOO diklik dan berhasil navigasi+filter dengan benar. Lint bersih. Push `a4d809d..7cf598c`, auto-deploy Vercel commit `7cf598c` confirmed Ready ("Compiled successfully"). Tidak ada migration (murni UI). | **PASS — LIVE DI HOSTED** |
 | 2026-08-15 | **Data backfill hosted: 5 kredit NOO Salma yang hilang akibat timing deploy trigger** (data-only, tanpa migration/code change) | Temuan (dicek atas pertanyaan Founder "apa cara dapat achievement NOO"): akun sales nyata "Salma" (tenant PT Sumber Warna Alam Sudiada) punya 5 toko dengan order pertama sudah `confirmed` (6 Agustus) dan `ORDER_COUNT`/`REVENUE` sudah ter-kredit benar, tapi `NOO = 0` utk semuanya. Root cause dikonfirmasi lewat live-test langsung ke hosted: trigger `credit_noo_for_sales_order` (migration `20260930000001`) berfungsi normal HARI INI (toko+order baru fiktif langsung ter-kredit) -- gap murni historis: trigger di-deploy ke hosted SETELAH 5 order pertama Salma itu confirmed, dan trigger tidak retroaktif + tidak bisa re-fire (constraint "1x NOO seumur hidup per customer" sudah "kehabisan jatah" di order pertama yang lolos). Temuan kedua: target KPI yang diisi Founder minggu lalu (Call/EC/Order Count 15, Revenue 100jt, NOO 3) ternyata masuk ke akun **"Waluyo"** (sales terpisah, dikonfirmasi Founder itu memang benar akun sales Pak Waluyo sendiri) -- BUKAN ke akun Salma, yang justru nyata closing order dan sampai saat ini 0 dari 5 KPI code py target. Backfill NOO disetujui Founder (approve eksplisit via AskUserQuestion): insert 5 baris `NOO CREDITED` lewat service_role, bentuk baris identik output trigger asli (`idempotency_key = noo:<customer_id>`, `source_type=SALES_ORDER`, `order_id`/`business_date` merefer order asli), didahului pre-flight check per baris (order status confirmed, sales_id=Salma, benar order PERTAMA customer itu -- tidak ada confirmed order lain lebih awal, belum ada baris NOO existing) supaya tidak mungkin dobel-kredit atau salah order. 5/5 berhasil, diverifikasi ulang query fresh setelah insert. Susulan: Founder minta target Salma disamakan dengan Waluyo -- 5 target (Call 15, Effective Call 15, Order Count 15, Revenue 100jt, NOO 3) diisi via `set_sales_kpi_target` RPC, `kpi_definition_id` per baris dikonfirmasi identik dengan milik Waluyo (apples-to-apples), semua `result_outcome: created`. | **PASS — SELESAI (backfill NOO + target Salma lengkap)** |
 | 2026-08-15 | **Fraud-guard "Daftar Toko": satukan jalur Web & Telegram + foto/GPS opsional** (`supabase/migrations/20261004000001_gate_store_photo_gps_web.sql`, `lib/customer-pic/*`, `components/customer-pic/add-store-form.tsx`) | Temuan: tombol "Tambah Pelanggan" di Web selama ini `.insert()` langsung ke `customers` -- TANPA deteksi duplikat toko, TANPA PIC, TANPA GPS -- padahal RPC lengkap (`create_store_with_pic`, deteksi duplikat, dipakai Telegram) sudah ada tapi tidak pernah disambungkan ke UI manapun (`createStoreAction` dead code). Perbaikan: form Web sekarang pakai RPC yang sama (source `ADMIN_DASHBOARD`, sudah didukung sejak awal). Tambahan murni ADDITIVE (2 param baru DEFAULT NULL di akhir signature, pola identik penambahan email sebelumnya) -- PIC nama+telepon TETAP wajib (keputusan Pak Waluyo, tidak diubah), foto depan toko/foto PIC/GPS SEMUA opsional (toko CASH tidak diribetkan). Infrastruktur upload foto (bucket Storage `store-photos`, RLS tenant-scoped) dibangun baru -- sebelumnya tidak ada di manapun di sistem. Diverifikasi lokal: skenario CASH tanpa foto/GPS PASS, deteksi duplikat PASS (toko sama persis ditolak dengan pesan jelas), regresi jalur Telegram PASS (dipanggil persis gaya lama tanpa param foto, hasil identik `created`, kolom foto default NULL). Build+lint+90 test existing PASS. Hosted: migration `20261004000001` di-apply via `supabase db push --linked` (Local=Remote terkonfirmasi), regresi jalur Telegram diulang langsung ke hosted DB (param gaya lama, hasil `created`, kolom foto NULL) PASS, deploy Vercel commit `5155b5f` confirmed Ready ("Compiled successfully"). Sisa data uji coba throwaway (lokal "Toko Cash Cepat UAT", hosted "Hosted Regression hosted-regr-*") dibiarkan -- terblokir trigger immutable `customer_pic_history`, tidak mengganggu tenant nyata. Susulan (pertanyaan Founder): dites eksplisit end-to-end lokal apakah toko baru lewat form ini ikut mengkredit KPI NOO -- toko dibuat via `create_store_with_pic` (RPC persis dipakai form) -> NOO events = 0 (buka toko saja belum kredit, sesuai definisi Pak Waluyo "buka DAN order"), lalu order pertama toko itu di-confirm -> NOO ter-CREDITED tepat 1x dengan order_id/salesperson_id yang benar. Trigger `credit_noo_for_sales_order` hidup di tabel `sales_orders` (independen dari cara toko dibuat) sehingga otomatis berlaku utk toko dari jalur Web baru maupun Telegram tanpa perubahan tambahan -- 13 test regresi NOO existing tetap PASS (trigger tidak tersentuh migrasi ini). | **PASS — OFFICIALLY LOCKED (hosted)** |
@@ -174,6 +237,7 @@ import. Tidak direkonstruksi ulang di sini — lihat `git log` (commit sebelum
 
 ## Referensi Dokumen Penting
 
+- **Alur kerja (dari ide sampai selesai)**: `docs/development/WORKFLOW.md`
 - Konstitusi produk: `docs/product/AODP_PRODUCT_CONSTITUTION.md`
 - Scope MVP: `docs/product/01_PRD.md`
 - Arsitektur teknis: `docs/architecture/02_TECH_ARCHITECTURE.md`
