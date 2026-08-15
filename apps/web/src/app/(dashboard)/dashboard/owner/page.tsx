@@ -21,10 +21,10 @@ import {
   TrendingUp,
   Activity,
   Calendar,
-  Plus,
-  UserPlus,
-  Upload,
-  Zap,
+  ShieldAlert,
+  Users,
+  FileText,
+  Settings,
   ShoppingCart,
   Clock,
   CheckCircle2,
@@ -171,9 +171,18 @@ export default async function ExecutiveIntelligencePage() {
                 <Activity className="h-3.5 w-3.5" />
                 {overview.health.label}
               </span>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white">
-                {overview.insights.length} insight · {overview.actions.length} tindakan direkomendasikan
-              </span>
+              {overview.actions.length > 0 ? (
+                <Link
+                  href="#aksi-direkomendasikan"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-white/20"
+                >
+                  {overview.insights.length} insight · {overview.actions.length} tindakan direkomendasikan →
+                </Link>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white">
+                  {overview.insights.length} insight · {overview.actions.length} tindakan direkomendasikan
+                </span>
+              )}
             </div>
           </div>
 
@@ -200,21 +209,21 @@ export default async function ExecutiveIntelligencePage() {
           <div className="flex flex-col gap-2 lg:items-end">
             <p className="text-xs font-medium uppercase tracking-wide text-blue-200">Aksi Cepat</p>
             <div className="grid grid-cols-2 gap-2">
-              <Link href="/dashboard/reports/new"
+              <Link href="/dashboard/risk"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
-                <Plus className="h-3.5 w-3.5" /> Laporan Sales
+                <ShieldAlert className="h-3.5 w-3.5" /> Risk Alert
               </Link>
-              <Link href="/dashboard/orders/new"
+              <Link href="/dashboard/users"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
-                <ShoppingCart className="h-3.5 w-3.5" /> Buat Order
+                <Users className="h-3.5 w-3.5" /> Kelola Pengguna
               </Link>
-              <Link href="/dashboard/customers/new"
+              <Link href="/dashboard/reports"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
-                <UserPlus className="h-3.5 w-3.5" /> Pelanggan Baru
+                <FileText className="h-3.5 w-3.5" /> Laporan Sales
               </Link>
-              <Link href="/dashboard/settings/import"
+              <Link href="/dashboard/settings"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-white/20">
-                <Upload className="h-3.5 w-3.5" /> Import Data
+                <Settings className="h-3.5 w-3.5" /> Pengaturan
               </Link>
             </div>
           </div>
@@ -226,7 +235,9 @@ export default async function ExecutiveIntelligencePage() {
       {/* ════════════════════════════════════════════════════ */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BriefingCard briefing={overview.briefing} />
-        <ActionsCard actions={overview.actions} />
+        <div id="aksi-direkomendasikan" className="scroll-mt-6">
+          <ActionsCard actions={overview.actions} />
+        </div>
       </div>
 
       {/* ════════════════════════════════════════════════════ */}
