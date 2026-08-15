@@ -51,7 +51,7 @@ Rujukan: `docs/product/01_PRD.md` §5, `docs/product/modules/*.md`.
 | **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Enforcement harga khusus LOCKED & hosted-verified (Gate 3E-D6-A/B); Owner Approval Inbox UI masih next workstream (lihat Backlog) |
 | **FlowSales AI** (laporan sales, KPI, AI Dispatch Planner, Telegram Sales Order Entry, AI Insights) | Matang, aktif dikembangkan | Gate 3E-D4/D5, Owner BI A–E |
 | **Collection Intelligence** | Diimplementasikan sebagai bagian Finance Operations Workspace | `/dashboard/collection` redirect ke `/dashboard/finance/collection` (Gate 2I.x) |
-| **Business Guard AI** (Risk Alert) | **Belum diimplementasi** — UI "Segera Hadir" | `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx` |
+| **Business Guard AI** (Risk Alert) | **Dimulai 2026-08-14** — slice #1 (Sales Risk / Discount Anomaly Indicator) hidup, rule-based, verified lokal. Sisanya (Behavior Change, Risk Alert List umum, Transaction Risk Score) masih "Segera Hadir" | `apps/web/src/lib/business-guard/`, `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx` |
 | **WhatsApp AI** | **Belum diimplementasi** — UI "Segera Hadir" | `apps/web/src/app/(dashboard)/dashboard/whatsapp/page.tsx` |
 | **Warehouse Intelligence** | **Placeholder resmi MVP** (bukan gap — keputusan produk terkunci, CLAUDE.md aturan #6) | Dashboard dasar delivery stats saja |
 
@@ -81,6 +81,18 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 5. Kredensial demo `.env.demo.local` basi (3 akun demo tidak eksis di
    hosted) — accepted limitation, perlu regenerasi + investigasi kaitan ke
    #7 di bawah.
+6b. **[USULAN CTO, BELUM DIKERJAKAN]** NOO tidak punya mekanisme reversal
+   saat order pembuka toko dibatalkan — beda perlakuan dari ORDER_COUNT/
+   REVENUE yang SUDAH punya reversal otomatis untuk kejadian pemicu yang
+   identik (order → cancelled, lihat trigger `credit_noo_for_sales_order`
+   vs mekanisme REVERSED di `20260917000001`). Risiko: kredit NOO bisa
+   "diakali" (order pertama confirm sebentar lalu dibatalkan, kredit tetap
+   nempel selamanya) DAN memblokir toko itu dapat kredit NOO yang sah di
+   masa depan (unique index 1x seumur hidup per customer sudah terpakai).
+   Sekarang jadi lebih material karena NOO sudah dipakai untuk target
+   nyata (Agustus 2026: 3 toko). Diputuskan 2026-08-14 untuk dicatat dulu,
+   belum dieksekusi — perlu keputusan Founder karena menyentuh gate yang
+   sudah LOCKED (3E-D5-A) dan definisi bisnis KPI.
 6. React error #418 (hydration) intermiten saat automated testing hosted —
    root cause tidak 100% dipastikan (kemungkinan artefak tooling), accepted
    limitation, perlu spot-check manual non-automated.
@@ -121,6 +133,7 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-14 | **Business Guard AI — slice #1: Sales Risk / Discount Anomaly Indicator** (`apps/web/src/lib/business-guard/`) | Vertical slice pertama modul Business Guard AI (sebelumnya 100% placeholder). Rule-based (bukan LLM, konsisten pola `churn-prediction.ts` & keputusan Pak Waluyo soal deteksi duplikat toko), baca `special_price_approval_requests`/`lines` (read-only, tidak ubah RPC/RLS D6-A/D6-B). 4 sinyal: volume pengajuan vs rata-rata sales lain, tingkat penolakan Owner, kedalaman diskon vs rata-rata, eskalasi 30 hari terakhir. Live di `/dashboard/risk`, akses tetap owner/manager/super_admin saja (guard existing tidak diubah). 9/9 unit test PASS, lint bersih, build PASS, diverifikasi manual di browser lokal dengan data real (1 sales, 1 pengajuan, dihitung benar). Belum di-deploy ke hosted. | **PASS (lokal)** — belum push/deploy |
 | 2026-08-14 | KPI Target Waluyo dilengkapi (hosted, data) | Tenant real "PT Sumber Warna Alam Sudiada", periode Agustus 2026 (ACTIVE), sebelumnya cuma 2/5 KPI governed punya target (Call, Effective Call) — Order Count, Revenue, NOO kosong sehingga tile-nya tampil "Data belum cukup" di Dashboard Owner (bukan bug kode, murni data belum diisi). Diisi via RPC resmi `set_sales_kpi_target` (RPC sama yang dipakai UI KPI Setup, bukan tulis langsung ke tabel), actor=Owner asli: Order Count=15, Revenue=Rp100.000.000, NOO=3 toko. | **PASS** — 5/5 KPI governed sekarang punya target aktif |
 | 2026-08-14 | CTO Audit — status project & gap review | Audit menyeluruh state aktual (bukan cuma baca catatan lama): (1) dikonfirmasi WhatsApp AI & Business Guard AI belum diimplementasi sama sekali, masih placeholder "Segera Hadir"; (2) ditemukan WIP `forgot-password-form.tsx` (protected, belum di-commit) memanggil RPC `begin_self_recovery_password_change` yang migration-nya cuma ada di `supabase/migrations_archive/` — akan error runtime kalau di-deploy apa adanya, perlu keputusan Founder (lanjutkan/batalkan); (3) menemukan gap KPI Waluyo di atas lewat pengecekan langsung ke hosted, bukan cuma grep kode. | **AUDIT SELESAI, temuan didokumentasikan** |
 | 2026-08-14 | Governance — Role Split diubah (`CLAUDE.md`) | Keputusan Founder: Claude Code menggantikan ChatGPT sebagai CTO+PM (selain tetap Senior Programmer). Claude Code memutuskan sendiri hal teknis/arsitektur (didokumentasikan, bukan diminta approval per keputusan); arah produk/bisnis tetap diajukan ke Founder dulu. | **BERLAKU** |
