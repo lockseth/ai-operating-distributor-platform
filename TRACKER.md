@@ -54,7 +54,7 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-16 |
 | Branch | `main` |
-| HEAD | (lihat commit dokumen workflow order-to-cash ini) |
+| HEAD | `67e555d` (dokumen workflow order-to-cash) |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API setelah salah asumsi sempat terjadi. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. |
 | Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
 | Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `7fc7875` (production, dikonfirmasi via GitHub Deployments API 2026-08-15). Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
