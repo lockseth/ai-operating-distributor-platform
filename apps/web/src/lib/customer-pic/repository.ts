@@ -76,6 +76,8 @@ export class SupabaseCustomerPicRepository implements CustomerPicRepository {
       p_override_similar_duplicate: input.overrideSimilarDuplicate,
       p_override_reason: input.overrideReason,
       p_pic_email: input.picEmail,
+      p_store_photo_url: input.storePhotoUrl ?? null,
+      p_pic_photo_url: input.picPhotoUrl ?? null,
     });
     if (error) return { outcome: "unexpected_error", error: error.message };
     const row = (data ?? [])[0] as

@@ -20,12 +20,62 @@ export interface CustomerPicActionResult {
   customerPicId?: string;
 }
 
+const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic"];
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024; // sinkron dengan file_size_limit bucket store-photos
+
+export interface UploadStorePhotoResult {
+  ok: boolean;
+  error?: string;
+  path?: string;
+}
+
+/**
+ * Upload foto depan toko / foto PIC (opsional, keputusan Pak Waluyo
+ * 2026-08-15) -- evidence biasa, BUKAN verifikasi identitas/biometrik.
+ * company_id path SELALU dari sesi (getAuthUser()), tidak pernah dari
+ * client -- konsisten pola trusted-actor di seluruh actions.ts lain.
+ */
+export async function uploadStorePhotoAction(formData: FormData): Promise<UploadStorePhotoResult> {
+  const user = await getAuthUser();
+  if (!hasPermission(user.permissions, "customers.create")) {
+    return { ok: false, error: "Tidak berwenang mengunggah foto." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "File tidak valid." };
+  }
+  if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+    return { ok: false, error: "Format file harus JPEG, PNG, WebP, atau HEIC." };
+  }
+  if (file.size > MAX_PHOTO_BYTES) {
+    return { ok: false, error: "Ukuran file maksimal 8MB." };
+  }
+
+  const extFromType: Record<string, string> = {
+    "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic",
+  };
+  const ext = extFromType[file.type] ?? "jpg";
+  const path = `${user.company_id}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+
+  const supabase = getAdminClient();
+  const { error } = await supabase.storage.from("store-photos").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+  });
+
+  if (error) return { ok: false, error: "Gagal mengunggah foto." };
+  return { ok: true, path };
+}
+
 /** Tambah Toko dari dashboard admin -- reuse RPC yang sama dengan Telegram, source berbeda. */
 export async function createStoreAction(input: {
   storeName: string;
   storePhone: string | null;
   storeAddress: string | null;
   storeArea: string | null;
+  storeLatitude?: number | null;
+  storeLongitude?: number | null;
   assignedSalesId: string | null;
   picName: string;
   picPhone: string;
@@ -33,6 +83,10 @@ export async function createStoreAction(input: {
   picRoles: PicRole[];
   overrideSimilarDuplicate?: boolean;
   overrideReason?: string | null;
+  /** Opsional -- path storage bucket store-photos (lihat uploadStorePhotoAction). Ketiadaan tidak pernah menolak pendaftaran. */
+  storePhotoUrl?: string | null;
+  picPhotoUrl?: string | null;
+  idempotencyKey?: string;
 }): Promise<CustomerPicActionResult & { duplicateCustomerId?: string; outcome?: string }> {
   const user = await getAuthUser();
   if (!hasPermission(user.permissions, "customers.create")) {
@@ -52,17 +106,19 @@ export async function createStoreAction(input: {
     storePhone: input.storePhone,
     storeAddress: input.storeAddress,
     storeArea: input.storeArea,
-    storeLatitude: null,
-    storeLongitude: null,
+    storeLatitude: input.storeLatitude ?? null,
+    storeLongitude: input.storeLongitude ?? null,
     assignedSalesId: input.assignedSalesId,
     picName: input.picName,
     picPhone: input.picPhone,
     picEmail: input.picEmail ?? null,
     picRoles: input.picRoles,
-    idempotencyKey: `admin:${user.id}:${Date.now()}`,
+    idempotencyKey: input.idempotencyKey ?? `admin:${user.id}:${Date.now()}`,
     source: "ADMIN_DASHBOARD",
     overrideSimilarDuplicate: input.overrideSimilarDuplicate ?? false,
     overrideReason: input.overrideReason ?? null,
+    storePhotoUrl: input.storePhotoUrl ?? null,
+    picPhotoUrl: input.picPhotoUrl ?? null,
   });
 
   if (result.outcome === "created" || result.outcome === "already_exists") {

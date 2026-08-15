@@ -41,48 +41,12 @@ export interface CustomerFormData {
   custom_fields: Record<string, string>;
 }
 
-export async function createCustomerAction(data: CustomerFormData): Promise<void> {
-  const user = await getAuthUser();
-  if (!hasPermission(user.permissions, "customers.create")) {
-    throw new Error("Tidak punya akses untuk membuat pelanggan");
-  }
-
-  const supabase = await createClient();
-  const { data: inserted, error } = await supabase
-    .from("customers")
-    .insert({
-      company_id:        user.company_id,
-      code:              data.code,
-      name:              data.name,
-      type:              data.type,
-      phone:             data.phone || null,
-      email:             data.email || null,
-      address:           data.address || null,
-      city:              data.city || null,
-      coverage_area_id:  data.coverage_area_id || null,
-      assigned_sales_id: resolveAssignedSalesId(user.id, user.roles, data.assigned_sales_id),
-      notes:             data.notes || null,
-      is_active:         true,
-      custom_fields:     data.custom_fields ?? {},
-      created_by:        user.id,
-    })
-    .select("id")
-    .single();
-
-  if (error) throw new Error(error.message);
-
-  await logAuditEvent({
-    company_id:  user.company_id,
-    user_id:     user.id,
-    action:      "customer.create",
-    entity_type: "customers",
-    entity_id:   inserted.id,
-    new_data:    { name: data.name, code: data.code, type: data.type, coverage_area_id: data.coverage_area_id },
-  }).catch(() => {});
-
-  revalidatePath("/dashboard/customers");
-  redirect(`/dashboard/customers/${inserted.id}`);
-}
+// createCustomerAction (direct-insert, tanpa PIC/GPS/deteksi duplikat) --
+// DIHAPUS 2026-08-15, digantikan AddStoreForm -> createStoreAction
+// (create_store_with_pic RPC, lib/customer-pic/actions.ts) yang menyatukan
+// jalur Web dengan jalur Telegram (deteksi duplikat toko, PIC wajib,
+// GPS+foto opsional -- keputusan Pak Waluyo). updateCustomerAction di
+// bawah TIDAK berubah (edit toko existing, di luar scope perubahan ini).
 
 export async function updateCustomerAction(
   customerId: string,

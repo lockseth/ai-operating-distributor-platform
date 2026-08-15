@@ -3,8 +3,7 @@ import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
-import { createCustomerAction } from "@/lib/customers/actions";
-import { CustomerForm } from "@/components/customers/customer-form";
+import { AddStoreForm } from "@/components/customer-pic/add-store-form";
 import { ChevronLeft } from "lucide-react";
 
 export const metadata = { title: "Tambah Pelanggan — AODP" };
@@ -56,11 +55,9 @@ export default async function NewCustomerPage() {
         <p className="text-sm text-gray-500 mt-1">Isi form di bawah untuk mendaftarkan reseller atau pelanggan baru</p>
       </div>
 
-      <CustomerForm
+      <AddStoreForm
         salesUsers={salesUsers}
         coverageAreas={coverageAreas}
-        action={createCustomerAction}
-        submitLabel="Simpan Pelanggan"
         cancelHref="/dashboard/customers"
       />
     </div>

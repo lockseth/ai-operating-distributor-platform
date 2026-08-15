@@ -5,8 +5,11 @@
 // migration 20260728000001_customer_pic_master.sql). PIC (contact person)
 // adalah entity baru: satu toko dapat memiliki beberapa PIC.
 //
-// Non-biometric (keputusan Pak Waluyo): tidak ada field KTP/foto wajah/face
-// embedding/liveness di mana pun pada modul ini.
+// Non-biometric (keputusan Pak Waluyo): tidak ada field KTP/face embedding/
+// liveness di mana pun pada modul ini. Foto depan toko & foto PIC (opsional,
+// keputusan Pak Waluyo 2026-08-15) adalah foto bukti/evidence biasa -- bukan
+// verifikasi identitas/biometrik -- disimpan sebagai path storage
+// (bucket store-photos), bukan kolom biner di tabel.
 // =============================================================================
 
 export type PicRole = "OWNER" | "ORDERER" | "RECEIVER" | "PAYMENT_CONTACT" | "BACKUP_CONTACT";
@@ -154,6 +157,10 @@ export interface CreateStoreWithPicInput {
   source: PicChangeSource;
   overrideSimilarDuplicate: boolean;
   overrideReason: string | null;
+  /** Opsional (boleh diabaikan caller lama seperti jalur Telegram). Path storage foto depan toko (bucket store-photos). Ketiadaan tidak pernah menolak pendaftaran. */
+  storePhotoUrl?: string | null;
+  /** Opsional (boleh diabaikan caller lama seperti jalur Telegram). Path storage foto PIC. Ketiadaan tidak pernah menolak pendaftaran. */
+  picPhotoUrl?: string | null;
 }
 
 export type CreateStoreWithPicResult =
