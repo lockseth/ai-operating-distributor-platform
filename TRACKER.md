@@ -83,7 +83,24 @@ _(kosong — isi saat mulai kerja, pindahkan ke Log Milestone saat selesai)_
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
-_(kosong — isi item yang sudah disepakati arah/scope-nya tapi belum mulai)_
+1. `[REQUEST FOUNDER]` **Role-play UAT order-to-cash end-to-end** — Claude Code
+   jalankan siklus penuh sebagai role `sales` sesuai
+   `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` (order → harga khusus bila
+   perlu → konfirmasi → dispatch → delivery verification → invoice →
+   pembayaran → lunas) sambil Founder mengamati. Founder bisa
+   interupsi/bertanya kapan saja — **saat interupsi: stop dulu, jawab,
+   catat di tracker, JANGAN lanjut eksekusi sebelum perintah eksplisit
+   Founder.**
+   - Environment: **hosted demo** `aodp-waluyo-demo.vercel.app` (data tenant
+     nyata PT Sumber Warna Alam Sudiada — order/invoice yang dibuat akan
+     nambah data sungguhan di situ, bukan data seed sekali-pakai)
+   - Cara amati: **Browser pane** (panel bawaan app Claude Code) — panel ini
+     harus aktif/terlihat di sisi Founder supaya screenshot/compositing
+     jalan (sempat gagal di sesi sebelumnya saat panel tidak terbuka)
+   - **Login dilakukan Founder sendiri** (bukan Claude Code) — Founder yang
+     masuk ke akun `sales` di tab Browser pane itu, baru Claude Code
+     melanjutkan aksi dari sesi yang sudah login
+   - Belum mulai — menunggu Founder membuka session & login
 
 ### Ditunda — menunggu keputusan Founder
 
