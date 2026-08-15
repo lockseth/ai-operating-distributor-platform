@@ -96,6 +96,15 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 6. React error #418 (hydration) intermiten saat automated testing hosted —
    root cause tidak 100% dipastikan (kemungkinan artefak tooling), accepted
    limitation, perlu spot-check manual non-automated.
+7. **[USULAN, BELUM DIKERJAKAN]** Halaman laporan kunjungan sales untuk
+   Owner/Manager (drill-down Call/Effective Call lintas-salesman). Saat ini
+   kartu Call & Effective Call di `/dashboard/kpi` HANYA bisa diklik saat
+   sales melihat achievement dirinya sendiri (link ke `/dashboard/sales-visits`,
+   yang role-gated khusus sales, self-only) -- saat Owner/Manager melihat
+   achievement salesman lain, dua kartu itu sengaja dibiarkan TIDAK
+   clickable (daripada link ke halaman yang bakal redirect membingungkan).
+   Perlu halaman baru (bukan reuse `/dashboard/sales-visits`) kalau Owner
+   mau bisa drill-down riwayat kunjungan siapapun.
 
 ### Accepted limitations (dari audit 2026-08-12, tidak berubah, tidak blocking)
 
