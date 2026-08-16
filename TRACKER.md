@@ -87,20 +87,39 @@ memang sudah direncanakan.
    demo** `aodp-waluyo-demo.vercel.app` — order/invoice yang dibuat nambah
    data sungguhan di situ. Aturan interupsi berlaku: stop, jawab, catat,
    tidak lanjut tanpa perintah eksplisit.
-   - **STATUS: BLOCKED di Tahap 1 (order dibuat)** — percobaan pertama
+   - **STATUS: RESOLVED — root cause ditemukan & DITUTUP (2026-08-16)**.
+     Sempat BLOCKED lama di Tahap 1 (order dibuat) — percobaan pertama
      (Pelanggan "Tk Agung abadi", 1x DEMO-Cat Kayu Besi 1kg, harga normal
      tanpa diskon, qty 1) gagal `POST /dashboard/orders/new → HTTP 500`,
-     pesan error diredaksi total oleh Next.js production (Backlog #4).
-     Dikonfirmasi **tidak ada order nyangkut** (list order tetap 0) — aman
-     dari duplikat, tapi order-to-cash belum bisa lanjut ke Tahap 2+ sampai
-     ini terselesaikan. Root cause belum pasti — sudah dibaca RPC
-     `create_sales_order_atomic` (`20260927000001`) lengkap, semua jalur
-     error di dalamnya mengembalikan outcome bersih (`invalid_customer`,
-     `customer_not_owned`, `invalid_sales_id`, `no_items`,
-     `invalid_product`), bukan exception mentah — jadi 500 ini kemungkinan
-     dari layer Next.js Server Action atau sesuatu di luar RPC ini, belum
-     digali lebih jauh (perlu akses log Vercel/Supabase hosted yang belum
-     tersedia di sesi ini).
+     pesan error diredaksi total oleh Next.js production (Backlog #4),
+     RPC `create_sales_order_atomic` sudah dibaca lengkap dan semua jalur
+     errornya bersih — jadi sempat disimpulkan penyebabnya di luar RPC,
+     butuh akses log yang saat itu belum ada.
+     **Cara ketemu**: `vercel logs` CLI ternyata sudah ter-install &amp;
+     terautentikasi di sesi ini (project sudah linked via `.vercel/`,
+     tidak perlu login ulang) — tapi cuma live-snapshot, bukan riwayat
+     lama. Direproduksi ulang persis (customer/produk sama, sesi Waluyo
+     yang masih aktif di hosted) lalu `vercel logs` langsung dipanggil
+     sesudahnya — dapat digest error `790590101`:
+     ```
+     Error: duplicate key value violates unique constraint
+     "sales_orders_company_id_order_number_key"
+     ```
+     **Root cause**: `generateOrderNumber()` (`lib/orders/actions.ts`)
+     pakai `createClient()` (kena RLS) untuk cari nomor urut order
+     terakhir bulan ini, padahal RLS `sales_orders_select` cuma izinkan
+     role `sales` lihat order **miliknya sendiri** (`sales_id =
+     auth.uid()`) — constraint unique `order_number`-nya company-wide.
+     Kalau ada order bulan ini dari sales lain/owner yang tidak terlihat
+     sales ini, nomor yang dihasilkan undercount dan tabrakan dengan yang
+     sudah ada. **Fix**: `generateOrderNumber()` diganti pakai
+     `getAdminClient()` (bypass RLS, sama seperti RPC call
+     `create_sales_order_atomic` yang sudah pakai admin client di fungsi
+     yang sama) — konsisten, sekarang selalu lihat nomor tertinggi
+     company-wide. Diverifikasi lokal: reproduksi kondisi sama (order
+     `SO-2608-0002` milik role lain yang RLS-blind untuk `sales@aodp.test`)
+     → order baru `SO-2608-0003` berhasil dibuat tanpa duplicate key.
+     Build PASS, test order PASS. **Belum di-deploy ke hosted.**
    - **Temuan #1 (dikonfirmasi benar)**: auto-attribution `sales_id` ke
      actor sales sendiri + guard "toko tidak bisa pindah sales sembarangan"
      sudah terimplementasi persis sesuai insight Pak Waluyo — Gate

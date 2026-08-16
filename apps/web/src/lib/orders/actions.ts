@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
-import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 
 export type OrderStatus =
@@ -36,9 +35,19 @@ export interface OrderFormData {
 
 // -----------------------------------------------------------------------
 // Generate order number: SO-YYMM-XXXX
+//
+// WAJIB pakai admin client (bukan createClient() yang kena RLS) --
+// sales_orders_select RLS membatasi role sales cuma lihat order miliknya
+// sendiri (sales_id = auth.uid()), padahal constraint unique order_number
+// company-wide. Sebelumnya pakai client biasa: kalau ada order bulan ini
+// dari sales lain yang tidak terlihat sales ini, nomor urut yang
+// dihasilkan undercount dan tabrakan dengan order yang sudah ada --
+// root cause 500 "duplicate key value violates unique constraint
+// sales_orders_company_id_order_number_key", dikonfirmasi lewat Vercel
+// logs (digest 790590101) saat role-play UAT 2026-08-16.
 // -----------------------------------------------------------------------
 async function generateOrderNumber(companyId: string): Promise<string> {
-  const supabase = await createClient();
+  const supabase = getAdminClient();
   const now      = new Date();
   const yy       = String(now.getFullYear()).slice(2);
   const mm       = String(now.getMonth() + 1).padStart(2, "0");

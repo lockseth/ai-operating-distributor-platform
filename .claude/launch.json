@@ -5,7 +5,8 @@
       "name": "aodp-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@flowsales/web", "dev"],
-      "port": 3000
+      "port": 3000,
+      "autoPort": true
     },
     {
       "name": "aodp-web-prod",
