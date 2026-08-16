@@ -241,6 +241,26 @@ memang sudah direncanakan.
      Diverifikasi browser lokal: invoice `AODPDEV-INV-20260816-000001`
      tampil lengkap (kop perusahaan, data toko, item, subtotal/diskon/
      grand total/terbilang, kolom tanda tangan). Build+typecheck PASS.
+   - **Audit template vs `AODP_DOCUMENT_LAYOUT_GUIDE.md` (LOCKED, sesi
+     23 Juli 2026)** — diminta Founder. 5 dari 7 elemen sesuai (header,
+     9 kolom item, panel Data Toko/Customer 2-kolom, Totals Subtotal/
+     Potongan/Grand Total/Terbilang, tanda tangan Salesman/Pengirim/
+     Penerima). **2 gap ditemukan, disepakati dikerjakan nanti (bukan
+     sekarang)**:
+     1. Baris **"Tempo"/termin pembayaran hilang** — LOCKED spec bilang
+        wajib (`PAYMENT_TERMS_INCOMPLETE` saat issuance). Form order Web
+        **tidak punya field termin sama sekali**, `orders/actions.ts:240`
+        hardcode `p_payment_terms_days: null` saat konfirmasi. RPC
+        produksi `issue_invoice_atomic` juga **tidak menegakkan**
+        validasi wajib ini — hanya jalur TS yang tidak terpakai
+        (`assertPaymentTermsComplete`, `document-engine/repository-adapter.ts`)
+        yang punya pengecekan itu. Ini gap bisnis nyata, bukan cuma
+        tampilan: invoice bisa terbit tanpa termin.
+     2. **Belum pakai `PhysicalPrintSheet.tsx`** (2 panel 9.5x5.5in per
+        lembar fisik 9.5x11in, untuk cetak continuous form 3 ply) —
+        halaman yang dibuat cuma render `PrintDocumentPanel` satuan
+        berurutan, cukup untuk "Lihat" di layar tapi belum sesuai kalau
+        untuk cetak fisik ke printer dot-matrix.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
@@ -248,6 +268,12 @@ memang sudah direncanakan.
    seluruh perubahan Gate P4.01 (Fase A+B, termasuk fix query roles) ke
    hosted (`aodp-waluyo-demo.vercel.app`) sekarang, atau tunda sampai bug
    500 (blocker Tahap 1 role-play) selesai lebih dulu?
+2. `[TEMUAN]` Tambah field termin pembayaran di form order Web + sambungkan
+   ke `confirm_sales_order_atomic`/`issue_invoice_atomic` (saat ini
+   hardcode null) — gap dari audit template invoice.
+3. `[TEMUAN]` Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx`
+   (2 panel/lembar) kalau tujuannya cetak fisik continuous form, bukan
+   cuma lihat di layar — gap dari audit template invoice.
 
 ### Ditunda — menunggu keputusan Founder
 
