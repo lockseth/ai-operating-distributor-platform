@@ -54,7 +54,7 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-16 |
 | Branch | `main` |
-| HEAD | `30fa6ad` (fix bug 500 order creation — lihat § Handoff di bawah) — **12 commit lokal di depan `origin/main`, belum di-push** |
+| HEAD | `429f63f` — **sudah di-push ke `origin/main` dan LIVE di hosted** (13 commit, termasuk fix bug 500 order creation, lihat § Handoff di bawah) |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API setelah salah asumsi sempat terjadi. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. |
 | Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
 | Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `7fc7875` (production, dikonfirmasi via GitHub Deployments API 2026-08-15). Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
@@ -353,17 +353,13 @@ memang sudah direncanakan.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
-1. `[REQUEST FOUNDER]` Keputusan: deploy migration `20261005000001` +
-   seluruh perubahan Gate P4.01 (Fase A+B, termasuk fix query roles) ke
-   hosted (`aodp-waluyo-demo.vercel.app`) sekarang, atau tunda sampai bug
-   500 (blocker Tahap 1 role-play) selesai lebih dulu?
-2. `[TEMUAN]` Tambah field termin pembayaran di form order Web + sambungkan
+1. `[TEMUAN]` Tambah field termin pembayaran di form order Web + sambungkan
    ke `confirm_sales_order_atomic`/`issue_invoice_atomic` (saat ini
    hardcode null) — gap dari audit template invoice.
-3. `[TEMUAN]` Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx`
+2. `[TEMUAN]` Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx`
    (2 panel/lembar) kalau tujuannya cetak fisik continuous form, bukan
    cuma lihat di layar — gap dari audit template invoice.
-4. `[REQUEST FOUNDER]` **Redesain Laporan Sales — rencana DITERIMA Founder,
+3. `[REQUEST FOUNDER]` **Redesain Laporan Sales — rencana DITERIMA Founder,
    BELUM diimplementasikan (eksplisit ditunda ke sesi lain).** Masalah:
    form `dashboard/reports/new` (`sales_reports`) minta sales ketik ulang
    angka (`target_oa`/`achieved_oa`/`target_revenue`/`achieved_revenue`/
@@ -538,6 +534,7 @@ menghindari risiko salah kategori pada histori yang sudah locked.
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-16 | `[REQUEST FOUNDER]` **Push 13 commit ke `origin/main` + deploy hosted** (`f13d594..429f63f`, deployment `dpl_CaLp9UDSxavqNNPZoKZyTeQWDjW7`) | Founder approve push setelah fix bug 500 (root cause RLS-blind `generateOrderNumber()`) selesai diverifikasi lokal. Isi: fix bug 500 order creation, Gate P4.01 (`requested_delivery_date` utk AI Dispatch Planner + konsolidasi field tanggal), fix role-aware "Sales yang Menangani" + query roles yang lama rusak, fix listbox pencarian pelanggan, halaman baru Lihat/Cetak Invoice, hapus menu sidebar "Collection". Dicek via `vercel ls`/`vercel inspect --wait`: build production baru selesai **Ready**, ter-alias ke `aodp-waluyo-demo.vercel.app`. Verifikasi fungsional di hosted (reproduksi skenario order yang dulu gagal 500) belum dilakukan sesi ini — menunggu Founder login manual. | **PASS — DEPLOY READY, verifikasi fungsional hosted menyusul** |
 | 2026-08-16 | `[REQUEST FOUNDER]` **`docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` baru — peta order-to-cash per tahap + status PASS/gap** | Founder minta workflow rinci dari sales buat order sampai tagihan lunas, supaya bisa melacak tahap mana yang belum PASS. Diaudit langsung ke kode (3 Explore agent paralel: order→dispatch, invoice→pelunasan, inventaris gate existing) — bukan menyalin asumsi dari dokumen lama. 9 tahap dipetakan (order dibuat → harga khusus → konfirmasi → dispatch → delivery verification → invoice → payment/collection → lunas → retur/cancel), masing-masing dengan mekanisme RPC/tabel, status, dan gate reference. Ditemukan 1 ketidaksesuaian: Constitution menyebut Delivery Verification "next target" tapi ternyata gate-nya sudah closed 2026-07-16 (dikonfirmasi baca langsung `AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md`) — Constitution-nya yang belum update bahasa, bukan gap nyata. 5 gap nyata teridentifikasi & di-rollup di bagian atas dokumen: Owner Approval Inbox UI belum ada, Dispatch Planner belum punya gate readiness resmi, Business Guard Collection Risk belum diimplementasi (baru slice discount anomaly), REVENUE governed belum reconcile credit note/return (sudah ada di Backlog #11), NOO belum reversal saat toko pembuka dibatalkan (sudah ada di Backlog #6b). Ditautkan dari `CLAUDE.md` § Sumber Kebenaran dan `TRACKER.md` § Referensi. | **SELESAI** |
 | 2026-08-15 | `[REQUEST FOUNDER]` **Restrukturisasi TRACKER.md + `docs/development/WORKFLOW.md` baru** | Founder menilai pengerjaan project "lompat-lompat dan bolong-bolong". Root cause dikonfirmasi lewat audit tracker: tidak ada bagian prospektif (cuma log retrospektif), banyak temuan besar tidak sengaja bukan dari rencana, skema Gate ID sudah terlalu dalam, dokumen gate kadang tidak ke-commit, keputusan pending tidak punya penanda. Perbaikan: tambah section Sedang Dikerjakan/Berikutnya/Ditunda, tagging asal kerja, dokumentasi eksplisit branch production (`main`) setelah insiden salah push ke branch demo hari ini, dan dokumen alur kerja baru `docs/development/WORKFLOW.md`. | **SELESAI** |
 | 2026-08-15 | `[REQUEST FOUNDER]` **Dashboard Owner: badge insight/tindakan jadi clickable + Aksi Cepat diganti sesuai scope owner** (`apps/web/src/app/(dashboard)/dashboard/owner/page.tsx`, commit `7fc7875`) | Founder laporkan 2 masalah dari screenshot: (1) badge "Perlu Tindakan Segera" tidak ada aksi — diperbaiki jadi link yang scroll ke daftar Tindakan Direkomendasikan. (2) Aksi Cepat di hero (Laporan Sales/Buat Order/Pelanggan Baru/Import Data) semuanya tugas data-entry sales/admin, bukan tugas owner — bertentangan dengan prinsip Owner First (Constitution §10, "AI merekomendasikan, owner memutuskan"). Diganti ke Risk Alert/Kelola Pengguna/Laporan Sales (lihat)/Pengaturan, dikonfirmasi Founder via pilihan eksplisit sebelum eksekusi. Sempat salah push ke branch `aodp-architecture-demo-v0.1` (dikira branch demo) — ternyata cuma bikin Preview deployment; production Vercel ternyata dari `main`, dikonfirmasi lewat GitHub Deployments API, lalu di-push ulang ke `main` dan dikonfirmasi live. | **PASS — LIVE DI HOSTED** |
