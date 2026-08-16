@@ -35,16 +35,30 @@ export default async function NewOrderPage() {
 
     supabase
       .from("users")
-      .select("id, full_name")
+      .select("id, full_name, user_roles!user_id(role:roles(name))")
       .eq("company_id", user.company_id)
       .eq("is_active", true)
-      .contains("roles", ["sales"])
       .order("full_name"),
   ]);
 
   const customers  = (customersResult.data ?? []) as { id: string; name: string; code: string; phone: string | null; area: string | null }[];
   const products   = (productsResult.data ?? []) as { id: string; name: string; sku: string; unit: string; price: number }[];
-  const salesUsers = (salesResult.data ?? []) as { id: string; full_name: string }[];
+  // Query di atas ambil SEMUA user aktif + role-nya (bukan filter server-side
+  // via .contains("roles", ...) -- kolom "roles" tidak ada di tabel users,
+  // itu bug lama yang bikin dropdown ini selalu kosong senyap. Pola join +
+  // filter di JS ini identik dengan users/page.tsx yang sudah terbukti benar.
+  const salesUsers = ((salesResult.data ?? []) as unknown as {
+    id: string; full_name: string; user_roles: Array<{ role: { name: string } | null }>;
+  }[])
+    .filter((u) => u.user_roles.some((ur) => ur.role?.name === "sales"))
+    .map((u) => ({ id: u.id, full_name: u.full_name }));
+
+  const PRIVILEGED_ROLES = ["owner", "manager", "admin", "super_admin"];
+  const currentUser = {
+    id: user.id,
+    full_name: salesUsers.find((s) => s.id === user.id)?.full_name ?? user.email,
+    isPrivileged: user.roles.some((r) => PRIVILEGED_ROLES.includes(r)),
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -64,6 +78,7 @@ export default async function NewOrderPage() {
         customers={customers}
         products={products}
         salesUsers={salesUsers}
+        currentUser={currentUser}
         action={createOrderAction}
         submitLabel="Buat Order"
         cancelHref="/dashboard/orders"

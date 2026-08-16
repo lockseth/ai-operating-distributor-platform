@@ -144,15 +144,28 @@ memang sudah direncanakan.
      tanpa error di local — kontras dengan bug 500 di hosted (blocker Tahap
      1), memperkuat dugaan akar masalah 500 spesifik ke environment hosted
      (data/RLS/state), bukan bug di kode order-creation itu sendiri.
+   - **Temuan #1 — DITUTUP Fase B, checkpoint lokal PASS**: field "Sales
+     yang Menangani" sekarang role-aware di `order-form.tsx`. Role sales →
+     teks read-only (nama sales sendiri, tanpa dropdown palsu). Role
+     owner/manager/admin/super_admin → dropdown tetap seperti semula.
+     **Bonus temuan sambil mengerjakan**: query `salesUsers` di
+     `orders/new/page.tsx` &amp; `orders/[id]/edit/page.tsx` pakai
+     `.contains("roles", ["sales"])` — kolom `roles` **tidak ada** di tabel
+     `users` (dicek langsung ke schema), jadi query ini gagal senyap dan
+     dropdown itu **selalu kosong** untuk owner/admin selama ini, bug lama
+     tidak terkait role-split. Diganti pakai pola join yang sudah terbukti
+     benar di `users/page.tsx` (`user_roles!user_id(role:roles(name))` +
+     filter di JS). Diverifikasi browser lokal 2 role: sales lihat "Sales
+     Pertama" (read-only, tanpa prefix "Ditangani oleh:" atas permintaan
+     Founder), owner lihat dropdown terisi benar ("Belum ditugaskan" +
+     "Sales Pertama"). Build+typecheck PASS.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
 1. `[REQUEST FOUNDER]` Keputusan: deploy migration `20261005000001` +
-   perubahan Gate P4.01 ke hosted (`aodp-waluyo-demo.vercel.app`) sekarang,
-   atau tunda sampai bug 500 (blocker Tahap 1 role-play) selesai lebih dulu?
-2. `[REQUEST FOUNDER]` Fase B — Temuan #1 (role-aware "Sales yang
-   Menangani" di `order-form.tsx`) — belum mulai, menunggu Fase A selesai
-   total (termasuk keputusan deploy di atas)
+   seluruh perubahan Gate P4.01 (Fase A+B, termasuk fix query roles) ke
+   hosted (`aodp-waluyo-demo.vercel.app`) sekarang, atau tunda sampai bug
+   500 (blocker Tahap 1 role-play) selesai lebih dulu?
 
 ### Ditunda — menunggu keputusan Founder
 

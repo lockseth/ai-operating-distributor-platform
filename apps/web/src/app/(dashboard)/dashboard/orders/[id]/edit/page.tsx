@@ -65,10 +65,9 @@ export default async function EditOrderPage({
 
     supabase
       .from("users")
-      .select("id, full_name")
+      .select("id, full_name, user_roles!user_id(role:roles(name))")
       .eq("company_id", user.company_id)
       .eq("is_active", true)
-      .contains("roles", ["sales"])
       .order("full_name"),
   ]);
 
@@ -102,7 +101,18 @@ export default async function EditOrderPage({
 
   const customers  = (customersResult.data ?? []) as { id: string; name: string; code: string; phone: string | null; area: string | null }[];
   const products   = (productsResult.data ?? []) as { id: string; name: string; sku: string; unit: string; price: number }[];
-  const salesUsers = (salesResult.data ?? []) as { id: string; full_name: string }[];
+  const salesUsers = ((salesResult.data ?? []) as unknown as {
+    id: string; full_name: string; user_roles: Array<{ role: { name: string } | null }>;
+  }[])
+    .filter((u) => u.user_roles.some((ur) => ur.role?.name === "sales"))
+    .map((u) => ({ id: u.id, full_name: u.full_name }));
+
+  const PRIVILEGED_ROLES = ["owner", "manager", "admin", "super_admin"];
+  const currentUser = {
+    id: user.id,
+    full_name: salesUsers.find((s) => s.id === user.id)?.full_name ?? user.email,
+    isPrivileged: user.roles.some((r) => PRIVILEGED_ROLES.includes(r)),
+  };
 
   const existingItems: ExistingItem[] = order.items.map((item) => ({
     product_id:      item.product_id,
@@ -140,6 +150,7 @@ export default async function EditOrderPage({
         customers={customers}
         products={products}
         salesUsers={salesUsers}
+        currentUser={currentUser}
         initialData={{
           customer_id:     order.customer_id,
           sales_id:        order.sales_id,

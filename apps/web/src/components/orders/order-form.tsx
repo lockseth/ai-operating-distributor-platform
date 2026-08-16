@@ -12,6 +12,11 @@ interface OrderFormProps {
   customers:  Customer[];
   products:   Product[];
   salesUsers: SalesUser[];
+  // Gate P4.01 Fase B: role sales TIDAK bisa memilih sales lain -- RPC
+  // (create/update_sales_order_atomic, Gate 3E-D3-A) sudah override diam-diam
+  // ke diri sendiri, jadi dropdown-nya menampilkan pilihan yang tidak nyata.
+  // Untuk currentUser.isPrivileged === false, field ditampilkan read-only.
+  currentUser: { id: string; full_name: string; isPrivileged: boolean };
   initialData?: Partial<OrderFormData> & { items?: OrderItemRow[] };
   action:      (data: OrderFormData) => Promise<void>;
   submitLabel?: string;
@@ -45,14 +50,16 @@ function calcItemTotal(row: OrderItemRow): number {
 }
 
 export function OrderForm({
-  customers, products, salesUsers,
+  customers, products, salesUsers, currentUser,
   initialData, action, submitLabel = "Simpan", cancelHref,
 }: OrderFormProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError]           = useState<string | null>(null);
 
   const [customerId,    setCustomerId]    = useState(initialData?.customer_id ?? "");
-  const [salesId,       setSalesId]       = useState(initialData?.sales_id ?? "");
+  const [salesId,       setSalesId]       = useState(
+    initialData?.sales_id ?? (currentUser.isPrivileged ? "" : currentUser.id)
+  );
   const [deliveryDate,  setDeliveryDate]  = useState(initialData?.delivery_date ?? "");
   const [notes,         setNotes]         = useState(initialData?.notes ?? "");
   const [orderDiscount, setOrderDiscount] = useState(0);
@@ -201,10 +208,16 @@ export function OrderForm({
           </div>
           <div>
             <label className={labelCls}>Sales yang Menangani</label>
-            <select value={salesId} onChange={(e) => setSalesId(e.target.value)} className={inputCls}>
-              <option value="">— Belum ditugaskan —</option>
-              {salesUsers.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
-            </select>
+            {currentUser.isPrivileged ? (
+              <select value={salesId} onChange={(e) => setSalesId(e.target.value)} className={inputCls}>
+                <option value="">— Belum ditugaskan —</option>
+                {salesUsers.map((s) => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+              </select>
+            ) : (
+              <p className={`${inputCls} flex items-center bg-gray-50 text-gray-600`}>
+                {currentUser.full_name}
+              </p>
+            )}
           </div>
           <div>
             <label className={labelCls}>Tanggal Kirim Diminta Customer (opsional)</label>
