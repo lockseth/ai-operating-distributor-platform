@@ -172,6 +172,47 @@ memang sudah direncanakan.
      Diverifikasi browser: search "tok" → klik opsi → search box kosong,
      dropdown collapse menampilkan "Toko Sumber Rejeki..." terpilih jelas.
      Build PASS.
+   - **Temuan besar — lanjutan role-play ke Tahap 3-6 (lokal, order
+     `SO-2608-0002`)**: setelah order dikonfirmasi, ditemukan 2 gap terkait
+     Delivery Verification & Invoice yang belum tercatat di
+     `AODP_ORDER_TO_CASH_WORKFLOW.md`:
+     1. **Tombol status generik ("Proses"/"Kirim"/"Tandai Terkirim") di
+        `orders/[id]/page.tsx` sama sekali tidak terhubung ke tabel
+        `deliveries`** — `update_sales_order_status_atomic` tidak punya
+        pengecekan apa pun ke bukti pengiriman sebelum mengizinkan status
+        `delivering`/`delivered`. Artinya siapa pun dengan akses
+        `orders.update` bisa menandai order "Terkirim" tanpa foto/GPS/driver
+        sama sekali — jalur ini **disengaja ada** sebagai "override manusia
+        yang valid" (komentar migration `20260717000001`), tapi tidak
+        ada guardrail/role-restriction/log tambahan yang membedakannya dari
+        jalur Delivery Verification asli yang sudah PASS/LOCKED.
+     2. **Tidak ada jalur web UI sama sekali untuk menerbitkan invoice** —
+        dikonfirmasi lewat komentar eksplisit di `finance/invoices/page.tsx`:
+        `issue_invoice_atomic` "dipicu alur Delivery Verification, bukan
+        workspace ini". Tidak ada tombol "Buat Invoice" di halaman detail
+        order maupun di workspace Finance. Satu-satunya jalur adalah bot
+        Telegram (driver terdaftar) — yang tidak tersedia di environment
+        manapun yang sedang diuji (lokal maupun hosted demo).
+     Kedua gap ini **membuat Tahap 5-6 pada `AODP_ORDER_TO_CASH_WORKFLOW.md`
+     perlu direvisi statusnya** — PASS hanya benar untuk jalur Telegram,
+     belum ada jalur web/manual yang setara amannya. Perlu update dokumen
+     workflow itu terpisah (belum dikerjakan sesi ini).
+   - **Pembuktian mekanisme asli (RPC langsung, bukan bypass tombol
+     generik)** — atas persetujuan Founder, dibuktikan Tahap 3→6 order
+     `SO-2608-0002` bisa selesai lewat RPC yang sama persis dipakai jalur
+     Telegram, tanpa perlu setup bot: `create_delivery_atomic` →
+     `dispatch_delivery_atomic` → `finalize_delivery_item_quantities`
+     (full coverage, qty 15+18) → `sync_sales_order_delivery_status`
+     (order → `delivered`) → `issue_invoice_atomic` (invoice
+     `AODPDEV-INV-20260816-000001` terbit, Rp833.990, order → `invoiced`,
+     dikonfirmasi `outstanding` di `invoice_receivable_balances`). Satu
+     syarat tambahan ditemukan: `issue_invoice_atomic` menolak
+     (`COMPANY_PROFILE_INCOMPLETE`) sampai profil company (legal_address,
+     contact_email, contact_phone, document_number_prefix) lengkap — data
+     seed lokal awalnya tidak mengisi ini, dilengkapi manual via SQL untuk
+     testing (data lokal, bukan tenant nyata). **Kesimpulan: mekanisme
+     backend Tahap 5-6 terbukti benar dan solid — gap-nya murni di lapisan
+     UI/aksesibilitas jalur non-Telegram, bukan di RPC/data integrity.**
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
