@@ -54,13 +54,57 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-16 |
 | Branch | `main` |
-| HEAD | `67e555d` (dokumen workflow order-to-cash) |
+| HEAD | `30fa6ad` (fix bug 500 order creation — lihat § Handoff di bawah) — **12 commit lokal di depan `origin/main`, belum di-push** |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API setelah salah asumsi sempat terjadi. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. |
 | Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
 | Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `7fc7875` (production, dikonfirmasi via GitHub Deployments API 2026-08-15). Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
 | Full LOCK Phase 3 | **Sudah** — lihat closeout final. Owner Approval Inbox UI TETAP belum ada (bukan blocker Phase 3, gate baru terpisah untuk next workstream) |
 | Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP** (menggantikan ChatGPT sebagai CTO+PM). Keputusan teknis/arsitektur diputuskan langsung oleh Claude Code (didokumentasikan di sini/commit message); keputusan arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
 | Data Operasional (tenant Waluyo, hosted) | KPI Setup lengkap — 5/5 KPI governed punya target aktif periode Agustus 2026 (Call 15, Effective Call 15, Order Count 15, Revenue Rp100jt, NOO 3 toko). Dashboard Owner sekarang menampilkan progres real untuk semuanya, bukan lagi "Data belum cukup". |
+
+---
+
+## Handoff sesi (2026-08-16, rate limit mingguan Founder >90%)
+
+Sesi ini dilanjutkan di akun/sesi lain Founder. Ringkasan supaya sesi
+berikutnya tidak perlu re-derive dari nol:
+
+**Yang sudah PASS terverifikasi lokal, menunggu SATU keputusan Founder:**
+push `git push origin main` (12 commit, sudah PASS lokal semua — build,
+lint, test suite 2563/2564 dengan 1 kegagalan pra-existing tidak terkait
+di `telegram-enrollment-control.security.test.ts`) ke hosted
+(`aodp-waluyo-demo.vercel.app`, deploy otomatis dari `main` — lihat baris
+"Deploy pipeline" di atas). Isi 12 commit itu (`fd5f410`..`30fa6ad`):
+Gate P4.01 (`requested_delivery_date` untuk AI Dispatch Planner) +
+konsolidasi field tanggal, fix role-aware "Sales yang Menangani" +
+perbaikan query roles yang lama rusak, fix bug listbox pencarian
+pelanggan, halaman baru Lihat/Cetak Invoice (Document Engine), hapus menu
+sidebar "Collection", **dan yang paling penting: fix bug 500 yang
+memblokir pembuatan order sejak awal role-play** (root cause:
+`generateOrderNumber()` kena RLS-blind, lihat Log Milestone
+tersegera/Sedang Dikerjakan #1 di bawah untuk detail lengkap).
+
+**Konteks lingkungan kerja (supaya sesi baru tidak perlu re-discover)**:
+- Docker Desktop harus jalan dulu sebelum `supabase start`/`db reset` bisa
+  connect (sempat gagal "Docker Desktop is unable to start" sebelum
+  dinyalakan manual oleh Founder).
+- Port 3000 bisa bentrok dengan sesi chat lain — `.claude/launch.json`
+  sudah diset `"autoPort": true` untuk `aodp-web`, otomatis pindah port
+  kalau bentrok (lihat hasil `preview_start` untuk port aktual).
+- Seed lokal: `pnpm seed:dev` → `owner@aodp.test` / `sales@aodp.test`,
+  password `Aodp2026!` (login manual, tombol "🧪 Masuk Demo" beda akun).
+- **Vercel CLI sudah terpasang & terautentikasi** di sesi ini (`.vercel/`
+  sudah linked ke project `aodp-waluyo-demo`) — `vercel logs
+  <deployment-url>` berguna untuk debug tapi cuma live-snapshot (reproduksi
+  dulu errornya, baru langsung panggil `vercel logs`, bukan riwayat lama).
+- Login ke hosted demo (`aodp-waluyo-demo.vercel.app`) sebagai
+  `slamatwaluyo@gmail.com` (akun sales asli Pak Waluyo) **wajib dilakukan
+  Founder sendiri** — Claude Code tidak pernah pegang passwordnya.
+- Role-play UAT masih di **Tahap 1 selesai** (order dibuat+dikonfirmasi
+  terbukti jalan) — Tahap 3-6 (dispatch→delivery→invoice) sudah dibuktikan
+  jalan **lewat RPC langsung**, belum lewat klik UI penuh karena Delivery
+  Verification cuma ada jalur Telegram (lihat gap di bawah). Peta lengkap:
+  `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`.
 
 ---
 
