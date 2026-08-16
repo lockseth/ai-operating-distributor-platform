@@ -287,6 +287,27 @@ memang sudah direncanakan.
 3. `[TEMUAN]` Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx`
    (2 panel/lembar) kalau tujuannya cetak fisik continuous form, bukan
    cuma lihat di layar — gap dari audit template invoice.
+4. `[REQUEST FOUNDER]` **Redesain Laporan Sales — rencana DITERIMA Founder,
+   BELUM diimplementasikan (eksplisit ditunda ke sesi lain).** Masalah:
+   form `dashboard/reports/new` (`sales_reports`) minta sales ketik ulang
+   angka (`target_oa`/`achieved_oa`/`target_revenue`/`achieved_revenue`/
+   `items[]`) yang sudah dihitung otomatis oleh sistem Governed KPI dan
+   eksplisit ditandai "SELF-REPORT — LEGACY, tidak memengaruhi Business
+   Health" di dashboard Owner — dua sumber kebenaran untuk hal yang sama,
+   berisiko sales lapor angka beda dari data order asli.
+   Rencana yang disetujui: pisah jadi (a) **Ringkasan KPI harian
+   read-only** — query baru di `lib/sales-reports/queries.ts`, reuse pola
+   `aggregateGovernedKpisBySalesperson()`
+   (`lib/dashboard/owner-sales-kpi-performance.ts`) tapi di-scope 1 hari
+   (`business_date = report_date`) bukan periode KPI aktif penuh; (b)
+   **Catatan kualitatif tetap manual** (`area`, `notes`/kendala & rencana
+   besok, `remaining_working_days`) — bagian yang memang tidak bisa
+   diotomatisasi, tetap jadi bahan `buildAiSummaryPlaceholder()`
+   (`lib/sales-reports/summary.ts`) yang sudah ada.
+   File terdampak nanti: `reports/new/page.tsx`, `reports/[id]/page.tsx`,
+   `reports/page.tsx`, `lib/sales-reports/{queries,actions}.ts`. **Tidak
+   ada migration DB** — field manual lama tetap di skema (insert default
+   kosong untuk baris baru), data histori tidak disentuh/dihapus.
 
 ### Ditunda — menunggu keputusan Founder
 
