@@ -63,6 +63,10 @@ const COMPANY = {
 const USERS = [
   { email: "owner@aodp.test", fullName: "Owner AODP",   phone: "0812-0000-0001", role: "owner" },
   { email: "sales@aodp.test", fullName: "Sales Pertama", phone: "0812-0000-0002", role: "sales" },
+  { email: "driver@aodp.test", fullName: "Kurir Pertama", phone: "0812-0000-0003", role: "driver" },
+  { email: "salma@aodp.test", fullName: "Salma", phone: "0812-0000-0004", role: "sales" },
+  { email: "waluyo@aodp.test", fullName: "Waluyo", phone: "0812-0000-0005", role: "sales" },
+  { email: "admin@aodp.test", fullName: "Admin AODP", phone: "0812-0000-0006", role: "admin" },
 ] as const;
 
 const PRODUCTS = [
@@ -82,16 +86,33 @@ const CUSTOMER = {
 async function findAuthUserByEmail(email: string): Promise<string | null> {
   let page = 1;
   const perPage = 1000;
+
   while (true) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
-    if (error) throw new Error(`listUsers gagal: ${error.message}`);
-    if (!data?.users?.length) break;
-    const found = data.users.find((u) => u.email === email);
+    const { data, error } = await supabase.auth.admin.listUsers({
+      page,
+      perPage,
+    });
+
+    if (error) {
+      throw new Error(
+        `listUsers gagal: ${error.message} (status=${error.status ?? "unknown"})`,
+      );
+    }
+
+    const users = data?.users ?? [];
+    const found = users.find(
+      (user) => user.email?.toLowerCase() === email.toLowerCase(),
+    );
+
     if (found) return found.id;
-    if (data.users.length < perPage) break;
-    page++;
+
+    // `nextPage`/`lastPage` dari GoTrue lokal tidak selalu konsisten (bisa
+    // saling kontradiktif dengan ratusan user leftover dari integration
+    // test) -- berhenti berdasar jumlah hasil aktual, bukan metadata itu.
+    if (users.length < perPage) return null;
+
+    page += 1;
   }
-  return null;
 }
 
 async function main() {
@@ -148,11 +169,20 @@ async function main() {
       .from("roles").select("id").eq("name", u.role).is("company_id", null).single();
     if (roleErr || !roleRow) throw new Error(`Role ${u.role} tidak ditemukan`);
 
-    const { error: urErr } = await supabase.from("user_roles").upsert(
-      { user_id: userId, role_id: roleRow.id, company_id: companyId },
-      { onConflict: "user_id,role_id,company_id" }
-    );
-    if (urErr) throw new Error(`Gagal assign role ${u.role} ke ${u.email}: ${urErr.message}`);
+    const { data: existingRole } = await supabase
+      .from("user_roles").select("id")
+      .eq("user_id", userId).eq("role_id", roleRow.id).eq("company_id", companyId)
+      .maybeSingle();
+
+    if (!existingRole) {
+      // Insert murni (bukan upsert) -- trigger Gate 3D-B1
+      // (enforce_single_owner_per_company) fire di setiap UPDATE OF
+      // role_id/company_id walau nilainya identik, jadi upsert ke baris
+      // yang sudah ada salah menabrak guard itu untuk role owner.
+      const { error: urErr } = await supabase.from("user_roles")
+        .insert({ user_id: userId, role_id: roleRow.id, company_id: companyId });
+      if (urErr) throw new Error(`Gagal assign role ${u.role} ke ${u.email}: ${urErr.message}`);
+    }
     console.log(`    role ${u.role} -> ${u.email}`);
     userIds[u.role] = userId;
   }
@@ -205,8 +235,9 @@ async function main() {
   }
 
   console.log("\nSeed selesai.");
-  console.log(`Login owner: owner@aodp.test / ${SEED_PASSWORD}`);
-  console.log(`Login sales: sales@aodp.test / ${SEED_PASSWORD}`);
+  for (const u of USERS) {
+    console.log(`Login ${u.role}: ${u.email} / ${SEED_PASSWORD}`);
+  }
 }
 
 main().catch((err) => {
