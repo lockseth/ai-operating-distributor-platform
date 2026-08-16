@@ -39,7 +39,7 @@ export default async function EditOrderPage({
       .from("sales_orders")
       .select(`
         id, order_number, status, customer_id, sales_id,
-        discount_amount, final_amount, notes, delivery_date,
+        discount_amount, final_amount, notes, delivery_date, requested_delivery_date,
         items:sales_order_items(
           product_id, quantity, unit_price, discount_amount, total_amount, notes,
           product:products!product_id(name, sku, unit)
@@ -84,6 +84,7 @@ export default async function EditOrderPage({
     final_amount: number;
     notes: string | null;
     delivery_date: string | null;
+    requested_delivery_date: string | null;
     items: Array<{
       product_id: string;
       quantity: number;
@@ -143,6 +144,7 @@ export default async function EditOrderPage({
           customer_id:     order.customer_id,
           sales_id:        order.sales_id,
           delivery_date:   order.delivery_date ?? "",
+          requested_delivery_date: order.requested_delivery_date ?? "",
           notes:           order.notes ?? "",
           discount_amount: order.discount_amount,
           items:           existingItems,

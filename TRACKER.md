@@ -79,28 +79,63 @@ memang sudah direncanakan.
 
 ### Sedang Dikerjakan
 
-_(kosong — isi saat mulai kerja, pindahkan ke Log Milestone saat selesai)_
+1. `[REQUEST FOUNDER]` **Role-play UAT order-to-cash end-to-end** — Claude
+   Code jalankan siklus penuh sebagai role `sales` (`slamatwaluyo@gmail.com`,
+   tenant PT Sumber Warna Alam Sudiada) sesuai
+   `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`, Founder mengamati lewat
+   Browser pane, login dilakukan Founder sendiri. Environment: **hosted
+   demo** `aodp-waluyo-demo.vercel.app` — order/invoice yang dibuat nambah
+   data sungguhan di situ. Aturan interupsi berlaku: stop, jawab, catat,
+   tidak lanjut tanpa perintah eksplisit.
+   - **STATUS: BLOCKED di Tahap 1 (order dibuat)** — percobaan pertama
+     (Pelanggan "Tk Agung abadi", 1x DEMO-Cat Kayu Besi 1kg, harga normal
+     tanpa diskon, qty 1) gagal `POST /dashboard/orders/new → HTTP 500`,
+     pesan error diredaksi total oleh Next.js production (Backlog #4).
+     Dikonfirmasi **tidak ada order nyangkut** (list order tetap 0) — aman
+     dari duplikat, tapi order-to-cash belum bisa lanjut ke Tahap 2+ sampai
+     ini terselesaikan. Root cause belum pasti — sudah dibaca RPC
+     `create_sales_order_atomic` (`20260927000001`) lengkap, semua jalur
+     error di dalamnya mengembalikan outcome bersih (`invalid_customer`,
+     `customer_not_owned`, `invalid_sales_id`, `no_items`,
+     `invalid_product`), bukan exception mentah — jadi 500 ini kemungkinan
+     dari layer Next.js Server Action atau sesuatu di luar RPC ini, belum
+     digali lebih jauh (perlu akses log Vercel/Supabase hosted yang belum
+     tersedia di sesi ini).
+   - **Temuan #1 (dikonfirmasi benar)**: auto-attribution `sales_id` ke
+     actor sales sendiri + guard "toko tidak bisa pindah sales sembarangan"
+     sudah terimplementasi persis sesuai insight Pak Waluyo — Gate
+     3E-D3-A (`20260919000001_gate_3e_d3_a_sales_auto_attribution.sql`).
+     Dropdown "Sales yang Menangani" di form tetap tampil tapi tidak
+     berpengaruh untuk role sales (server override) — bukan bug, tapi
+     berpotensi membingungkan karena tampak seperti pilihan yang nyata.
+   - **Temuan #2 (gap baru) — DITUTUP Fase A, Gate P4.01, checkpoint lokal
+     PASS**: field "Tanggal Pengiriman" di form create order mengisi
+     `sales_orders.delivery_date` — murni catatan/tampilan (muncul di list
+     & detail order), **bukan** sinyal yang dipakai AI Dispatch Planner.
+     Planner sebenarnya baca kolom terpisah `sales_orders.
+     requested_delivery_date` ("preferensi tanggal kirim customer",
+     `20260721000001_dispatch_planning.sql`) — tapi kolom itu tidak punya UI
+     sama sekali. Ditutup lewat migration `20261005000001` (param baru
+     `p_requested_delivery_date DATE DEFAULT NULL` di
+     `create/update_sales_order_atomic`, pola additive identik gate foto/GPS
+     toko) + field baru "Tanggal Diminta Customer" di `order-form.tsx`.
+     Diverifikasi lokal: build+lint PASS, `supabase db reset` PASS tanpa
+     error, 2563/2564 test suite PASS (1 gagal pra-existing tidak terkait,
+     soal tombol Telegram enrollment), RPC create & update dites langsung
+     lewat psql — kolom `requested_delivery_date` tersimpan &amp; ter-update
+     terpisah dari `delivery_date`, terbukti benar. **Belum di-deploy ke
+     hosted** — menunggu keputusan Founder (lihat Berikutnya).
+     Field "Sales yang Menangani" (Temuan #1) sengaja BELUM dikerjakan —
+     Fase B, sesi terpisah, atas permintaan Founder (rate limit).
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
-1. `[REQUEST FOUNDER]` **Role-play UAT order-to-cash end-to-end** — Claude Code
-   jalankan siklus penuh sebagai role `sales` sesuai
-   `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` (order → harga khusus bila
-   perlu → konfirmasi → dispatch → delivery verification → invoice →
-   pembayaran → lunas) sambil Founder mengamati. Founder bisa
-   interupsi/bertanya kapan saja — **saat interupsi: stop dulu, jawab,
-   catat di tracker, JANGAN lanjut eksekusi sebelum perintah eksplisit
-   Founder.**
-   - Environment: **hosted demo** `aodp-waluyo-demo.vercel.app` (data tenant
-     nyata PT Sumber Warna Alam Sudiada — order/invoice yang dibuat akan
-     nambah data sungguhan di situ, bukan data seed sekali-pakai)
-   - Cara amati: **Browser pane** (panel bawaan app Claude Code) — panel ini
-     harus aktif/terlihat di sisi Founder supaya screenshot/compositing
-     jalan (sempat gagal di sesi sebelumnya saat panel tidak terbuka)
-   - **Login dilakukan Founder sendiri** (bukan Claude Code) — Founder yang
-     masuk ke akun `sales` di tab Browser pane itu, baru Claude Code
-     melanjutkan aksi dari sesi yang sudah login
-   - Belum mulai — menunggu Founder membuka session & login
+1. `[REQUEST FOUNDER]` Keputusan: deploy migration `20261005000001` +
+   perubahan Gate P4.01 ke hosted (`aodp-waluyo-demo.vercel.app`) sekarang,
+   atau tunda sampai bug 500 (blocker Tahap 1 role-play) selesai lebih dulu?
+2. `[REQUEST FOUNDER]` Fase B — Temuan #1 (role-aware "Sales yang
+   Menangani" di `order-form.tsx`) — belum mulai, menunggu Fase A selesai
+   total (termasuk keputusan deploy di atas)
 
 ### Ditunda — menunggu keputusan Founder
 

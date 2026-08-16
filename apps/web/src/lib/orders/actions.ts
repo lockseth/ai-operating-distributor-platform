@@ -24,6 +24,7 @@ export interface OrderFormData {
   customer_id: string;
   sales_id: string | null;
   delivery_date: string | null;
+  requested_delivery_date: string | null;
   notes: string | null;
   discount_amount: number;
   items: OrderItemInput[];
@@ -95,6 +96,7 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       total_amount: item.total_amount,
       notes: item.notes || null,
     })),
+    p_requested_delivery_date: data.requested_delivery_date || null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -158,6 +160,7 @@ export async function updateOrderAction(
       total_amount: item.total_amount,
       notes: item.notes || null,
     })),
+    p_requested_delivery_date: data.requested_delivery_date || null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
