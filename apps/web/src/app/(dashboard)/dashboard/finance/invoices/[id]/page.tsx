@@ -28,6 +28,7 @@ import {
   hasFinanceWorkspaceAccess,
 } from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
+import { FileText } from "lucide-react";
 import { SectionHeader } from "@/components/ui/section-header";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -133,6 +134,13 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       >
         <StatusBadge status={invoice.financialStatus} domain="invoice" />
         {invoice.promiseStatus && <StatusBadge status={invoice.promiseStatus} domain="promise" />}
+        <Link
+          href={`/dashboard/finance/invoices/${invoice.id}/print`}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <FileText className="h-3.5 w-3.5" />
+          Lihat/Cetak Invoice
+        </Link>
       </PageHeader>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

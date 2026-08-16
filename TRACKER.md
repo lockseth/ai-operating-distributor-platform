@@ -213,6 +213,34 @@ memang sudah direncanakan.
      testing (data lokal, bukan tenant nyata). **Kesimpulan: mekanisme
      backend Tahap 5-6 terbukti benar dan solid — gap-nya murni di lapisan
      UI/aksesibilitas jalur non-Telegram, bukan di RPC/data integrity.**
+   - **Halaman baru — Lihat/Cetak Invoice, DITUTUP, checkpoint lokal PASS**:
+     Founder minta bisa benar-benar melihat dokumen nota/invoice (bukti
+     database saja tidak cukup), sejalan arahan channel baru: Web dipakai
+     Sales (Telegram disisihkan dulu) + Owner/Admin (WA menyusul). Route
+     baru `finance/invoices/[id]/print` menyambungkan komponen Document
+     Engine yang sudah lengkap & teruji (`PrintDocumentPanel`,
+     `buildPrintViewModel`, `paginatePrintDocument`) — sebelumnya cuma
+     dipakai di test integration (render ke HTML statis di scratchpad),
+     tidak pernah ada di satu pun route aplikasi. Tombol "Lihat/Cetak
+     Invoice" ditambahkan di halaman detail invoice existing.
+     **Temuan arsitektur sambil mengerjakan**: ternyata ada 2 jalur
+     pembuatan snapshot invoice yang independen dan sudah divergen — RPC
+     SQL `issue_invoice_atomic` (jalur transaksional locked, dipakai role-
+     play ini) menulis snapshot "tipis" (lines/totals/nomor dokumen saja),
+     sedangkan builder TypeScript `issueInvoiceDocument()`
+     (`document-engine/issuance.ts`, HANYA dipakai di
+     `full-path-demo.integration.test.ts`, tidak pernah dipanggil jalur
+     produksi manapun) menghasilkan snapshot lengkap (+ tenant/store/
+     salesman/signatures). Ditutup TANPA menyentuh RPC yang locked: halaman
+     print melengkapi 4 bagian yang hilang (`tenant`, `store`, `salesman`,
+     `signatures`) dari tabel `companies`/`sales_orders`/`deliveries` saat
+     baca, snapshot tersimpan di DB tidak diubah. **Follow-up yang belum
+     dikerjakan**: apakah dua jalur snapshot ini sengaja dibiarkan berbeda,
+     atau `issue_invoice_atomic` seharusnya ikut menulis snapshot lengkap
+     dari awal — perlu keputusan terpisah, bukan diputuskan sepihak di sini.
+     Diverifikasi browser lokal: invoice `AODPDEV-INV-20260816-000001`
+     tampil lengkap (kop perusahaan, data toko, item, subtotal/diskon/
+     grand total/terbilang, kolom tanda tangan). Build+typecheck PASS.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
