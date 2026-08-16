@@ -261,6 +261,19 @@ memang sudah direncanakan.
         halaman yang dibuat cuma render `PrintDocumentPanel` satuan
         berurutan, cukup untuk "Lihat" di layar tapi belum sesuai kalau
         untuk cetak fisik ke printer dot-matrix.
+   - **Klarifikasi tambahan (2026-08-16)**: Founder tunjukkan gambar
+     referensi template "Continuous Form 4 Ply, 1 dokumen = 1 halaman
+     penuh, tanda tangan 'DITERIMA OLEH'" — sekilas bertentangan dengan
+     spec LOCKED di atas (3 Ply, 2 panel/lembar, "Penerima"). Dicek ke
+     revision history `AODP_DOCUMENT_LAYOUT_GUIDE.md`: format di gambar
+     itu persis versi PAGI 23 Juli 2026 yang **sudah dibatalkan sendiri**
+     malam harinya di hari yang sama (dikoreksi ke 3 Ply/2 panel/
+     "Penerima" — LOCK final). **Dikonfirmasi Founder: gambar itu
+     referensi lama yang sudah dibatalkan, bukan keputusan baru** — kode
+     Document Engine saat ini (`PrintDocumentPanel`, `print-pagination`,
+     `print.css`) sudah benar mengikuti versi LOCKED final, tidak perlu
+     direvisi. Dicatat di sini supaya kalau gambar yang sama muncul lagi
+     di sesi lain, tidak perlu diinvestigasi ulang dari nol.
    - **Sidebar: item "Collection" dihapus — DITUTUP, checkpoint lokal
      PASS**: Founder laporkan klik "Collection" di sidebar mengarah ke
      Finance Operations (membingungkan) — memang benar redirect disengaja
