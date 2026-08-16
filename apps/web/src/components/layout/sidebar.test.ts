@@ -55,10 +55,9 @@ describe("Sidebar — Finance Operations (Gate 2I.1, FIN-01)", () => {
     expect(item?.roles).toBeUndefined();
   });
 
-  it("tidak menghapus/mengubah item 'Collection' existing yang sudah ada sebelum Finance Operations", () => {
+  it("item 'Collection' sengaja DIHAPUS dari sidebar (redundan -- klik mengarah ke Finance Operations, membingungkan, permintaan Founder) -- /dashboard/collection tetap ada sebagai redirect shim, hanya menu-nya yang hilang", () => {
     const collection = allItems().find((i) => i.label === "Collection");
-    expect(collection?.href).toBe("/dashboard/collection");
-    expect(collection?.roles).toEqual(["super_admin", "owner", "manager", "admin", "finance"]);
+    expect(collection).toBeUndefined();
   });
 });
 

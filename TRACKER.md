@@ -261,6 +261,19 @@ memang sudah direncanakan.
         halaman yang dibuat cuma render `PrintDocumentPanel` satuan
         berurutan, cukup untuk "Lihat" di layar tapi belum sesuai kalau
         untuk cetak fisik ke printer dot-matrix.
+   - **Sidebar: item "Collection" dihapus — DITUTUP, checkpoint lokal
+     PASS**: Founder laporkan klik "Collection" di sidebar mengarah ke
+     Finance Operations (membingungkan) — memang benar redirect disengaja
+     (Gate 2I.4-G11, `/dashboard/collection` → `/dashboard/finance/collection`,
+     workspace Finance Operations sudah punya tab "Collection & Janji
+     Bayar" sendiri, jadi menu sidebar terpisah jadi redundan). Item +
+     `IconCollection` dihapus dari `sidebar.tsx`; route redirect-nya TETAP
+     ada (untuk bookmark/link lama). Test regresi lama yang justru
+     mengunci KEBERADAAN item ini (`sidebar.test.ts`) diperbarui jadi
+     mengunci KETIADAANNYA. Diverifikasi: build PASS, test PASS
+     (2563/2564, 1 gagal pra-existing tidak terkait), browser lokal
+     dicek sidebar owner — "Collection" hilang, langsung KPI Salesman →
+     Finance Operations.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 

@@ -90,13 +90,6 @@ function IconChat() {
     </svg>
   );
 }
-function IconCollection() {
-  return (
-    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-    </svg>
-  );
-}
 function IconShield() {
   return (
     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -181,7 +174,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "AI Dispatch Planner", href: "/dashboard/dispatch", icon: <IconDispatch />, permission: "dispatch.view" },
       { label: "Laporan Sales", href: "/dashboard/reports",    icon: <IconChart />,      permission: "reports.view" },
       { label: "KPI Salesman",  href: "/dashboard/kpi",        icon: <IconTarget />,     permission: "sales_kpi.view" },
-      { label: "Collection",    href: "/dashboard/collection", icon: <IconCollection />, roles: ["super_admin", "owner", "manager", "admin", "finance"] },
       { label: "Finance Operations", href: "/dashboard/finance", icon: <IconFinance />, permission: "receivable.view" },
       { label: "Risk Alert",    href: "/dashboard/risk",       icon: <IconShield />,     roles: ["super_admin", "owner", "manager"] },
       { label: "AI Insights",   href: "/dashboard/ai",         icon: <IconAI />,         permission: "ai.view" },
