@@ -83,8 +83,13 @@ export default async function SalesReportsPage() {
 
   const totalTarget   = performance.reduce((s, p) => s + p.target_revenue, 0);
   const totalAchieved = performance.reduce((s, p) => s + p.achieved_revenue, 0);
-  const totalOaTarget   = performance.reduce((s, p) => s + p.target_oa, 0);
   const totalOaAchieved = performance.reduce((s, p) => s + p.achieved_oa, 0);
+  // Gate P4.03: laporan baru tidak lagi punya "target harian" manual (angka
+  // KPI-nya auto dari governed ledger, target sebenarnya per-periode ada di
+  // sales_kpi_targets, bukan disimpan per laporan) -- target_revenue selalu
+  // 0 untuk laporan baru, jadi gap/pct cuma ditampilkan kalau ADA target
+  // nyata dari laporan lama (pre-redesain), bukan dikarang jadi 100%.
+  const hasRealTarget = totalTarget > 0;
   const totalGap = calcGap(totalTarget, totalAchieved);
   const totalPct = calcAchievementPct(totalTarget, totalAchieved);
 
@@ -95,7 +100,7 @@ export default async function SalesReportsPage() {
     <div className="p-6 space-y-5">
       <PageHeader
         title="Laporan Sales"
-        subtitle="Laporan harian sales: target OA, omzet, dan produk terjual"
+        subtitle="Ringkasan KPI harian otomatis dari sistem + catatan kualitatif sales"
       >
         {canCreate && (
           <Link href="/dashboard/reports/new"
@@ -106,29 +111,43 @@ export default async function SalesReportsPage() {
         )}
       </PageHeader>
 
-      {/* Ringkasan bulan berjalan */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Ringkasan bulan berjalan -- OA/Omzet sekarang auto dari governed KPI.
+          Target/Gap/% cuma berarti kalau ada laporan lama (pre-redesain)
+          yang masih bawa target manual; kalau tidak, jangan dikarang. */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
         <div className="rounded-xl border bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">Omzet Tercapai ({monthLabel})</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{formatIDR(totalAchieved)}</p>
-          <p className="text-xs text-gray-400">dari target {formatIDR(totalTarget)}</p>
-        </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">Pencapaian Omzet</p>
-          <p className={`mt-1 text-lg font-semibold ${totalPct >= 100 ? "text-green-600" : "text-gray-900"}`}>{totalPct}%</p>
-          <p className="text-xs text-gray-400">{monthReports.length} laporan bulan ini</p>
+          <p className="text-xs text-gray-400">
+            {hasRealTarget ? `dari target ${formatIDR(totalTarget)}` : "auto dari governed KPI"}
+          </p>
         </div>
         <div className="rounded-xl border bg-white p-4 shadow-sm">
           <p className="text-xs text-gray-500">OA Tercapai</p>
           <p className="mt-1 text-lg font-semibold text-gray-900">{totalOaAchieved}</p>
-          <p className="text-xs text-gray-400">dari target {totalOaTarget} outlet</p>
+          <p className="text-xs text-gray-400">{monthReports.length} laporan bulan ini</p>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">Gap Omzet</p>
-          <p className={`mt-1 text-lg font-semibold ${totalGap > 0 ? "text-amber-600" : "text-green-600"}`}>
-            {totalGap > 0 ? formatIDR(totalGap) : "Tercapai"}
-          </p>
-        </div>
+        {hasRealTarget ? (
+          <>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <p className="text-xs text-gray-500">Pencapaian Omzet</p>
+              <p className={`mt-1 text-lg font-semibold ${totalPct >= 100 ? "text-green-600" : "text-gray-900"}`}>{totalPct}%</p>
+            </div>
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <p className="text-xs text-gray-500">Gap Omzet</p>
+              <p className={`mt-1 text-lg font-semibold ${totalGap > 0 ? "text-amber-600" : "text-green-600"}`}>
+                {totalGap > 0 ? formatIDR(totalGap) : "Tercapai"}
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <p className="text-xs text-gray-500">Target Periode</p>
+            <p className="mt-1 text-sm text-gray-600">
+              Lihat <Link href="/dashboard/kpi" className="text-blue-600 hover:text-blue-800">KPI Salesman</Link> untuk target vs pencapaian periode aktif.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Ranking sales bulan berjalan */}
@@ -151,27 +170,34 @@ export default async function SalesReportsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {performance.map((p, i) => (
-                  <tr key={p.salesperson_id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{p.salesperson_name}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">{p.achieved_oa}/{p.target_oa}</td>
-                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(p.achieved_revenue)}</td>
-                    <td className="px-4 py-3 text-right text-gray-600">{formatIDR(p.target_revenue)}</td>
-                    <td className={`px-4 py-3 text-right ${p.gap_revenue > 0 ? "text-amber-600" : "text-green-600"}`}>
-                      {p.gap_revenue > 0 ? formatIDR(p.gap_revenue) : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                        p.achievement_pct >= 100 ? "bg-green-50 text-green-700"
-                        : p.achievement_pct >= 70 ? "bg-blue-50 text-blue-700"
-                        : "bg-amber-50 text-amber-700"
-                      }`}>
-                        {p.achievement_pct}%
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {performance.map((p, i) => {
+                  const rowHasTarget = p.target_revenue > 0;
+                  return (
+                    <tr key={p.salesperson_id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{p.salesperson_name}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{p.achieved_oa}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(p.achieved_revenue)}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{rowHasTarget ? formatIDR(p.target_revenue) : "—"}</td>
+                      <td className={`px-4 py-3 text-right ${rowHasTarget && p.gap_revenue > 0 ? "text-amber-600" : rowHasTarget ? "text-green-600" : "text-gray-400"}`}>
+                        {rowHasTarget ? (p.gap_revenue > 0 ? formatIDR(p.gap_revenue) : "Tercapai") : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        {rowHasTarget ? (
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                            p.achievement_pct >= 100 ? "bg-green-50 text-green-700"
+                            : p.achievement_pct >= 70 ? "bg-blue-50 text-blue-700"
+                            : "bg-amber-50 text-amber-700"
+                          }`}>
+                            {p.achievement_pct}%
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -206,16 +232,17 @@ export default async function SalesReportsPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {reports.map((r) => {
+                  const rowHasTarget = r.target_revenue > 0;
                   const gap = calcGap(r.target_revenue, r.achieved_revenue);
                   return (
                     <tr key={r.id} className="group hover:bg-gray-50">
                       <td className="px-4 py-3 text-gray-900">{formatDate(r.report_date)}</td>
                       <td className="px-4 py-3 font-medium text-gray-900">{r.salesperson?.full_name ?? "—"}</td>
                       <td className="px-4 py-3 text-xs text-gray-500">{r.area ?? "—"}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{r.achieved_oa}/{r.target_oa}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{r.achieved_oa}</td>
                       <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(r.achieved_revenue)}</td>
-                      <td className={`px-4 py-3 text-right ${gap > 0 ? "text-amber-600" : "text-green-600"}`}>
-                        {gap > 0 ? formatIDR(gap) : "—"}
+                      <td className={`px-4 py-3 text-right ${rowHasTarget && gap > 0 ? "text-amber-600" : "text-green-600"}`}>
+                        {rowHasTarget && gap > 0 ? formatIDR(gap) : "—"}
                       </td>
                       <td className="px-4 py-3 text-right text-gray-600">{formatIDR(r.grand_total)}</td>
                       <td className="px-4 py-3 text-right">

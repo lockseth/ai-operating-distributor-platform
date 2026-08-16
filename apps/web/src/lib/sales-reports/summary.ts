@@ -78,29 +78,30 @@ function formatIDR(n: number): string {
   }).format(n);
 }
 
-/**
- * Placeholder AI summary — narasi deterministik dari angka laporan.
- * Akan diganti pemanggilan AI provider layer pada fase berikutnya.
- */
-export function buildAiSummaryPlaceholder(input: ReportMetrics & { area?: string | null }): string {
-  const gapRevenue = calcGap(input.target_revenue, input.achieved_revenue);
-  const pctRevenue = calcAchievementPct(input.target_revenue, input.achieved_revenue);
-  const pctOa      = calcAchievementPct(input.target_oa, input.achieved_oa);
+export interface DailyReportSummaryInput {
+  call: number;
+  effectiveCall: number;
+  orderCount: number;
+  revenue: number;
+  noo: number;
+  remaining_working_days: number;
+  area?: string | null;
+}
 
+/**
+ * Placeholder AI summary — narasi deterministik dari ringkasan KPI harian
+ * governed (Gate P4.03). Tidak lagi membingkai "target vs pencapaian" --
+ * laporan harian tidak punya konsep target harian, cuma rekap apa yang
+ * sungguhan terjadi. Akan diganti pemanggilan AI provider layer pada fase
+ * berikutnya.
+ */
+export function buildAiSummaryPlaceholder(input: DailyReportSummaryInput): string {
   const parts: string[] = [];
   parts.push(
-    `Pencapaian omzet ${formatIDR(input.achieved_revenue)} dari target ${formatIDR(input.target_revenue)} (${pctRevenue}%).`
+    `${input.effectiveCall} effective call dari ${input.call} kunjungan, menghasilkan ${input.orderCount} order senilai ${formatIDR(input.revenue)}.`
   );
-  parts.push(`OA tercapai ${input.achieved_oa} dari target ${input.target_oa} (${pctOa}%).`);
-  if (gapRevenue > 0) {
-    parts.push(
-      input.remaining_working_days > 0
-        ? `Gap ${formatIDR(gapRevenue)} dengan sisa ${input.remaining_working_days} hari kerja — butuh ±${formatIDR(Math.ceil(gapRevenue / input.remaining_working_days))} per hari.`
-        : `Gap ${formatIDR(gapRevenue)} dan tidak ada sisa hari kerja.`
-    );
-  } else {
-    parts.push("Target omzet sudah tercapai.");
-  }
+  if (input.noo > 0) parts.push(`${input.noo} toko baru berhasil dibuka.`);
   if (input.area) parts.push(`Area kunjungan: ${input.area}.`);
+  if (input.remaining_working_days > 0) parts.push(`Sisa ${input.remaining_working_days} hari kerja bulan ini.`);
   return parts.join(" ");
 }

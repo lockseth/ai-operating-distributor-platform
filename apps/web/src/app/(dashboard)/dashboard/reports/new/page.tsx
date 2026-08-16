@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { SalesReportForm } from "@/components/sales-reports/sales-report-form";
 import { createSalesReportAction } from "@/lib/sales-reports/actions";
+import { getDailyGovernedKpiSummary, getDailySoldItems } from "@/lib/sales-reports/queries";
 
 export const metadata = { title: "Buat Laporan Sales — AODP" };
 
@@ -14,6 +15,10 @@ interface UserWithRoles {
   user_roles: { role: { name: string } | null }[];
 }
 
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export default async function NewSalesReportPage() {
   const user = await getAuthUser();
 
@@ -21,24 +26,14 @@ export default async function NewSalesReportPage() {
 
   const supabase = await createClient();
 
-  const [productsResult, usersResult] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, name, unit")
-      .eq("company_id", user.company_id)
-      .eq("is_active", true)
-      .order("name"),
-    supabase
-      .from("users")
-      .select("id, full_name, user_roles!user_id(role:roles(name))")
-      .eq("company_id", user.company_id)
-      .eq("is_active", true)
-      .order("full_name"),
-  ]);
+  const { data: usersData } = await supabase
+    .from("users")
+    .select("id, full_name, user_roles!user_id(role:roles(name))")
+    .eq("company_id", user.company_id)
+    .eq("is_active", true)
+    .order("full_name");
 
-  const products = (productsResult.data ?? []) as { id: string; name: string; unit: string }[];
-
-  const salesUsers = ((usersResult.data ?? []) as unknown as UserWithRoles[])
+  const salesUsers = ((usersData ?? []) as unknown as UserWithRoles[])
     .filter((u) => u.user_roles?.some((ur) => ur.role?.name === "sales"))
     .map((u) => ({ id: u.id, full_name: u.full_name }));
 
@@ -46,16 +41,23 @@ export default async function NewSalesReportPage() {
   const canReportForOthers = hasRole(user.roles, ["owner", "manager", "admin", "super_admin"]);
   const selfSalespersonId  = canReportForOthers ? null : user.id;
 
+  const initialPreview = selfSalespersonId
+    ? {
+        kpi: await getDailyGovernedKpiSummary(user.company_id, selfSalespersonId, todayISO()),
+        items: await getDailySoldItems(user.company_id, selfSalespersonId, todayISO()),
+      }
+    : { kpi: { call: 0, effectiveCall: 0, orderCount: 0, revenue: 0, noo: 0 }, items: [] };
+
   return (
     <div className="p-6 space-y-5 max-w-4xl">
       <PageHeader
         title="Buat Laporan Sales"
-        subtitle="Input laporan harian: target, pencapaian, dan produk terjual"
+        subtitle="Ringkasan KPI otomatis dari sistem + catatan kualitatif harian"
       />
       <SalesReportForm
-        products={products}
         salesUsers={salesUsers}
         selfSalespersonId={selfSalespersonId}
+        initialPreview={initialPreview}
         action={createSalesReportAction}
         cancelHref="/dashboard/reports"
       />

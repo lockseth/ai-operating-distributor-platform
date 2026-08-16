@@ -4,9 +4,8 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
-import { getOrdersSnapshot } from "@/lib/sales-reports/queries";
-import { calcGap, calcAchievementPct } from "@/lib/sales-reports/summary";
-import { Sparkles, ArrowLeft, ShoppingCart } from "lucide-react";
+import { getDailyGovernedKpiSummary } from "@/lib/sales-reports/queries";
+import { Sparkles, ArrowLeft } from "lucide-react";
 
 export const metadata = { title: "Detail Laporan Sales — AODP" };
 
@@ -14,14 +13,8 @@ interface ReportDetail {
   id: string;
   report_date: string;
   area: string | null;
-  target_oa: number;
-  achieved_oa: number;
-  target_revenue: number;
-  achieved_revenue: number;
   remaining_working_days: number;
-  discount_amount: number;
   total_value: number;
-  grand_total: number;
   notes: string | null;
   ai_summary: string | null;
   salesperson_id: string;
@@ -60,7 +53,7 @@ export default async function SalesReportDetailPage({
   const { data } = await supabase
     .from("sales_reports")
     .select(
-      "id, report_date, area, target_oa, achieved_oa, target_revenue, achieved_revenue, remaining_working_days, discount_amount, total_value, grand_total, notes, ai_summary, salesperson_id, salesperson:users!salesperson_id(full_name), items:sales_report_items(id, product_name_snapshot, quantity, unit, value)"
+      "id, report_date, area, remaining_working_days, total_value, notes, ai_summary, salesperson_id, salesperson:users!salesperson_id(full_name), items:sales_report_items(id, product_name_snapshot, quantity, unit, value)"
     )
     .eq("id", id)
     .eq("company_id", user.company_id)
@@ -73,12 +66,11 @@ export default async function SalesReportDetailPage({
   const canViewAll = hasRole(user.roles, ["owner", "manager", "admin", "finance", "super_admin"]);
   if (!canViewAll && report.salesperson_id !== user.id) redirect("/dashboard/reports");
 
-  const gap        = calcGap(report.target_revenue, report.achieved_revenue);
-  const pctRevenue = calcAchievementPct(report.target_revenue, report.achieved_revenue);
-  const pctOa      = calcAchievementPct(report.target_oa, report.achieved_oa);
-
-  // Hybrid: pembanding dari sales_orders bila ada
-  const ordersSnapshot = await getOrdersSnapshot(
+  // Gate P4.03: ringkasan KPI governed dihitung ulang live dari ledger
+  // (bukan dibaca dari kolom achieved_oa/achieved_revenue lama) -- ledger
+  // append-only jadi angkanya selalu identik utk hari yang sama, berlaku
+  // juga utk laporan lama sebelum redesain ini (self-report legacy).
+  const kpi = await getDailyGovernedKpiSummary(
     user.company_id,
     report.salesperson_id,
     report.report_date
@@ -88,7 +80,7 @@ export default async function SalesReportDetailPage({
     <div className="p-6 space-y-5 max-w-4xl">
       <PageHeader
         title={`Laporan ${report.salesperson?.full_name ?? "—"}`}
-        subtitle={`${formatDate(report.report_date)}${report.area ? ` • ${report.area}` : ""}`}
+        subtitle={`${formatDate(report.report_date)}${report.area ? ` • ${report.area}` : ""}${report.remaining_working_days > 0 ? ` • Sisa ${report.remaining_working_days} hari kerja` : ""}`}
       >
         <Link href="/dashboard/reports"
           className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
@@ -96,29 +88,33 @@ export default async function SalesReportDetailPage({
         </Link>
       </PageHeader>
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">OA (Outlet Aktif)</p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">{report.achieved_oa}/{report.target_oa}</p>
-          <p className="text-xs text-gray-400">{pctOa}% tercapai</p>
+      {/* Ringkasan KPI governed -- sumber tunggal, sama dengan dashboard Owner */}
+      <div className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-blue-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Ringkasan KPI Hari Ini</h2>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">Omzet</p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">{formatIDR(report.achieved_revenue)}</p>
-          <p className="text-xs text-gray-400">target {formatIDR(report.target_revenue)} ({pctRevenue}%)</p>
-        </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">Gap Omzet</p>
-          <p className={`mt-1 text-lg font-semibold ${gap > 0 ? "text-amber-600" : "text-green-600"}`}>
-            {gap > 0 ? formatIDR(gap) : "Tercapai"}
-          </p>
-          <p className="text-xs text-gray-400">sisa {report.remaining_working_days} hari kerja</p>
-        </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500">Grand Total Penjualan</p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">{formatIDR(report.grand_total)}</p>
-          <p className="text-xs text-gray-400">diskon {formatIDR(report.discount_amount)}</p>
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <div>
+            <p className="text-xs text-gray-500">Call</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{kpi.call}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Effective Call</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{kpi.effectiveCall}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Order</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{kpi.orderCount}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Omzet</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{formatIDR(kpi.revenue)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Toko Baru (NOO)</p>
+            <p className="mt-1 text-lg font-semibold text-gray-900">{kpi.noo}</p>
+          </div>
         </div>
       </div>
 
@@ -130,39 +126,6 @@ export default async function SalesReportDetailPage({
             <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Ringkasan</p>
           </div>
           <p className="mt-2 text-sm text-blue-900">{report.ai_summary}</p>
-        </div>
-      )}
-
-      {/* Pembanding hybrid dari sales_orders */}
-      {ordersSnapshot && (
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2">
-            <ShoppingCart className="h-4 w-4 text-gray-400" />
-            <h2 className="text-sm font-semibold text-gray-900">Pembanding dari Sales Order</h2>
-          </div>
-          <p className="mt-1 text-xs text-gray-400">
-            Data sales order tercatat di sistem untuk sales &amp; tanggal yang sama.
-          </p>
-          <div className="mt-3 grid grid-cols-3 gap-3">
-            <div className="rounded-lg bg-gray-50 px-4 py-3">
-              <p className="text-xs text-gray-500">Jumlah Order</p>
-              <p className="text-sm font-semibold text-gray-900">{ordersSnapshot.order_count}</p>
-            </div>
-            <div className="rounded-lg bg-gray-50 px-4 py-3">
-              <p className="text-xs text-gray-500">Outlet Order</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {ordersSnapshot.customer_count}
-                <span className="ml-1 text-xs font-normal text-gray-400">vs {report.achieved_oa} dilaporkan</span>
-              </p>
-            </div>
-            <div className="rounded-lg bg-gray-50 px-4 py-3">
-              <p className="text-xs text-gray-500">Nilai Order</p>
-              <p className="text-sm font-semibold text-gray-900">
-                {formatIDR(ordersSnapshot.revenue)}
-                <span className="ml-1 text-xs font-normal text-gray-400">vs {formatIDR(report.achieved_revenue)} dilaporkan</span>
-              </p>
-            </div>
-          </div>
         </div>
       )}
 

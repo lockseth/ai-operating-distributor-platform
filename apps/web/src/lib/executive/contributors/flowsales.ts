@@ -203,7 +203,6 @@ export const flowsalesContributor: ExecutiveContributor = {
 
     // ── Agregat bulan berjalan dari laporan harian (OA saja -- Revenue
     //    memakai governedRevenueTarget/Achieved di atas, Gate Owner BI-A) ──
-    const targetOa = reports.reduce((s, r) => s + r.target_oa, 0);
     const achievedOa = reports.reduce((s, r) => s + r.achieved_oa, 0);
 
     // Sisa hari kerja: ambil dari laporan terbaru yang mengisinya
@@ -357,8 +356,16 @@ export const flowsalesContributor: ExecutiveContributor = {
       {
         key: "oa_month",
         label: "OA Bulan Ini (Self-Report — Legacy)",
-        value: `${achievedOa}/${targetOa}`,
-        subValue: "Self-report harian, bukan KPI resmi — lihat NOO Periode KPI Aktif untuk akuisisi toko baru governed",
+        // Gate P4.03: laporan BARU (dibuat setelah redesain form) mengisi
+        // achieved_oa otomatis dari governed ORDER_COUNT -- tapi kolom ini
+        // sama persis dengan laporan LAMA (pre-redesain) yang benar-benar
+        // self-report bebas ketik (lihat test "Legacy OA achieved_oa=500"),
+        // dan SUM di sini menjumlah keduanya tanpa bisa membedakan -- label
+        // "Legacy" tetap dipertahankan supaya tidak diam-diam dianggap
+        // governed. targetOa selalu 0 (laporan baru tidak punya konsep
+        // target harian) jadi tidak lagi ditampilkan sebagai pecahan "/0".
+        value: `${achievedOa}`,
+        subValue: "Self-report harian (termasuk data lama), bukan KPI resmi — lihat NOO Periode KPI Aktif untuk akuisisi toko baru governed",
         accent: "amber",
         trend: "neutral",
         trendLabel: "info self-report, tidak memengaruhi Business Health",
