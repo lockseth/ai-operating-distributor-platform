@@ -61,6 +61,9 @@ export function OrderForm({
     initialData?.sales_id ?? (currentUser.isPrivileged ? "" : currentUser.id)
   );
   const [deliveryDate,  setDeliveryDate]  = useState(initialData?.delivery_date ?? "");
+  const [paymentTermsDays, setPaymentTermsDays] = useState(
+    initialData?.payment_terms_days != null ? String(initialData.payment_terms_days) : ""
+  );
   const [notes,         setNotes]         = useState(initialData?.notes ?? "");
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [items,         setItems]         = useState<OrderItemRow[]>(
@@ -114,12 +117,19 @@ export function OrderForm({
     const validItems = items.filter((i) => i.product_id && i.quantity > 0);
     if (validItems.length === 0) { setError("Tambahkan minimal 1 item produk"); return; }
 
+    const trimmedTerms = paymentTermsDays.trim();
+    if (trimmedTerms && (!/^\d+$/.test(trimmedTerms) || parseInt(trimmedTerms, 10) <= 0)) {
+      setError("Termin pembayaran harus angka hari lebih dari 0, atau kosongkan");
+      return;
+    }
+
     const data: OrderFormData = {
       customer_id:     customerId,
       sales_id:        salesId || null,
       delivery_date:   deliveryDate || null,
       notes:           notes.trim() || null,
       discount_amount: clampedDiscount,
+      payment_terms_days: trimmedTerms ? parseInt(trimmedTerms, 10) : null,
       items:           validItems.map((row): OrderItemInput => ({
         product_id:      row.product_id,
         quantity:        row.quantity,
@@ -227,6 +237,17 @@ export function OrderForm({
               Kosongkan kalau customer tidak minta tanggal spesifik. Kalau
               diisi, AI Dispatch Planner akan mengikuti tanggal ini apa
               adanya, bukan rekomendasi otomatis.
+            </p>
+          </div>
+          <div>
+            <label className={labelCls}>Termin Pembayaran / Tempo (hari, opsional)</label>
+            <input type="number" min={1} step={1} placeholder="mis. 14"
+              value={paymentTermsDays}
+              onChange={(e) => setPaymentTermsDays(e.target.value)}
+              className={inputCls} />
+            <p className="mt-1 text-xs text-gray-400">
+              Kosongkan kalau bayar tunai/COD. Kalau diisi, akan muncul
+              sebagai baris &quot;Tempo&quot; di invoice/nota tercetak.
             </p>
           </div>
           <div className="sm:col-span-2">

@@ -31,6 +31,9 @@ export interface OrderFormData {
   notes: string | null;
   discount_amount: number;
   items: OrderItemInput[];
+  // Termin pembayaran dalam hari (opsional) -- sales_orders.payment_terms_days,
+  // dibaca Document Engine untuk baris "Tempo" di PO/Invoice (Gate P4.02).
+  payment_terms_days: number | null;
 }
 
 // -----------------------------------------------------------------------
@@ -110,6 +113,7 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       notes: item.notes || null,
     })),
     p_requested_delivery_date: data.delivery_date || null,
+    p_payment_terms_days: data.payment_terms_days ?? null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -174,6 +178,7 @@ export async function updateOrderAction(
       notes: item.notes || null,
     })),
     p_requested_delivery_date: data.delivery_date || null,
+    p_payment_terms_days: data.payment_terms_days ?? null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
