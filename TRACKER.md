@@ -159,6 +159,19 @@ memang sudah direncanakan.
      Pertama" (read-only, tanpa prefix "Ditangani oleh:" atas permintaan
      Founder), owner lihat dropdown terisi benar ("Belum ditugaskan" +
      "Sales Pertama"). Build+typecheck PASS.
+   - **Bug ditemukan Founder saat tes lokal — DITUTUP**: field "Pelanggan"
+     pakai search box + `<select size>` listbox terpisah (bukan native
+     autocomplete). Klik opsi di listbox **secara fungsional benar**
+     (`customerId` ter-set — dikonfirmasi visual: baris jadi biru terpilih),
+     tapi search box tidak ikut ter-update/dikosongkan dan listbox tidak
+     collapse — jadi terlihat seperti tidak terjadi apa-apa, padahal
+     datanya benar. Root cause: bug feedback visual, bukan data binding.
+     Fix: `setCustomerSearch("")` dipanggil bareng `setCustomerId()` saat
+     memilih — pola identik yang sudah benar di search produk
+     (`selectProduct` mengosongkan `productSearch` setelah pilih).
+     Diverifikasi browser: search "tok" → klik opsi → search box kosong,
+     dropdown collapse menampilkan "Toko Sumber Rejeki..." terpilih jelas.
+     Build PASS.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 

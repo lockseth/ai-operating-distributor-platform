@@ -185,7 +185,7 @@ export function OrderForm({
               />
               <select
                 value={customerId}
-                onChange={(e) => setCustomerId(e.target.value)}
+                onChange={(e) => { setCustomerId(e.target.value); setCustomerSearch(""); }}
                 className={inputCls}
                 size={customerSearch ? Math.min(filteredCustomers.length + 1, 6) : 1}
               >
