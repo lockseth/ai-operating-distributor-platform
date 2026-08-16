@@ -309,6 +309,41 @@ memang sudah direncanakan.
    ada migration DB** — field manual lama tetap di skema (insert default
    kosong untuk baris baru), data histori tidak disentuh/dihapus.
 
+   **Update 2026-08-16 — suara pemakai asli (voice note Pak Waluyo ke Mas
+   Hendro, transkrip diunggah Founder)**: memvalidasi arah rencana di atas
+   — kalimat kunci beliau *"saya sudah menerima rekapan dari SISTEM"*
+   (bukan "laporan dari sales"), persis prinsip read-only/auto yang sudah
+   direncanakan. Voice note ini menambah 3 kebutuhan baru yang BELUM
+   tercakup di rencana awal, perlu masuk scope saat dieksekusi:
+   1. **Jadwal kirim otomatis ~16.00-17.00** setiap hari kerja sales,
+      supaya begitu sales pulang kantor, Owner sudah bisa langsung
+      briefing/evaluasi. Kemungkinan ini pas dengan fitur "Executive
+      WhatsApp Report" yang sudah disebut di
+      `docs/product/AODP_PRODUCT_CONSTITUTION.md` §13 (laporan harian ke
+      WhatsApp owner) — **belum pernah dibangun**, jadi bagian ini
+      kemungkinan besar bukan cuma redesain form, tapi juga scheduled
+      job/notification baru (scope lebih besar dari sekadar ubah
+      `reports/new/page.tsx`, perlu di-assess ulang saat mulai
+      dieksekusi).
+   2. **Konten spesifik yang diminta** (urutan sesuai voice note): EC
+      (Effective Call)/kunjungan toko → dari situ berapa yang **berhasil
+      transaksi** (EC-to-transaksi, bukan cuma kunjungan) → Tagihan
+      (status collection/penagihan) → Omzet (nominal + % dari target).
+      Opsional: breakdown per periode (pagi/siang/sore, "udah dapat
+      berapa"). Ini detail lebih spesifik dari sekadar "5 KPI governed" —
+      perlu dipetakan field-per-field ke KPI code yang sudah ada
+      (CALL/EFFECTIVE_CALL/REVENUE) + cek apakah "Tagihan" (piutang/
+      collection) sudah masuk governed KPI atau perlu sumber terpisah
+      (Collection Intelligence/Finance Operations).
+   3. **Varian laporan PAGI terpisah, isinya beda dari sore** — bukan
+      hasil kerja, tapi RENCANA hari itu: toko mana yang mau ditagih
+      ("tagihan toko yang mau dibawa"). Ini konsep baru (laporan
+      forward-looking), belum ada padanannya di rencana redesain awal
+      yang cuma bahas 1 laporan (sore/hasil).
+   Catatan: satu bagian transkrip tidak jelas ("LFD bekolnya") — tidak
+   ditebak maknanya, perlu klarifikasi ulang ke rekaman/Pak Waluyo
+   langsung sebelum dieksekusi, bukan diasumsikan.
+
 ### Ditunda — menunggu keputusan Founder
 
 | Item | Tag | Sejak | Konteks |
