@@ -47,18 +47,36 @@ const STATUS_TONE: Record<string, string> = {
   LOCKED: "bg-red-50 text-red-700",
 };
 
+/**
+ * Hari kerja = hari kalender dalam rentang [startDate, endDate] dikurangi
+ * hari Minggu -- tidak pernah dipakai di perhitungan pacing/achievement
+ * manapun (murni tervalidasi & tersimpan, lihat service.ts createPeriod),
+ * jadi dihitung otomatis di sini alih-alih diketik manual.
+ */
+function computeWorkingDays(startDate: string, endDate: string): number {
+  const start = new Date(`${startDate}T00:00:00Z`);
+  const end = new Date(`${endDate}T00:00:00Z`);
+  if (Number.isNaN(start.valueOf()) || Number.isNaN(end.valueOf()) || start > end) return 1;
+
+  let count = 0;
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (d.getUTCDay() !== 0) count++; // 0 = Minggu
+  }
+  return Math.max(1, count);
+}
+
 function NewPeriodForm({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [workingDays, setWorkingDays] = useState(21);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
     setSaving(true);
     setError(null);
+    const workingDays = computeWorkingDays(startDate, endDate);
     const result = await createSalesKpiPeriodAction({ name, startDate, endDate, workingDays });
     setSaving(false);
     if (result.ok) {
@@ -107,16 +125,6 @@ function NewPeriodForm({ onCreated }: { onCreated: () => void }) {
         />
       </div>
       <div className="flex items-center gap-3">
-        <label className="text-sm text-gray-600">
-          Hari kerja:
-          <input
-            type="number"
-            min={1}
-            className="ml-2 w-20 rounded-lg border border-gray-300 px-2 py-1 text-sm"
-            value={workingDays}
-            onChange={(e) => setWorkingDays(Number(e.target.value))}
-          />
-        </label>
         <button
           type="button"
           disabled={saving}
@@ -467,6 +475,34 @@ function SalesmanCalibrationRow({
 
       {!loading && (
         <div className="mt-3 border-t border-gray-100 pt-3">
+          {canEdit && (
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className="min-w-[16rem] flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+                placeholder={hasExistingTarget ? "Alasan perubahan (wajib)" : "Alasan/catatan target awal"}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={saving}
+                onClick={handleSave}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saving ? "Menyimpan..." : "Simpan Target"}
+              </button>
+            </div>
+          )}
+          {!canEdit && (
+            <p className="text-xs text-gray-400">Periode terkunci -- target tidak dapat diubah.</p>
+          )}
+          {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          {savedNote && <p className="mt-2 text-sm text-green-600">{savedNote}</p>}
+        </div>
+      )}
+
+      {!loading && (
+        <div className="mt-3 border-t border-gray-100 pt-3">
           <p className="text-xs font-medium text-gray-500">Target Order Count &amp; Revenue (semua channel order confirmed)</p>
           <div className="mt-1 flex flex-wrap items-end gap-3">
             <label className="flex items-center gap-2 text-sm">
@@ -578,30 +614,6 @@ function SalesmanCalibrationRow({
           {nooSavedNote && <p className="mt-2 text-sm text-green-600">{nooSavedNote}</p>}
         </div>
       )}
-
-      {canEdit && (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            className="min-w-[16rem] flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
-            placeholder={hasExistingTarget ? "Alasan perubahan (wajib)" : "Alasan/catatan target awal"}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-          />
-          <button
-            type="button"
-            disabled={saving}
-            onClick={handleSave}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-          >
-            {saving ? "Menyimpan..." : "Simpan Target"}
-          </button>
-        </div>
-      )}
-      {!canEdit && (
-        <p className="mt-3 text-xs text-gray-400">Periode terkunci -- target tidak dapat diubah.</p>
-      )}
-      {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-      {savedNote && <p className="mt-2 text-sm text-green-600">{savedNote}</p>}
     </div>
   );
 }
