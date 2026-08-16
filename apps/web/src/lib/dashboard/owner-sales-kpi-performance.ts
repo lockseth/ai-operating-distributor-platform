@@ -137,7 +137,13 @@ export async function getOwnerSalesKpiPerformance(companyId: string): Promise<Ow
       .from("sales_kpi_periods")
       .select("id, name, start_date, end_date")
       .eq("company_id", companyId)
-      .eq("status", "ACTIVE")
+      // LOCKED tetap ditampilkan (bukan cuma ACTIVE) -- "Kunci Periode"
+      // artinya target tidak bisa diedit lagi, BUKAN "sembunyikan datanya".
+      // Sebelum fix ini, mengunci periode membuat seluruh Dashboard Owner
+      // jatuh ke "Data belum cukup" walau achievement-nya valid.
+      .in("status", ["ACTIVE", "LOCKED"])
+      .order("end_date", { ascending: false })
+      .limit(1)
       .maybeSingle(),
     supabase
       .from("users")

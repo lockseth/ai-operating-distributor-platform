@@ -5,7 +5,8 @@ import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
-import { aggregatePerformance, calcAchievementPct, calcGap } from "@/lib/sales-reports/summary";
+import { calcGap } from "@/lib/sales-reports/summary";
+import { getOwnerSalesKpiPerformance } from "@/lib/dashboard/owner-sales-kpi-performance";
 import { Plus, ClipboardList } from "lucide-react";
 
 export const metadata = { title: "Laporan Sales — AODP" };
@@ -16,11 +17,8 @@ interface ReportRow {
   id: string;
   report_date: string;
   area: string | null;
-  target_oa: number;
   achieved_oa: number;
-  target_revenue: number;
   achieved_revenue: number;
-  grand_total: number;
   salesperson_id: string;
   salesperson: { full_name: string } | null;
 }
@@ -49,9 +47,9 @@ export default async function SalesReportsPage() {
   const monthStartISO = monthStart.toISOString().slice(0, 10);
 
   const selectCols =
-    "id, report_date, area, target_oa, achieved_oa, target_revenue, achieved_revenue, grand_total, salesperson_id, salesperson:users!salesperson_id(full_name)";
+    "id, report_date, area, achieved_oa, achieved_revenue, salesperson_id, salesperson:users!salesperson_id(full_name)";
 
-  const [monthResult, listResult] = await Promise.all([
+  const [monthResult, listResult, kpiPerf] = await Promise.all([
     supabase
       .from("sales_reports")
       .select(selectCols)
@@ -64,34 +62,35 @@ export default async function SalesReportsPage() {
       .order("report_date", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(LIST_LIMIT),
+    getOwnerSalesKpiPerformance(user.company_id),
   ]);
 
   const monthReports = (monthResult.data ?? []) as unknown as ReportRow[];
   const reports      = (listResult.data ?? []) as unknown as ReportRow[];
 
-  const performance = aggregatePerformance(
-    monthReports.map((r) => ({
-      salesperson_id: r.salesperson_id,
-      salesperson_name: r.salesperson?.full_name ?? "—",
-      target_oa: r.target_oa,
-      achieved_oa: r.achieved_oa,
-      target_revenue: r.target_revenue,
-      achieved_revenue: r.achieved_revenue,
-      remaining_working_days: 0,
-    }))
-  );
+  // Gate P4.03 follow-up: ranking "Performa Sales" TIDAK LAGI dijumlah dari
+  // sales_reports (cuma selengkap laporan yang sempat difile hari itu) --
+  // ditarik langsung dari governed KPI periode aktif (sumber SAMA persis
+  // dengan Dashboard Owner/KPI Setup), supaya Target/Gap/Pencapaian selalu
+  // ada dan tidak pernah berbeda dari yang Owner lihat di tempat lain.
+  const performance = [...kpiPerf.rows]
+    .sort((a, b) => b.revenue.actual - a.revenue.actual)
+    .map((row) => ({
+      salespersonId: row.salespersonId,
+      salespersonName: row.salespersonName,
+      orderCount: row.orderCount.actual,
+      revenueActual: row.revenue.actual,
+      revenueTarget: row.revenue.target,
+      revenueGap: row.revenue.target !== null ? calcGap(row.revenue.target, row.revenue.actual) : null,
+      revenuePct: row.revenue.achievementPercentage,
+    }));
 
-  const totalTarget   = performance.reduce((s, p) => s + p.target_revenue, 0);
-  const totalAchieved = performance.reduce((s, p) => s + p.achieved_revenue, 0);
-  const totalOaAchieved = performance.reduce((s, p) => s + p.achieved_oa, 0);
-  // Gate P4.03: laporan baru tidak lagi punya "target harian" manual (angka
-  // KPI-nya auto dari governed ledger, target sebenarnya per-periode ada di
-  // sales_kpi_targets, bukan disimpan per laporan) -- target_revenue selalu
-  // 0 untuk laporan baru, jadi gap/pct cuma ditampilkan kalau ADA target
-  // nyata dari laporan lama (pre-redesain), bukan dikarang jadi 100%.
-  const hasRealTarget = totalTarget > 0;
+  const hasRealTarget = kpiPerf.periodActive;
+  const totalTarget    = performance.reduce((s, p) => s + (p.revenueTarget ?? 0), 0);
+  const totalAchieved  = performance.reduce((s, p) => s + p.revenueActual, 0);
+  const totalOaAchieved = performance.reduce((s, p) => s + p.orderCount, 0);
   const totalGap = calcGap(totalTarget, totalAchieved);
-  const totalPct = calcAchievementPct(totalTarget, totalAchieved);
+  const totalPct = totalTarget > 0 ? Math.round((totalAchieved / totalTarget) * 100) : 0;
 
   const canCreate = hasPermission(user.permissions, "reports.create");
   const monthLabel = new Date().toLocaleDateString("id-ID", { month: "long", year: "numeric" });
@@ -159,42 +158,50 @@ export default async function SalesReportsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">#</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Sales</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">OA</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Omzet</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Target</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Gap</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Pencapaian</th>
+                <tr className="border-b border-blue-100 bg-blue-50">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">#</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Sales</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Order</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Omzet</th>
+                  {hasRealTarget && (
+                    <>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Target</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Gap</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Pencapaian</th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {performance.map((p, i) => {
-                  const rowHasTarget = p.target_revenue > 0;
+                  const rowHasTarget = p.revenueTarget !== null;
                   return (
-                    <tr key={p.salesperson_id} className="hover:bg-gray-50">
+                    <tr key={p.salespersonId} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{p.salesperson_name}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{p.achieved_oa}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(p.achieved_revenue)}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{rowHasTarget ? formatIDR(p.target_revenue) : "—"}</td>
-                      <td className={`px-4 py-3 text-right ${rowHasTarget && p.gap_revenue > 0 ? "text-amber-600" : rowHasTarget ? "text-green-600" : "text-gray-400"}`}>
-                        {rowHasTarget ? (p.gap_revenue > 0 ? formatIDR(p.gap_revenue) : "Tercapai") : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {rowHasTarget ? (
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                            p.achievement_pct >= 100 ? "bg-green-50 text-green-700"
-                            : p.achievement_pct >= 70 ? "bg-blue-50 text-blue-700"
-                            : "bg-amber-50 text-amber-700"
-                          }`}>
-                            {p.achievement_pct}%
-                          </span>
-                        ) : (
-                          <span className="text-xs text-gray-400">—</span>
-                        )}
-                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{p.salespersonName}</td>
+                      <td className="px-4 py-3 text-right text-gray-600">{p.orderCount}</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(p.revenueActual)}</td>
+                      {hasRealTarget && (
+                        <>
+                          <td className="px-4 py-3 text-right text-gray-600">{rowHasTarget ? formatIDR(p.revenueTarget!) : "—"}</td>
+                          <td className={`px-4 py-3 text-right ${rowHasTarget && (p.revenueGap ?? 0) > 0 ? "text-amber-600" : rowHasTarget ? "text-green-600" : "text-gray-400"}`}>
+                            {rowHasTarget ? ((p.revenueGap ?? 0) > 0 ? formatIDR(p.revenueGap!) : "Tercapai") : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {rowHasTarget && p.revenuePct !== null ? (
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                                p.revenuePct >= 100 ? "bg-green-50 text-green-700"
+                                : p.revenuePct >= 70 ? "bg-blue-50 text-blue-700"
+                                : "bg-amber-50 text-amber-700"
+                              }`}>
+                                {p.revenuePct}%
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-400">—</span>
+                            )}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}
@@ -219,41 +226,31 @@ export default async function SalesReportsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Tanggal</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Sales</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Area</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">OA</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Omzet</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Gap</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Grand Total</th>
+                <tr className="border-b border-blue-100 bg-blue-50">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Tanggal</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Sales</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Area</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">OA</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Omzet</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {reports.map((r) => {
-                  const rowHasTarget = r.target_revenue > 0;
-                  const gap = calcGap(r.target_revenue, r.achieved_revenue);
-                  return (
-                    <tr key={r.id} className="group hover:bg-gray-50">
-                      <td className="px-4 py-3 text-gray-900">{formatDate(r.report_date)}</td>
-                      <td className="px-4 py-3 font-medium text-gray-900">{r.salesperson?.full_name ?? "—"}</td>
-                      <td className="px-4 py-3 text-xs text-gray-500">{r.area ?? "—"}</td>
-                      <td className="px-4 py-3 text-right text-gray-600">{r.achieved_oa}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(r.achieved_revenue)}</td>
-                      <td className={`px-4 py-3 text-right ${rowHasTarget && gap > 0 ? "text-amber-600" : "text-green-600"}`}>
-                        {rowHasTarget && gap > 0 ? formatIDR(gap) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600">{formatIDR(r.grand_total)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Link href={`/dashboard/reports/${r.id}`}
-                          className="text-xs font-medium text-blue-600 hover:text-blue-800 opacity-0 group-hover:opacity-100 transition-opacity">
-                          Detail →
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {reports.map((r) => (
+                  <tr key={r.id} className="group hover:bg-gray-50">
+                    <td className="px-4 py-3 text-gray-900">{formatDate(r.report_date)}</td>
+                    <td className="px-4 py-3 font-medium text-gray-900">{r.salesperson?.full_name ?? "—"}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{r.area ?? "—"}</td>
+                    <td className="px-4 py-3 text-right text-gray-600">{r.achieved_oa}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatIDR(r.achieved_revenue)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/dashboard/reports/${r.id}`}
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800 opacity-0 group-hover:opacity-100 transition-opacity">
+                        Detail →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

@@ -139,11 +139,11 @@ export default async function SalesReportDetailPage({
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Produk</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Qty</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Satuan</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Nilai</th>
+              <tr className="border-b border-blue-100 bg-blue-50">
+                <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Produk</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Qty</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-blue-700">Satuan</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700">Nilai</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">

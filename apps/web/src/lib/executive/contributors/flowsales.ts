@@ -112,7 +112,12 @@ export const flowsalesContributor: ExecutiveContributor = {
       .from("sales_kpi_periods")
       .select("id, start_date, end_date")
       .eq("company_id", companyId)
-      .eq("status", "ACTIVE")
+      // LOCKED tetap dipakai (bukan cuma ACTIVE) -- mengunci periode berarti
+      // target tidak bisa diedit lagi, BUKAN "sembunyikan achievement-nya"
+      // dari Executive Intelligence/Business Health.
+      .in("status", ["ACTIVE", "LOCKED"])
+      .order("end_date", { ascending: false })
+      .limit(1)
       .maybeSingle();
     const activePeriod = activePeriodRes.data as
       | { id: string; start_date: string; end_date: string }
