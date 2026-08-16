@@ -143,8 +143,7 @@ export default async function EditOrderPage({
         initialData={{
           customer_id:     order.customer_id,
           sales_id:        order.sales_id,
-          delivery_date:   order.delivery_date ?? "",
-          requested_delivery_date: order.requested_delivery_date ?? "",
+          delivery_date:   order.requested_delivery_date ?? order.delivery_date ?? "",
           notes:           order.notes ?? "",
           discount_amount: order.discount_amount,
           items:           existingItems,

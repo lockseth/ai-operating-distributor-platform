@@ -127,6 +127,23 @@ memang sudah direncanakan.
      hosted** — menunggu keputusan Founder (lihat Berikutnya).
      Field "Sales yang Menangani" (Temuan #1) sengaja BELUM dikerjakan —
      Fase B, sesi terpisah, atas permintaan Founder (rate limit).
+   - **Susulan (koreksi UX, masih Fase A)**: Founder tes lokal, sadar 2
+     field tanggal terpisah ("Tanggal Pengiriman" vs "Tanggal Diminta
+     Customer") berisiko membingungkan sales — kemungkinan besar sales cuma
+     isi salah satu, field yang benar-benar dipakai AI Dispatch Planner
+     tetap tidak kepakai (gap cuma pindah tempat, bukan tertutup). Digabung
+     jadi **1 field** ("Tanggal Kirim Diminta Customer (opsional)") yang
+     mengisi KEDUA kolom sekaligus (`delivery_date` &amp; `requested_delivery_date`
+     dapat nilai sama dari 1 input) — sales tidak perlu tahu ada 2 konsep di
+     baliknya. `order-form.tsx`/`actions.ts` disederhanakan (tidak ubah
+     migration `20261005000001`, kolomnya tetap 2, cuma sumber datanya
+     disatukan di form). Diverifikasi ulang end-to-end lewat browser lokal
+     (login sales, buat order `SO-2608-0001`, tanggal "30 Agustus 2026") +
+     query DB langsung: `delivery_date` &amp; `requested_delivery_date`
+     sama-sama terisi benar. Observasi tambahan: order berhasil dibuat
+     tanpa error di local — kontras dengan bug 500 di hosted (blocker Tahap
+     1), memperkuat dugaan akar masalah 500 spesifik ke environment hosted
+     (data/RLS/state), bukan bug di kode order-creation itu sendiri.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 

@@ -54,7 +54,6 @@ export function OrderForm({
   const [customerId,    setCustomerId]    = useState(initialData?.customer_id ?? "");
   const [salesId,       setSalesId]       = useState(initialData?.sales_id ?? "");
   const [deliveryDate,  setDeliveryDate]  = useState(initialData?.delivery_date ?? "");
-  const [requestedDeliveryDate, setRequestedDeliveryDate] = useState(initialData?.requested_delivery_date ?? "");
   const [notes,         setNotes]         = useState(initialData?.notes ?? "");
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [items,         setItems]         = useState<OrderItemRow[]>(
@@ -112,7 +111,6 @@ export function OrderForm({
       customer_id:     customerId,
       sales_id:        salesId || null,
       delivery_date:   deliveryDate || null,
-      requested_delivery_date: requestedDeliveryDate || null,
       notes:           notes.trim() || null,
       discount_amount: clampedDiscount,
       items:           validItems.map((row): OrderItemInput => ({
@@ -209,17 +207,12 @@ export function OrderForm({
             </select>
           </div>
           <div>
-            <label className={labelCls}>Tanggal Pengiriman</label>
+            <label className={labelCls}>Tanggal Kirim Diminta Customer (opsional)</label>
             <input type="date" value={deliveryDate} onChange={(e) => setDeliveryDate(e.target.value)}
               className={inputCls} />
-          </div>
-          <div>
-            <label className={labelCls}>Tanggal Diminta Customer (opsional)</label>
-            <input type="date" value={requestedDeliveryDate}
-              onChange={(e) => setRequestedDeliveryDate(e.target.value)}
-              className={inputCls} />
             <p className="mt-1 text-xs text-gray-400">
-              Kalau diisi, AI Dispatch Planner akan mengikuti tanggal ini apa
+              Kosongkan kalau customer tidak minta tanggal spesifik. Kalau
+              diisi, AI Dispatch Planner akan mengikuti tanggal ini apa
               adanya, bukan rekomendasi otomatis.
             </p>
           </div>

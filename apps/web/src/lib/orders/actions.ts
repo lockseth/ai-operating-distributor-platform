@@ -23,8 +23,12 @@ export interface OrderItemInput {
 export interface OrderFormData {
   customer_id: string;
   sales_id: string | null;
+  // Satu input "tanggal kirim diminta customer" -- diteruskan ke DUA kolom
+  // server (delivery_date utk tampilan, requested_delivery_date sbg hard
+  // constraint AI Dispatch Planner). Sengaja disatukan di UI/interface ini
+  // supaya sales tidak perlu tahu ada 2 konsep berbeda -- lihat TRACKER.md
+  // Gate P4.01 untuk histori kenapa awalnya sempat 2 field terpisah.
   delivery_date: string | null;
-  requested_delivery_date: string | null;
   notes: string | null;
   discount_amount: number;
   items: OrderItemInput[];
@@ -96,7 +100,7 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       total_amount: item.total_amount,
       notes: item.notes || null,
     })),
-    p_requested_delivery_date: data.requested_delivery_date || null,
+    p_requested_delivery_date: data.delivery_date || null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -160,7 +164,7 @@ export async function updateOrderAction(
       total_amount: item.total_amount,
       notes: item.notes || null,
     })),
-    p_requested_delivery_date: data.requested_delivery_date || null,
+    p_requested_delivery_date: data.delivery_date || null,
   });
 
   if (rpcError) throw new Error(rpcError.message);
