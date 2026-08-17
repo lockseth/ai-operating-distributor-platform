@@ -41,11 +41,17 @@ describe("Gate 3E-D1-R1: hasTelegramCapability (fail-closed)", () => {
     ).toBe(false);
   });
 
-  it("TELEGRAM_PAIRING_ELIGIBLE_ROLES persis {owner, admin, sales} -- sumber kebenaran generalisasi Gate 3E-D1-R1", () => {
+  it("TELEGRAM_PAIRING_ELIGIBLE_ROLES persis {owner, admin, sales, driver} -- sumber kebenaran generalisasi Gate 3E-D1-R1 + Delivery Verification", () => {
     expect([...TELEGRAM_PAIRING_ELIGIBLE_ROLES].sort()).toEqual([
       "admin",
+      "driver",
       "owner",
       "sales",
     ]);
+  });
+
+  it("driver eligible untuk pairing TAPI tidak dapat capability password.reset.self/sales.order.telegram apa pun (pairing != capability)", () => {
+    expect(hasTelegramCapability(["driver"], "password.reset.self")).toBe(false);
+    expect(hasTelegramCapability(["driver"], "sales.order.telegram")).toBe(false);
   });
 });

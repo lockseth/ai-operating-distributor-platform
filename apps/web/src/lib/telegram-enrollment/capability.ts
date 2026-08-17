@@ -7,9 +7,21 @@
 // memberi akses ke workflow lain -- setiap workflow adalah capability
 // terpisah yang harus diizinkan eksplisit di sini. Fail-closed: role kosong,
 // role tak dikenal, atau capability tak dikenal selalu ditolak.
+//
+// `driver` ditambahkan kemudian (2026-08-16, temuan role-play) -- dokumentasi
+// docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md sudah lama menyatakan
+// driver "memakai mekanisme yang sama persis" dengan sales untuk pairing,
+// tapi array ini tidak pernah diperbarui saat Delivery Verification dibangun
+// belakangan -- akibatnya halaman Pengguna tidak pernah menampilkan tombol
+// "Buat tautan Telegram" untuk role driver sama sekali, dan
+// "Assign & Kirim Tugas" (lib/delivery/actions.ts) SELALU gagal dengan
+// "Driver ini belum terdaftar di Telegram" karena tidak ada jalur UI untuk
+// mendaftarkannya. Driver TIDAK ditambahkan ke CAPABILITY_ROLES manapun di
+// bawah -- pairing cuma bikin baris telegram_identities ada, tidak otomatis
+// memberi capability password.reset.self/sales.order.telegram ke driver.
 // =============================================================================
 
-export const TELEGRAM_PAIRING_ELIGIBLE_ROLES = ["owner", "admin", "sales"] as const;
+export const TELEGRAM_PAIRING_ELIGIBLE_ROLES = ["owner", "admin", "sales", "driver"] as const;
 export type TelegramPairingRole = (typeof TELEGRAM_PAIRING_ELIGIBLE_ROLES)[number];
 
 export type TelegramCapability = "password.reset.self" | "sales.order.telegram";
