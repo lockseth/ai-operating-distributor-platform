@@ -25,6 +25,7 @@ function readSrc(relativePath: string): string {
 
 const queriesSrc = readSrc("./queries.ts");
 const invoiceListPage = readSrc("../../app/(dashboard)/dashboard/finance/invoices/page.tsx");
+const invoiceSelectionTableSrc = readSrc("../../components/finance/invoice-selection-table.tsx");
 const invoiceDetailPage = readSrc("../../app/(dashboard)/dashboard/finance/invoices/[id]/page.tsx");
 const confirmDialogSrc = readSrc("../../components/ui/confirm-dialog.tsx");
 const recordPaymentPanelSrc = readSrc("../../components/finance/record-payment-panel.tsx");
@@ -92,9 +93,16 @@ describe("FIN-17-03: label alasan tombol disabled terbaca assistive tech (title/
 });
 
 describe("§10/FIN-17-04: list domain finance memakai DataTable existing (semantik <table>/<th>), bukan tabel hand-rolled tanpa header", () => {
-  it("invoice list page memakai component DataTable, bukan <table> mentah", () => {
-    expect(invoiceListPage).toContain("DataTable");
+  it("invoice list page memakai component DataTable (langsung atau lewat InvoiceSelectionTable), bukan <table> mentah", () => {
+    // Gate P4.04 follow-up: sejak fitur cetak batch invoice, rendering tabel
+    // dipindah dari page.tsx ke InvoiceSelectionTable (page.tsx sekarang
+    // cuma merender <InvoiceSelectionTable items={...} />) -- assertion
+    // "DataTable" perlu ikut cek komponen itu, bukan cuma page.tsx, supaya
+    // tidak salah gagal padahal semantiknya tetap DataTable (dibuktikan di
+    // baris kedua: page.tsx sendiri juga tidak pernah pakai <table> mentah).
+    expect(invoiceListPage + invoiceSelectionTableSrc).toContain("DataTable");
     expect(invoiceListPage).not.toMatch(/<table\b/);
+    expect(invoiceSelectionTableSrc).not.toMatch(/<table\b/);
   });
 
   it("invoice detail page memakai component DataTable untuk rincian item dan ledger", () => {
