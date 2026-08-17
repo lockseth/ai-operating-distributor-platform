@@ -218,16 +218,28 @@ export default async function OrderDetailPage({
       }
     : null;
 
-  let availableDrivers: { id: string; full_name: string }[] = [];
+  let availableDrivers: { id: string; full_name: string; role: "driver" | "sales" }[] = [];
   if (!delivery && order.status === "confirmed" && canManageDelivery) {
     const admin = getAdminClient();
     const { data: driverRows } = await admin
       .from("user_roles")
       .select("user:users!user_id(id, full_name), role:roles!role_id(name)")
       .eq("company_id", user.company_id);
-    availableDrivers = ((driverRows ?? []) as unknown as { user: { id: string; full_name: string } | null; role: { name: string } | null }[])
-      .filter((r) => r.role?.name === "driver" && r.user)
-      .map((r) => ({ id: r.user!.id, full_name: r.user!.full_name }));
+    // Sales "all-in" (order+kirim+tagih sendiri, mis. Pak Waluyo) juga
+    // eligible di-assign sebagai driver -- create_delivery_atomic
+    // (20260823000001) sendiri tidak pernah mensyaratkan role driver di
+    // assigned_driver_id, cuma user aktif di company yang sama. Dedupe by
+    // user id supaya user dengan >1 role tidak muncul dobel; kalau user
+    // punya role driver DAN sales, tampilkan sebagai "driver" (lebih
+    // spesifik).
+    const byUserId = new Map<string, { id: string; full_name: string; role: "driver" | "sales" }>();
+    for (const r of (driverRows ?? []) as unknown as { user: { id: string; full_name: string } | null; role: { name: string } | null }[]) {
+      if (!r.user || (r.role?.name !== "driver" && r.role?.name !== "sales")) continue;
+      const existing = byUserId.get(r.user.id);
+      if (existing && existing.role === "driver") continue;
+      byUserId.set(r.user.id, { id: r.user.id, full_name: r.user.full_name, role: r.role.name as "driver" | "sales" });
+    }
+    availableDrivers = Array.from(byUserId.values());
   }
 
   return (

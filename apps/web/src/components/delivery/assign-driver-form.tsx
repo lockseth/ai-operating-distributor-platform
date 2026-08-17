@@ -8,6 +8,7 @@ import { Truck, Loader2 } from "lucide-react";
 interface DriverOption {
   id: string;
   full_name: string;
+  role: "driver" | "sales";
 }
 
 interface AssignDriverFormProps {
@@ -29,9 +30,11 @@ export function AssignDriverForm({ salesOrderId, drivers }: AssignDriverFormProp
           <h2 className="text-sm font-semibold text-gray-900">Delivery Verification</h2>
         </div>
         <p className="text-xs text-gray-500">
-          Belum ada driver terdaftar di Telegram untuk tenant ini. Daftarkan driver ke
+          Belum ada user ber-role driver atau sales di tenant ini. Setelah dipilih di sini,
+          user tersebut tetap wajib terdaftar di Telegram (
           <code className="mx-1 rounded bg-gray-100 px-1 py-0.5">telegram_identities</code>
-          terlebih dahulu (lihat dokumentasi Telegram Sales Order Entry).
+          ) sebelum tugas pengiriman dapat dikirim — lihat dokumentasi Telegram Sales Order
+          Entry.
         </p>
       </div>
     );
@@ -72,7 +75,7 @@ export function AssignDriverForm({ salesOrderId, drivers }: AssignDriverFormProp
           <option value="">Pilih driver…</option>
           {drivers.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.full_name}
+              {d.full_name} {d.role === "sales" ? "(Sales)" : "(Driver)"}
             </option>
           ))}
         </select>
