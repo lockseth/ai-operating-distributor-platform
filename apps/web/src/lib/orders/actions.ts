@@ -315,6 +315,10 @@ export async function updateOrderStatusAction(
       throw new Error(
         "Status invoiced hanya dapat diubah melalui jalur issuance invoice canonical, belum tersedia di aplikasi ini."
       );
+    case "delivery_override_role_required":
+      throw new Error(
+        "Status Kirim/Terkirim hanya dapat diubah manual oleh Owner/Manager/Admin. Sales/driver harus lewat proses Delivery Verification."
+      );
     default:
       throw new Error(`Gagal mengubah status order: ${row.result_outcome}`);
   }

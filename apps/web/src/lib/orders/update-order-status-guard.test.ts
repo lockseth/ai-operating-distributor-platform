@@ -142,6 +142,19 @@ describe("updateOrderStatusAction -- defense-in-depth guard paid", () => {
 
     await expect(updateOrderStatusAction("order-1", "processing")).rejects.toThrow(/issuance invoice canonical/i);
   });
+
+  it("outcome RPC 'delivery_override_role_required' (Gate P4.07) diterjemahkan jadi error eksplisit, bukan silent success", async () => {
+    // Enforcement UTAMA ada di database (migration 20261008000001, guard role
+    // owner/manager/admin/super_admin utk target delivering/delivered) --
+    // dibuktikan DB-backed lewat psql manual (lihat TRACKER.md). Test ini
+    // membuktikan lapisan action menerjemahkan outcome-nya dengan benar,
+    // bukan memperlakukannya sebagai sukses.
+    getAuthUserMock.mockResolvedValue(fakeUser());
+    rpcMock.mockResolvedValue({ data: [{ result_outcome: "delivery_override_role_required" }], error: null });
+    const { updateOrderStatusAction } = await import("./actions");
+
+    await expect(updateOrderStatusAction("order-1", "delivering")).rejects.toThrow(/Owner\/Manager\/Admin/i);
+  });
 });
 
 // =============================================================================
