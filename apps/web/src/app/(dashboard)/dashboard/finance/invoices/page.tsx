@@ -8,15 +8,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { getInvoiceList, hasFinanceWorkspaceAccess, type InvoiceListItem } from "@/lib/finance/queries";
-import { DataTable, type Column } from "@/components/ui/data-table";
+import { getInvoiceList, hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/dashboard/status-badge";
 import { AlertCard } from "@/components/layout/dashboard-shell";
 import { FinanceStatusFilter } from "@/components/finance/finance-status-filter";
-import { formatRupiah } from "@/lib/document-engine/monetary";
-import { formatJakartaDateTime } from "@/lib/audit-log/format";
+import { InvoiceSelectionTable } from "@/components/finance/invoice-selection-table";
 
 export const metadata = { title: "Invoice & Piutang — AODP" };
 
@@ -30,95 +27,6 @@ const STATUS_FILTER_OPTIONS = [
 interface SearchParams {
   status?: string;
   page?: string;
-}
-
-const columns: Column<InvoiceListItem>[] = [
-  {
-    key: "invoiceNumber",
-    label: "No. Invoice",
-    render: (row) => (
-      <Link
-        href={`/dashboard/finance/invoices/${row.id}`}
-        className="font-mono text-xs font-semibold text-blue-600 hover:underline"
-      >
-        {row.invoiceNumber}
-      </Link>
-    ),
-  },
-  { key: "customerName", label: "Customer" },
-  {
-    key: "issuedAt",
-    label: "Tgl. Terbit",
-    render: (row) => <span className="text-xs text-gray-600">{formatJakartaDateTime(row.issuedAt)}</span>,
-  },
-  {
-    key: "dueDate",
-    label: "Jatuh Tempo",
-    render: (row) => (
-      <div>
-        <span className="text-xs text-gray-600">{row.dueDate ? formatJakartaDateTime(row.dueDate) : "—"}</span>
-        {row.ageDays != null && row.financialStatus !== "paid" && (
-          <p className="text-xs text-gray-400">{row.ageDays} hari</p>
-        )}
-      </div>
-    ),
-  },
-  { key: "totalAmount", label: "Nilai Invoice", align: "right", render: (row) => formatRupiah(row.totalAmount) },
-  {
-    key: "outstandingBalance",
-    label: "Outstanding",
-    align: "right",
-    render: (row) => <span className="font-semibold text-gray-900">{formatRupiah(row.outstandingBalance)}</span>,
-  },
-  {
-    key: "financialStatus",
-    label: "Status",
-    render: (row) => <StatusBadge status={row.financialStatus} domain="invoice" />,
-  },
-  {
-    key: "promiseStatus",
-    label: "Collection",
-    render: (row) =>
-      row.promiseStatus ? (
-        <StatusBadge status={row.promiseStatus} domain="promise" />
-      ) : (
-        <span className="text-xs text-gray-400">—</span>
-      ),
-  },
-];
-
-function InvoiceCard({ item }: { item: InvoiceListItem }) {
-  return (
-    <li className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link href={`/dashboard/finance/invoices/${item.id}`} className="font-mono text-sm font-semibold text-blue-600 hover:underline">
-            {item.invoiceNumber}
-          </Link>
-          <p className="mt-0.5 text-xs text-gray-500">{item.customerName}</p>
-        </div>
-        <StatusBadge status={item.financialStatus} domain="invoice" />
-      </div>
-      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-        <div>
-          <dt className="text-gray-400">Nilai Invoice</dt>
-          <dd className="font-medium text-gray-800">{formatRupiah(item.totalAmount)}</dd>
-        </div>
-        <div>
-          <dt className="text-gray-400">Outstanding</dt>
-          <dd className="font-semibold text-gray-900">{formatRupiah(item.outstandingBalance)}</dd>
-        </div>
-        <div>
-          <dt className="text-gray-400">Jatuh Tempo</dt>
-          <dd className="text-gray-700">{item.dueDate ? formatJakartaDateTime(item.dueDate) : "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-gray-400">Collection</dt>
-          <dd>{item.promiseStatus ? <StatusBadge status={item.promiseStatus} domain="promise" /> : "—"}</dd>
-        </div>
-      </dl>
-    </li>
-  );
 }
 
 function PaginationLink({
@@ -197,14 +105,7 @@ export default async function InvoiceListPage({ searchParams }: { searchParams: 
       ) : (
         result && (
           <>
-            <div className="hidden rounded-xl border border-gray-200 bg-white md:block">
-              <DataTable<InvoiceListItem> columns={columns} data={result.items} keyExtractor={(row) => row.id} />
-            </div>
-            <ul className="space-y-2 md:hidden">
-              {result.items.map((item) => (
-                <InvoiceCard key={item.id} item={item} />
-              ))}
-            </ul>
+            <InvoiceSelectionTable items={result.items} />
 
             {totalPages > 1 && (
               <div className="flex items-center justify-between">

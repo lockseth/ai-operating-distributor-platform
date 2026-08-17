@@ -171,7 +171,12 @@ body {
   gap: 0.2in;
 }
 
+/* Tailwind preflight set `svg { display: block }` secara global -- itu
+   membuat ikon amplop/telepon jadi block-level (baris sendiri, teks
+   kepental ke baris berikutnya) alih-alih inline di sebelah teksnya.
+   Override eksplisit di sini supaya ikon+teks selalu sebaris. */
 .doc-engine-contact-icon {
+  display: inline-block;
   width: 8px;
   height: 8px;
   margin-right: 2px;
