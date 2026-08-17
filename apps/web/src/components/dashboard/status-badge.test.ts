@@ -64,4 +64,10 @@ describe("StatusBadge — domain finance (Gate 2I.1)", () => {
     expect(renderProps(StatusBadge({ status: "voided", domain: "invoice_void" })).children).toBe("Invoice Void");
     expect(renderProps(StatusBadge({ status: "reversed", domain: "invoice_void" })).children).toBe("Credit Note Direverse");
   });
+
+  it("payment_claim (Gate P4.06): PENDING/APPROVED/REJECTED", () => {
+    expect(renderProps(StatusBadge({ status: "PENDING", domain: "payment_claim" })).children).toBe("Menunggu Review");
+    expect(renderProps(StatusBadge({ status: "APPROVED", domain: "payment_claim" })).children).toBe("Disetujui");
+    expect(renderProps(StatusBadge({ status: "REJECTED", domain: "payment_claim" })).children).toBe("Ditolak");
+  });
 });

@@ -28,6 +28,7 @@ function buildFinanceSections(roles: string[]): FinanceSection[] {
     { label: "Invoice & Piutang", href: "/dashboard/finance/invoices" },
     { label: "Collection & Janji Bayar", href: "/dashboard/finance/collection" },
     { label: "Pembayaran & Verifikasi", href: "/dashboard/finance/payments" },
+    { label: "Klaim Pembayaran", href: "/dashboard/finance/payment-claims" },
     { label: "Exception Rekonsiliasi", href: "/dashboard/finance/reconciliation" },
     { label: "Retur & Credit Note", href: "/dashboard/finance/returns" },
     { label: "Customer Credit & Refund", href: "/dashboard/finance/credit" },

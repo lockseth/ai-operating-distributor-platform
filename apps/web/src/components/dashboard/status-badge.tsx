@@ -14,7 +14,8 @@ export type StatusDomain =
   | "return"
   | "refund"
   | "cancellation"
-  | "invoice_void";
+  | "invoice_void"
+  | "payment_claim";
 
 interface StatusStyle {
   label: string;
@@ -76,6 +77,12 @@ const INVOICE_VOID_STATUS_STYLES: Record<string, StatusStyle> = {
   reversed: { label: "Credit Note Direverse",className: "bg-gray-100 text-gray-700" },
 };
 
+const PAYMENT_CLAIM_STATUS_STYLES: Record<string, StatusStyle> = {
+  PENDING:  { label: "Menunggu Review", className: "bg-amber-100 text-amber-700" },
+  APPROVED: { label: "Disetujui",       className: "bg-green-100 text-green-800" },
+  REJECTED: { label: "Ditolak",         className: "bg-red-100 text-red-700" },
+};
+
 const DOMAIN_STATUS_STYLES: Record<StatusDomain, Record<string, StatusStyle>> = {
   sales_order: SALES_ORDER_STATUS_STYLES,
   invoice: INVOICE_STATUS_STYLES,
@@ -85,6 +92,7 @@ const DOMAIN_STATUS_STYLES: Record<StatusDomain, Record<string, StatusStyle>> = 
   refund: REFUND_STATUS_STYLES,
   cancellation: CANCELLATION_STATUS_STYLES,
   invoice_void: INVOICE_VOID_STATUS_STYLES,
+  payment_claim: PAYMENT_CLAIM_STATUS_STYLES,
 };
 
 export function StatusBadge({ status, domain = "sales_order" }: { status: string; domain?: StatusDomain }) {

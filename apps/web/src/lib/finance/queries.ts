@@ -1285,6 +1285,96 @@ export async function getCustomersWithOutstanding(
 }
 
 // =============================================================================
+// Gate P4.06 -- Klaim Pembayaran sales/driver "all-in" + review Owner/Finance.
+// RPC canonical: submit_payment_claim_atomic/approve_payment_claim_atomic/
+// reject_payment_claim_atomic (migration 20261010000001).
+// =============================================================================
+
+export interface PaymentClaimListItem {
+  id: string;
+  customerId: string;
+  customerName: string;
+  method: "cash" | "bank_transfer";
+  amount: number;
+  transferReference: string | null;
+  note: string | null;
+  claimedById: string;
+  claimedByName: string;
+  claimedAt: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  reviewedByName: string | null;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
+  approvedPaymentReceiptId: string | null;
+  proofCount: number;
+}
+
+export async function getPaymentClaimList(
+  companyId: string,
+  opts: { claimedBy?: string; status?: "PENDING" | "APPROVED" | "REJECTED" } = {},
+  client?: SupabaseClient
+): Promise<PaymentClaimListItem[]> {
+  const supabase = client ?? (await createClient());
+
+  let query = supabase
+    .from("payment_claims")
+    .select(
+      "id, customer_id, method, amount, transfer_reference, note, claimed_by, claimed_at, status, reviewed_by, reviewed_at, rejection_reason, approved_payment_receipt_id, customers(name), payment_claim_proofs(id)"
+    )
+    .eq("company_id", companyId)
+    .order("claimed_at", { ascending: false });
+  if (opts.claimedBy) query = query.eq("claimed_by", opts.claimedBy);
+  if (opts.status) query = query.eq("status", opts.status);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`payment_claim_list: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    customer_id: string;
+    method: "cash" | "bank_transfer";
+    amount: number;
+    transfer_reference: string | null;
+    note: string | null;
+    claimed_by: string;
+    claimed_at: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    reviewed_by: string | null;
+    reviewed_at: string | null;
+    rejection_reason: string | null;
+    approved_payment_receipt_id: string | null;
+    customers: { name: string } | null;
+    payment_claim_proofs: { id: string }[] | null;
+  }>;
+
+  const actorIds = [...new Set(rows.flatMap((r) => [r.claimed_by, r.reviewed_by]).filter((v): v is string => Boolean(v)))];
+  const { data: actorRows, error: actorErr } = actorIds.length
+    ? await supabase.from("users").select("id, full_name").in("id", actorIds)
+    : { data: [], error: null };
+  if (actorErr) throw new Error(`payment_claim_list actors: ${actorErr.message}`);
+  const nameMap = new Map(((actorRows ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+
+  return rows.map((row) => ({
+    id: row.id,
+    customerId: row.customer_id,
+    customerName: row.customers?.name ?? "-",
+    method: row.method,
+    amount: row.amount,
+    transferReference: row.transfer_reference,
+    note: row.note,
+    claimedById: row.claimed_by,
+    claimedByName: nameMap.get(row.claimed_by) ?? "-",
+    claimedAt: row.claimed_at,
+    status: row.status,
+    reviewedByName: row.reviewed_by ? nameMap.get(row.reviewed_by) ?? "-" : null,
+    reviewedAt: row.reviewed_at,
+    rejectionReason: row.rejection_reason,
+    approvedPaymentReceiptId: row.approved_payment_receipt_id,
+    proofCount: row.payment_claim_proofs?.length ?? 0,
+  }));
+}
+
+// =============================================================================
 // Gate 2I.2 -- Exception Rekonsiliasi (kontrak §5.4). RPC canonical:
 // reconcile_verified_payment, correct_payment_reconciliation (migration
 // 20260830000001). List selalu dari view payment_reconciliation_exceptions

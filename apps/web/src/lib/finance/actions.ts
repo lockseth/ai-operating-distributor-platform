@@ -501,3 +501,102 @@ export async function approveOrderCancellationAction(input: ApproveOrderCancella
     out_voided_amount: string | null;
   }>)[0];
 }
+
+// ---------------------------------------------------------------------------
+// Klaim Pembayaran sales/driver "all-in" + review Owner/Finance (Gate P4.06
+// RPC -- migration 20261010000001). Klaim TIDAK PERNAH menyentuh
+// receivable_ledger secara langsung -- hanya approvePaymentClaimAction
+// (delegasi ke record_verified_payment_atomic yang sudah locked) yang bisa.
+// rejectPaymentClaimAction murni ubah status, ledger tidak tersentuh.
+// ---------------------------------------------------------------------------
+
+export interface SubmitPaymentClaimInput {
+  customerId: string;
+  method: "cash" | "bank_transfer";
+  amount: number;
+  transferReference?: string | null;
+  note?: string | null;
+  proofs?: PaymentProofInput[];
+  idempotencyKey?: string;
+}
+
+export async function submitPaymentClaimAction(input: SubmitPaymentClaimInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "payment.claim", "Tidak punya akses untuk melaporkan pembayaran");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("submit_payment_claim_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_customer_id: input.customerId,
+    p_method: input.method,
+    p_amount: input.amount,
+    p_transfer_reference: input.transferReference ?? null,
+    p_note: input.note ?? null,
+    p_proofs: (input.proofs ?? []).map((p) => ({
+      proof_type: p.proofType,
+      object_reference: p.objectReference,
+      metadata: p.metadata ?? {},
+    })),
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/payment-claims");
+  revalidatePath("/dashboard/finance/payment-claims");
+  return (data as Array<{ out_claim_id: string; out_already_exists: boolean; out_status: string }>)[0];
+}
+
+export interface ApprovePaymentClaimInput {
+  claimId: string;
+  proofs: PaymentProofInput[];
+  allocations: PaymentAllocationInput[];
+}
+
+export async function approvePaymentClaimAction(input: ApprovePaymentClaimInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "payment.record", "Tidak punya akses untuk menyetujui klaim pembayaran");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("approve_payment_claim_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_claim_id: input.claimId,
+    p_proofs: input.proofs.map((p) => ({
+      proof_type: p.proofType,
+      object_reference: p.objectReference,
+      metadata: p.metadata ?? {},
+    })),
+    p_allocations: input.allocations.map((a) => ({ invoice_id: a.invoiceId, amount: a.amount })),
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/payment-claims");
+  revalidatePath("/dashboard/finance/payments");
+  revalidatePath("/dashboard/finance/invoices");
+  revalidateFinanceQueue();
+  return (data as Array<{ out_outcome: string; out_payment_receipt_id: string | null }>)[0];
+}
+
+export interface RejectPaymentClaimInput {
+  claimId: string;
+  rejectionReason: string;
+}
+
+export async function rejectPaymentClaimAction(input: RejectPaymentClaimInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "payment.record", "Tidak punya akses untuk menolak klaim pembayaran");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("reject_payment_claim_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_claim_id: input.claimId,
+    p_rejection_reason: input.rejectionReason,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/finance/payment-claims");
+  revalidateFinanceQueue();
+  return (data as Array<{ out_outcome: string }>)[0];
+}

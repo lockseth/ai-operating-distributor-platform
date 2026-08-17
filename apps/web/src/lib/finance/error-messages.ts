@@ -67,6 +67,15 @@ export const FINANCE_ERROR_MESSAGES: Record<string, string> = {
   MULTIPLE_INVOICES_UNSUPPORTED: "Order ini memiliki lebih dari satu invoice — belum didukung.",
   INVOICE_SETTLEMENT_EXISTS: "Invoice sudah memiliki pembayaran atau credit note aktif — pembatalan dengan invoice void tidak dapat dilakukan.",
   INVALID_ORDER_STATUS_FOR_CANCELLATION: "Status order saat ini tidak dapat diproses untuk pembatalan.",
+
+  // Gate P4.06 -- Klaim Pembayaran (submit_payment_claim_atomic/approve_payment_claim_atomic/reject_payment_claim_atomic).
+  INVALID_AMOUNT: "Nominal harus lebih besar dari nol.",
+  CUSTOMER_NOT_FOUND: "Customer tidak ditemukan.",
+  PAYMENT_CLAIM_NOT_FOUND: "Klaim pembayaran tidak ditemukan.",
+  PAYMENT_CLAIM_ALREADY_DECIDED: "Klaim ini sudah diputuskan sebelumnya. Muat ulang halaman untuk melihat status terbaru.",
+  PAYMENT_CLAIM_CORE_IMMUTABLE: "Data klaim tidak dapat diubah setelah dikirim.",
+  PAYMENT_CLAIM_IMMUTABLE: "Klaim pembayaran tidak dapat dihapus.",
+  ALLOCATION_CUSTOMER_MISMATCH: "Invoice yang dipilih bukan milik customer pada klaim ini.",
 };
 
 const DEFAULT_FINANCE_ERROR_MESSAGE = "Terjadi kesalahan saat memproses permintaan.";

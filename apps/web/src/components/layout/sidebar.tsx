@@ -151,6 +151,16 @@ function IconVisit() {
   );
 }
 
+function IconCashClaim() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+      <rect x="3" y="6" width="18" height="12" rx="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 9v0M18 15v0" />
+    </svg>
+  );
+}
+
 function IconMenu() {
   return (
     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -175,6 +185,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Laporan Sales", href: "/dashboard/reports",    icon: <IconChart />,      permission: "reports.view" },
       { label: "KPI Salesman",  href: "/dashboard/kpi",        icon: <IconTarget />,     permission: "sales_kpi.view" },
       { label: "Finance Operations", href: "/dashboard/finance", icon: <IconFinance />, permission: "receivable.view" },
+      { label: "Klaim Pembayaran", href: "/dashboard/payment-claims", icon: <IconCashClaim />, permission: "payment.claim" },
       { label: "Risk Alert",    href: "/dashboard/risk",       icon: <IconShield />,     roles: ["super_admin", "owner", "manager"] },
       { label: "AI Insights",   href: "/dashboard/ai",         icon: <IconAI />,         permission: "ai.view" },
     ],
