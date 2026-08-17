@@ -54,7 +54,7 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-16 |
 | Branch | `main` |
-| HEAD | `429f63f` — **sudah di-push ke `origin/main` dan LIVE di hosted** (13 commit, termasuk fix bug 500 order creation, lihat § Handoff di bawah) |
+| HEAD | `8ec2eb0` — **1 commit ahead dari `origin/main`** (docs-only, commit dokumen readiness Gate 3D-B3-F5/3E-D0). Commit produksi terakhir yang sudah live di hosted: `429f63f` (13 commit termasuk fix bug 500 order creation, lihat § Handoff di bawah) |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API setelah salah asumsi sempat terjadi. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. |
 | Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
 | Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `7fc7875` (production, dikonfirmasi via GitHub Deployments API 2026-08-15). Migration `20261003000001` (D6-A) sudah diterapkan ke Supabase hosted `AODP-Waluyo-Demo`. `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
@@ -351,6 +351,28 @@ memang sudah direncanakan.
      dicek sidebar owner — "Collection" hilang, langsung KPI Salesman →
      Finance Operations.
 
+2. `[REQUEST FOUNDER]` **Rencana checkpoint 4-poin (disetujui 2026-08-17)**
+   — Founder minta progres AODP diaudit, CTO ajukan urutan prioritas,
+   disetujui, dieksekusi bertahap dengan checkpoint + update tracker tiap
+   poin selesai:
+   1. ~~Commit 4 dokumen readiness Gate 3D-B3-F5/3E-D0~~ — **DITUTUP**, lihat
+      Log Milestone (`8ec2eb0`).
+   2. Push Gate P4.01 (`requested_delivery_date`) + P4.02
+      (`payment_terms_days`) yang sudah PASS lokal ke hosted — **belum
+      dieksekusi**, butuh konfirmasi eksplisit Founder sebelum `git push`
+      (deploy ke production live).
+   3. Fix gap validasi status pengiriman: tombol status generik
+      ("Proses"/"Kirim"/"Tandai Terkirim") di `orders/[id]/page.tsx` tidak
+      terhubung ke tabel `deliveries` — `update_sales_order_status_atomic`
+      tidak cek bukti pengiriman sebelum izinkan status
+      `delivering`/`delivered`. **Belum dieksekusi.**
+   4. Kumpulkan & ajukan sekaligus 4 keputusan bisnis yang menggantung (NOO
+      reversal, konsolidasi password recovery, role `driver` utk sales
+      all-in, akses `payment.record`) ke Founder dalam 1 pertanyaan —
+      **belum dieksekusi**.
+   Item lebih besar (P4.03 Fase B voice note, Business Guard Collection
+   Risk) sengaja ditaruh setelah 4 poin ini selesai.
+
 ### Berikutnya (urutan prioritas, atas = duluan)
 
 1. `[REQUEST FOUNDER]` **Redesain Laporan Sales — Fase A SELESAI (2026-08-16,
@@ -510,10 +532,11 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 
 ### Accepted limitations (dari audit 2026-08-12, tidak berubah, tidak blocking)
 
-7. Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 (hosted clean-slate) tidak
-   pernah di-commit ke git; status eksekusi destruktif di hosted **tidak
-   dapat diverifikasi** dari repo. Perlu konfirmasi Founder (akses Studio
-   hosted). Bukti tambahan 2026-08-14: state hosted saat ini koheren, tenant
+7. ~~Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 (hosted clean-slate) tidak
+   pernah di-commit ke git~~ — **DITUTUP 2026-08-17** (`8ec2eb0`), 4 dokumen
+   (runbook cleanup, execution SQL, hosted inventory, pre-cleanup snapshot)
+   di-commit. Status eksekusi destruktif hosted sekarang bisa diverifikasi
+   dari repo. Bukti tambahan 2026-08-14: state hosted saat ini koheren, tenant
    isolation utuh (tidak menjamin runbook dieksekusi, tapi tidak ada bukti
    dampak runtime/security).
 8. `docs/product/discovery/AODP_WALUYO_SALESMAN_KPI_FINAL.md` (LOCKED) belum
@@ -550,6 +573,7 @@ menghindari risiko salah kategori pada histori yang sudah locked.
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-17 | `[TEMUAN]` **Commit 4 dokumen readiness Gate 3D-B3-F5 & 3E-D0 (hosted cleanup)** (`8ec2eb0`) | Founder minta diprioritaskan poin #1 dari rencana checkpoint (docs(readiness) commit). Menutup Backlog #7 (dokumen tereksekusi tapi tidak pernah di-commit) — runbook cleanup, execution SQL, hosted inventory, pre-cleanup snapshot sekarang tercatat di repo, isinya sudah dicek tidak mengandung secret/kredensial. | **DITUTUP — commit lokal, belum di-push** |
 | 2026-08-17 | `[TEMUAN]` **Fix bug: ikon amplop/telepon di header cetak pecah ke baris terpisah dari teksnya** (`components/document-engine/print.css`) | Founder laporkan teks email "harusnya disebelah logo amplop" -- ditelusuri dengan scale transform 3x via javascript inspection (bukan asumsi visual), terbukti ikon amplop rendering di baris sendiri, teks email di baris bawahnya (ikon telepon kebetulan tidak kelihatan pecah karena teks nomornya pendek, jadi kelihatan normal walau root cause sama). Root cause: Tailwind preflight men-set `svg { display: block }` secara global di seluruh app -- SVG ikon (`MailIcon`/`PhoneIcon` di `PrintDocumentPanel.tsx`) jadi block-level, memaksa line-break sebelum+sesudahnya, bukan render inline di sebelah teks. Percobaan pertama (`white-space: nowrap` di span) TIDAK memperbaiki -- dibuktikan salah lewat pengukuran `getBoundingClientRect()` sebelum menyimpulkan berhasil (root cause bukan soal wrapping teks). Fix final: `.doc-engine-contact-icon` diberi `display: inline-block` eksplisit, override preflight. Diverifikasi ulang dengan teknik scale-transform+screenshot yang sama -- ikon+teks sekarang sebaris persis seperti referensi Founder. Type-check bersih, tidak ada console error. | **PASS — LOKAL, terverifikasi browser (root cause diverifikasi via DOM measurement, bukan tebakan)** |
 | 2026-08-17 | `[REQUEST FOUNDER]` **Identitas company lokal diganti ke data tenant asli PT Sumber Warna Alam Sudiada + logo asli terpasang** (data-only + `apps/web/public/logos/pt-sumber-warna-alam-sudiada.jpeg` baru) | Founder kirim contoh header cetak asli (nama, alamat, email, telepon, logo bulat) dan minta header template dibuat seperti itu -- dikonfirmasi logo filenya memang sudah ada di repo (`docs/document-engine/assets/samples/waluyo/logo-pt-sumber-warna-alam-sudiada.jpeg`, dipakai sebagai fixture test `PhysicalPrintSheet.test.ts` sebelumnya, sekarang datanya sama persis dipakai ke company sungguhan). Header `PrintDocumentPanel.tsx` sendiri TIDAK diubah -- strukturnya sudah persis cocok dengan referensi (logo + nama hijau bold + alamat + email/telepon berikon), yang kurang cuma data company lokal masih placeholder seed ("AODP Dev Distributor") dan `logo_url` NULL. Fix: logo dicopy ke `apps/web/public/logos/` (dari `docs/` yang tidak public-servable) supaya bisa diakses `/logos/...`, lalu `companies` row lokal (`b253dc2a-...`) diupdate `name`/`legal_address`/`contact_email`/`contact_phone`/`logo_url` ke data asli PT Sumber Warna Alam Sudiada (script sekali-pakai, sudah dihapus). Ini konsisten dengan data SWAS (produk+pelanggan) yang sudah diimport sebelumnya ke company yang sama -- sekarang identitas company-nya sendiri juga otentik, bukan cuma isi datanya. Diverifikasi browser lokal: halaman print invoice (`AODPDEV-INV-20260816-000005`) menampilkan logo asli, nama, alamat, email, telepon persis sesuai referensi, tidak ada console error (gambar termuat). **Koreksi (masih sesi sama)**: Founder tunjukkan hasil belum sama persis -- root cause nama company salah ditulis Title Case ("PT Sumber Warna Alam Sudiada") padahal referensi ALL CAPS ("PT SUMBER WARNA ALAM SUDIADA", sama seperti fixture test `PhysicalPrintSheet.test.ts`); email/telepon yang tadinya terlihat bertumpuk 2 baris ternyata cuma artefak viewport screenshot sempit (700px), bukan bug CSS -- di viewport lebar (`display:flex` di `.doc-engine-company-contact`) keduanya sebaris seperti seharusnya. Nama diperbaiki ke ALL CAPS via script sekali-pakai (sudah dihapus), diverifikasi ulang di viewport lebar (1300px) -- sekarang identik dengan referensi. **Belum ada UI upload logo di Settings** (gap pra-existing, sudah tercatat sebelumnya) -- perubahan ini isi langsung ke DB, bukan lewat form. | **PASS — LOKAL, terverifikasi browser (setelah 1 koreksi casing)** |
 | 2026-08-17 | `[REQUEST FOUNDER]` **Tombol "Cetak Sekarang" di halaman print invoice (single & batch)** (`components/document-engine/print-now-button.tsx` baru, `finance/invoices/[id]/print/page.tsx`, `finance/invoices/print-batch/page.tsx`) | Founder tanya (murni tanya dulu) kenapa tidak ada tombol print/pengaturan printer dot-matrix di halaman cetak. Dijelaskan: pengaturan printer (driver, continuous-form feed, alignment, port) memang di luar jangkauan web app mana pun -- itu level OS/driver, browser cuma bisa panggil dialog print sistem. Yang realistis ditambahkan cuma shortcut tombol supaya tidak perlu tahu Ctrl+P -- Founder minta ditambahkan. Komponen client kecil `PrintNowButton` (`window.print()`, fixed bottom-right, `print:hidden` supaya tombolnya sendiri tidak ikut tercetak) dipasang di kedua halaman print (single & batch). Diverifikasi browser lokal: tombol muncul di kedua halaman, diklik tidak error di console (dialog print native OS tidak bisa di-screenshot lewat automation, tapi tidak ada exception JS). Type-check bersih. | **PASS — LOKAL, terverifikasi browser** |
