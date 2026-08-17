@@ -367,6 +367,89 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     expect([orderAId, orderBId]).toContain(rows[0].order_id);
   });
 
+  it("Gate P4.05: order pembuka toko dibatalkan -> NOO dibalik (REVERSED), toko tetap bisa dapat NOO lagi lewat order berikutnya yang genuinely first-confirmed-live", async () => {
+    const customerId = randomUUID();
+    await supabase.from("customers").insert({
+      id: customerId, company_id: companyId, code: `C-${runTag}-noo-reversal`, name: "Toko Reversal Verify",
+      assigned_sales_id: salesAuthId, is_active: true,
+    });
+
+    const order1Id = randomUUID();
+    await supabase.from("sales_orders").insert({
+      id: order1Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-1`, customer_id: customerId,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 800_000,
+    });
+    await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order1Id).eq("status", "draft");
+
+    const { data: afterFirst } = await supabase
+      .from("sales_kpi_achievement_events")
+      .select("event_type, order_id")
+      .eq("company_id", companyId).eq("kpi_code", "NOO").eq("customer_id", customerId);
+    expect((afterFirst ?? []).filter((r) => r.event_type === "CREDITED")).toHaveLength(1);
+
+    // Order pembuka toko dibatalkan -> harus muncul baris REVERSED (append-only,
+    // baris CREDITED asal TIDAK diubah/dihapus).
+    await supabase.from("sales_orders").update({ status: "cancelled" }).eq("id", order1Id);
+
+    const { data: afterCancel } = await supabase
+      .from("sales_kpi_achievement_events")
+      .select("event_type, order_id, value, reversal_of_event_id")
+      .eq("company_id", companyId).eq("kpi_code", "NOO").eq("customer_id", customerId)
+      .order("created_at");
+    const rowsAfterCancel = (afterCancel ?? []) as { event_type: string; order_id: string; value: number; reversal_of_event_id: string | null }[];
+    expect(rowsAfterCancel).toHaveLength(2);
+    expect(rowsAfterCancel[0].event_type).toBe("CREDITED");
+    expect(rowsAfterCancel[1].event_type).toBe("REVERSED");
+    expect(rowsAfterCancel[1].order_id).toBe(order1Id);
+    expect(rowsAfterCancel[1].value).toBe(rowsAfterCancel[0].value); // netral, sama seperti pola ORDER_COUNT/REVENUE
+    expect(rowsAfterCancel[1].reversal_of_event_id).toBeTruthy();
+
+    // Retry cancel (no-op transition, mensimulasikan update ganda) tidak
+    // menggandakan baris REVERSED.
+    await supabase.from("sales_orders").update({ status: "cancelled" }).eq("id", order1Id);
+    const { data: afterRetryCancel } = await supabase
+      .from("sales_kpi_achievement_events")
+      .select("id").eq("company_id", companyId).eq("kpi_code", "NOO")
+      .eq("customer_id", customerId).eq("event_type", "REVERSED");
+    expect(afterRetryCancel ?? []).toHaveLength(1);
+
+    // Order BARU utk customer yang sama, genuinely first-confirmed-live
+    // (satu-satunya order berstatus confirmed saat ini) -> HARUS re-credit,
+    // bukan diblokir permanen seperti sebelum Gate P4.05.
+    const order2Id = randomUUID();
+    await supabase.from("sales_orders").insert({
+      id: order2Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-2`, customer_id: customerId,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 450_000,
+    });
+    await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order2Id).eq("status", "draft");
+
+    const { data: afterSecond } = await supabase
+      .from("sales_kpi_achievement_events")
+      .select("event_type, order_id")
+      .eq("company_id", companyId).eq("kpi_code", "NOO").eq("customer_id", customerId)
+      .order("created_at");
+    const rowsAfterSecond = (afterSecond ?? []) as { event_type: string; order_id: string }[];
+    expect(rowsAfterSecond).toHaveLength(3);
+    expect(rowsAfterSecond[2].event_type).toBe("CREDITED");
+    expect(rowsAfterSecond[2].order_id).toBe(order2Id);
+
+    // Order KETIGA sementara order2 masih confirmed (aktif) -> TIDAK boleh
+    // double-credit (invariant "hanya satu kredit NOO aktif per customer"
+    // tetap tegak walau unique index sudah diganti scope order_id).
+    const order3Id = randomUUID();
+    await supabase.from("sales_orders").insert({
+      id: order3Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-3`, customer_id: customerId,
+      sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 250_000,
+    });
+    await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order3Id).eq("status", "draft");
+
+    const { data: creditedRows } = await supabase
+      .from("sales_kpi_achievement_events")
+      .select("id").eq("company_id", companyId).eq("kpi_code", "NOO")
+      .eq("customer_id", customerId).eq("event_type", "CREDITED");
+    expect(creditedRows ?? []).toHaveLength(2); // order1 (dibalik) + order2, order3 TIDAK menambah
+  });
+
   it("Cross-tenant: order company B tidak pernah mengkredit ledger NOO company A, dan sebaliknya", async () => {
     const customerBId = randomUUID();
     await supabase.from("customers").insert({
