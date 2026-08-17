@@ -392,9 +392,23 @@ memang sudah direncanakan.
       Tidak ada perubahan kode diperlukan — dicatat sebagai keputusan
       final, item ini closed tanpa eksekusi.
    3. **`payment.record` untuk sales/driver all-in → BERI AKSES DENGAN
-      GUARDRAIL** (butuh reconciliation/review Finance, bukan akses
-      penuh tanpa kontrol). Desain guardrail-nya masih perlu ditentukan
-      sebelum implementasi — **belum dieksekusi**.
+      GUARDRAIL** — **DIHENTIKAN SEMENTARA, butuh desain dikonfirmasi
+      Founder dulu** (bukan diputuskan sepihak). Investigasi
+      `record_verified_payment_atomic` (Gate 2D, `20260829000001`):
+      RPC ini didesain sebagai jalur "sudah TERVERIFIKASI" — begitu
+      dipanggil, LANGSUNG kredit `receivable_ledger` secara atomic &
+      immutable, tidak ada tahap review sama sekali. Memberi sales/driver
+      akses LANGSUNG ke RPC ini akan menghilangkan makna "terverifikasi"
+      itu sendiri — bukan implementasi guardrail yang diminta Founder,
+      justru sebaliknya. Guardrail yang sesuai (butuh 1 keputusan
+      desain dulu) kemungkinan besar: fitur BARU "klaim pembayaran"
+      (sales/driver lapor pembayaran diterima → status PENDING → Finance/
+      Owner approve baru benar-benar masuk ledger via
+      `record_verified_payment_atomic` yang sudah ada, atau reject).
+      Ini genuinely fitur baru (tabel + 2 RPC baru + UI utk 2 role
+      berbeda), beda kelas dari poin #5.2/5.4/5.5 yang murni
+      nyambungin/perluas yang sudah ada — perlu dikonfirmasi Founder dulu
+      sebelum dibangun, bukan diputuskan sepihak.
    4. **Tombol status generik "Kirim"/"Tandai Terkirim" → DIBATASI ke
       role owner/manager/admin saja** — **DITUTUP, Gate P4.07** (`d3bace3`),
       lihat Log Milestone.
