@@ -375,12 +375,38 @@ memang sudah direncanakan.
       reversal, konsolidasi password recovery, role `driver` utk sales
       all-in, akses `payment.record`, **+baru dari poin #3**: apakah tombol
       status generik "Kirim"/"Tandai Terkirim" perlu dibatasi role
-      tertentu — owner/manager/admin saja, atau tetap terbuka utk
-      sales/driver seperti sekarang, mengingat sekarang sudah ada audit
-      trail utk override tanpa bukti) ke Founder dalam 1 pertanyaan —
-      **belum dieksekusi**.
+      tertentu — **DITUTUP**, diajukan & dijawab Founder 2026-08-17 (5
+      keputusan sekaligus, termasuk 1 pertanyaan susulan soal role
+      `driver` untuk sales all-in yang berkembang jadi diskusi lebih luas
+      — lihat poin #5 baru di bawah untuk hasil & eksekusinya).
    Item lebih besar (P4.03 Fase B voice note, Business Guard Collection
-   Risk) sengaja ditaruh setelah 4 poin ini selesai.
+   Risk) sengaja ditaruh setelah rencana 4-poin ini (sekarang 5, lihat
+   poin #5) selesai.
+
+5. `[REQUEST FOUNDER]` **5 keputusan bisnis dari bundel poin #4 di atas —
+   DIPUTUSKAN Founder 2026-08-17, eksekusi bertahap dengan checkpoint per
+   item (pola sama seperti 4-poin sebelumnya)**:
+   1. **NOO reversal saat order pembuka toko dibatalkan → TAMBAHKAN**
+      (konsisten dgn ORDER_COUNT/REVENUE). Menyentuh gate LOCKED
+      3E-D5-A — **belum dieksekusi**.
+   2. **Password recovery email legacy → TETAP AKTIF** (tidak dimatikan).
+      Tidak ada perubahan kode diperlukan — dicatat sebagai keputusan
+      final, item ini closed tanpa eksekusi.
+   3. **`payment.record` untuk sales/driver all-in → BERI AKSES DENGAN
+      GUARDRAIL** (butuh reconciliation/review Finance, bukan akses
+      penuh tanpa kontrol). Desain guardrail-nya masih perlu ditentukan
+      sebelum implementasi — **belum dieksekusi**.
+   4. **Tombol status generik "Kirim"/"Tandai Terkirim" → DIBATASI ke
+      role owner/manager/admin saja** (sales/driver wajib lewat Delivery
+      Verification asli). Extend dari Gate P4.04 (audit visibility) yang
+      baru selesai — **belum dieksekusi**.
+   5. **Role `driver` untuk sales all-in → EKSEKUSI ke akun hosted
+      `slamatwaluyo@gmail.com` sekarang**, dijadikan referensi pola
+      onboarding utk klien masa depan yang punya sales all-in serupa
+      (Founder eksplisit ingin AODP-Waluyo jadi template, bukan bangun
+      dari nol tiap klien baru — arsitektur `user_roles` many-to-many
+      sudah generalize ini, yang belum ada cuma dokumentasi polanya).
+      **Belum dieksekusi.**
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
@@ -465,13 +491,11 @@ memang sudah direncanakan.
 
 | Item | Tag | Sejak | Konteks |
 |---|---|---|---|
-| NOO tidak punya mekanisme reversal saat order pembuka toko dibatalkan | `[TEMUAN]` | 2026-08-14 | Menyentuh gate LOCKED 3E-D5-A + definisi bisnis KPI. Detail: Backlog #6b |
-| 3 mekanisme password recovery aktif bersamaan (email legacy, super-admin DB-only, Telegram self-service) — email legacy disengaja atau harus dimatikan? | `[TEMUAN]` | 2026-08-14 | Detail: Backlog #13 |
-| WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Detail: Backlog #14 |
+| WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Masih relevan meski password recovery legacy diputuskan tetap aktif (2026-08-17) — RPC yang dipanggil tetap belum ada di migration aktif. Detail: Backlog #14 |
 | Owner Approval Inbox UI (proposal harga khusus) | `[TERENCANA]` | 2026-08-14 | RPC sudah ada & teruji (`decide_special_price_proposal_atomic`), tinggal UI. Detail: Backlog #3 |
 | Halaman drill-down Call/Effective Call lintas-salesman untuk Owner/Manager | `[TEMUAN]` | 2026-08-15 | Detail: Backlog #7 |
-| Sales "all-in" (order+kirim sendiri) tidak muncul di dropdown "Assign driver" — solusi kemungkinan operasional (tambah role `driver` ke akun sales, AODP sudah dukung multi-role per user), bukan kode. Perlu konfirmasi ini memang cara yang diinginkan sebelum dieksekusi ke akun nyata | `[TEMUAN]` | 2026-08-16 | Ditemukan saat role-play lokal Tahap 5. Detail: Log Milestone hari ini |
-| Permission `payment.record` cuma owner/finance — sales "all-in" yang nagih & terima cash sendiri (kasus Pak Waluyo) tidak punya jalur mencatat pembayaran yang diterimanya. Apakah sales/driver perlu diberi akses ini (dengan guardrail apa), atau tetap harus lapor ke Finance/Owner untuk dicatatkan? | `[TEMUAN]` | 2026-08-16 | Kontrol internal (siapa boleh catat uang masuk) — keputusan bisnis, bukan teknis. Detail: Log Milestone hari ini |
+
+*(4 item lain yang sebelumnya di tabel ini — NOO reversal, password recovery, role driver sales all-in, payment.record — sudah DIPUTUSKAN Founder 2026-08-17, lihat poin #5 di § Sedang Dikerjakan di atas untuk hasil & status eksekusi.)*
 
 ---
 
