@@ -88,6 +88,7 @@ export async function updateCustomerAction(
     entity_id:   customerId,
     old_data:    oldData as Record<string, unknown>,
     new_data:    { name: data.name, code: data.code, is_active: data.is_active, coverage_area_id: data.coverage_area_id },
+    module:      "customers",
   }).catch(() => {});
 
   revalidatePath("/dashboard/customers");
@@ -117,6 +118,7 @@ export async function deactivateCustomerAction(customerId: string): Promise<void
     action:      "customer.deactivate",
     entity_type: "customers",
     entity_id:   customerId,
+    module:      "customers",
   }).catch(() => {});
 
   revalidatePath("/dashboard/customers");
@@ -144,6 +146,7 @@ export async function activateCustomerAction(customerId: string): Promise<void> 
     action:      "customer.activate",
     entity_type: "customers",
     entity_id:   customerId,
+    module:      "customers",
   }).catch(() => {});
 
   revalidatePath("/dashboard/customers");

@@ -68,6 +68,7 @@ export async function createCompanyAction(data: CompanyFormData): Promise<void> 
     entity_type: "companies",
     entity_id:   company.id,
     new_data:    { name: data.name, slug: data.slug, plan: data.subscription_plan },
+    module:      "platform",
   }).catch(() => {});
 
   revalidatePath("/dashboard/platform/tenants");
@@ -105,6 +106,7 @@ export async function updateCompanyAction(
     entity_type: "companies",
     entity_id:   companyId,
     new_data:    { name: data.name, plan: data.subscription_plan },
+    module:      "platform",
   }).catch(() => {});
 
   revalidatePath("/dashboard/platform/tenants");
@@ -181,6 +183,7 @@ export async function createFirstUserAction(
     entity_type: "users",
     entity_id:   authUser.user.id,
     new_data:    { email: data.email, company_id: companyId },
+    module:      "platform",
   }).catch(() => {});
 
   revalidatePath(`/dashboard/platform/tenants/${companyId}`);
@@ -209,6 +212,7 @@ export async function toggleCompanyStatusAction(
     action:      isActive ? "tenant.activate" : "tenant.suspend",
     entity_type: "companies",
     entity_id:   companyId,
+    module:      "platform",
   }).catch(() => {});
 
   revalidatePath("/dashboard/platform/tenants");

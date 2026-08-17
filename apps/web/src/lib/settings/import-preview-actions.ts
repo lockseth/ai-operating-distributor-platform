@@ -62,5 +62,6 @@ export async function logImportPreviewAction(
       valid_rows:    stats.valid,
       error_rows:    stats.errors,
     },
+    module: "imports",
   }).catch(() => {});
 }

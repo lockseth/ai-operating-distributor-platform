@@ -136,6 +136,7 @@ export async function createSalesReportAction(data: SalesReportFormData): Promis
       achieved_revenue: kpi.revenue,
       grand_total:      totalValue,
     },
+    module: "reports",
   }).catch(() => {});
 
   revalidatePath("/dashboard/reports");

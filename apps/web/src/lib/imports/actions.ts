@@ -64,6 +64,7 @@ export async function uploadImportFileAction(formData: FormData): Promise<Action
     company_id: user.company_id, user_id: user.id, action: "import.uploaded",
     entity_type: "import_batches", entity_id: result.batchId,
     new_data: { importType, totalRows: result.totalRows, filename: file.name, sheet: result.selectedSheet },
+    module: "imports",
   });
 
   revalidatePath("/dashboard/imports");
@@ -88,6 +89,7 @@ export async function validateImportBatchAction(input: { batchId: string; column
     company_id: user.company_id, user_id: user.id, action: "import.validated",
     entity_type: "import_batches", entity_id: input.batchId,
     new_data: { totalRows: result.summary.totalRows, validRows: result.summary.validRows, errorRows: result.summary.errorRows, readyToCommit: result.summary.readyToCommit },
+    module: "imports",
   });
 
   revalidatePath(`/dashboard/imports/${input.batchId}`);

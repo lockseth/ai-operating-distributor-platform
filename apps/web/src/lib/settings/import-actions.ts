@@ -71,6 +71,7 @@ export async function createImportTemplateAction(
     entity_type: "import_templates",
     entity_id:   tmpl.id,
     new_data:    { name: data.name, entity_type: data.entity_type },
+    module:      "imports",
   }).catch(() => {});
 
   revalidatePath("/dashboard/settings/import");
@@ -118,6 +119,7 @@ export async function updateImportTemplateAction(
     entity_type: "import_templates",
     entity_id:   templateId,
     new_data:    { name: data.name },
+    module:      "imports",
   }).catch(() => {});
 
   revalidatePath("/dashboard/settings/import");

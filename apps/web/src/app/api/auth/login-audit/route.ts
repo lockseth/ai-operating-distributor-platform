@@ -50,6 +50,8 @@ export async function POST(request: Request) {
           email:      user.email,
           user_agent: userAgent,
         },
+        module: "auth",
+        event_category: "security",
       });
     }
 

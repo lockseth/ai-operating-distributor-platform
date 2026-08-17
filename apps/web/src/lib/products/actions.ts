@@ -58,6 +58,7 @@ export async function createProductAction(data: ProductFormData): Promise<void> 
     entity_type: "product",
     entity_id: created.id,
     new_data: { name: data.name, sku: data.sku, price: data.price },
+    module: "products",
   });
 
   revalidatePath("/dashboard/products");
@@ -105,6 +106,7 @@ export async function updateProductAction(
     entity_id: productId,
     old_data: oldData as Record<string, unknown>,
     new_data: { name: data.name, sku: data.sku, price: data.price, is_active: data.is_active },
+    module: "products",
   });
 
   revalidatePath(`/dashboard/products/${productId}`);
@@ -140,6 +142,7 @@ export async function archiveProductAction(productId: string): Promise<void> {
     entity_type: "product",
     entity_id: productId,
     new_data: { is_active: false },
+    module: "products",
   });
 
   revalidatePath(`/dashboard/products/${productId}`);
@@ -171,6 +174,7 @@ export async function activateProductAction(productId: string): Promise<void> {
     entity_type: "product",
     entity_id: productId,
     new_data: { is_active: true },
+    module: "products",
   });
 
   revalidatePath(`/dashboard/products/${productId}`);

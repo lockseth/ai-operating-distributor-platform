@@ -39,6 +39,8 @@ export async function signOutAction(): Promise<void> {
         action: "logout",
         entity_type: "session",
         new_data: { email: user.email },
+        module: "auth",
+        event_category: "security",
       });
     }
   }

@@ -77,6 +77,7 @@ export async function createSalesmanAction(
       entity_type: "users",
       entity_id: result.userId,
       new_data: { email: input.email.trim().toLowerCase(), full_name: input.fullName.trim() },
+      module: "users",
     }).catch(() => {});
 
     revalidatePath("/dashboard/users");
