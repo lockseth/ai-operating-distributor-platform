@@ -48,7 +48,7 @@ PASS setelah seluruh baris di bawah berstatus `covered`.
 | AI Dispatch Planner (`/dashboard/dispatch`) | Approve/adjust rencana dispatch | Saran rute/dispatch AI | Tidak ditemukan writer | Aktivitas AI & human belum tercatat | 1D-C (AI) + 1D-B (approval manusia) | missing | — |
 | Laporan Sales (`/dashboard/reports`) | Input/edit laporan harian (hybrid model) | Agregasi otomatis vs `sales_orders` | `logAuditEvent` di actions | Kontrak baru belum diisi; agregasi otomatis AI belum tercatat terpisah | 1D-B (human) / 1D-C (agregasi otomatis) | partial | `apps/web/src/lib/sales-reports/actions.ts` |
 | KPI Salesman (`/dashboard/kpi`) | Set konfigurasi/target KPI, kalibrasi | Kalkulasi achievement otomatis (TIDAK diaudit — deterministik, sesuai Lean-Audit rule) | RPC `initialize_sales_kpi_foundation`, `create_sales_kpi_period`, `set_sales_kpi_period_status`, `set_sales_kpi_target` — kanonis penuh | Tidak ada gap untuk configuration/period target (K1). Manual achievement override: NOT IMPLEMENTED (tidak ada capability-nya di codebase, ditegakkan struktural via trigger append-only) — sengaja tidak dibuat event. Call/visit recording (`record_sales_call` dkk, domain achievement bukan configuration/target) di luar scope K1, tetap `partial` | 1D-B (K1, selesai) | covered (configuration & period target) | `supabase/migrations/20260821000001_kpi_target_audit_canonical.sql`; test: `sales-kpi/calibration.integration.test.ts`, `sales-kpi/achievement.integration.test.ts`; commit `29f9c4c` |
-| Collection (`/dashboard/collection`) | Pencatatan pembayaran/collection | — | Tidak ditemukan writer | Aktivitas belum tercatat | 1D-B | missing | — |
+| Collection (`/dashboard/collection`) | Record collection attempt/outcome, create/correct/cancel promise to pay, mark broken | — | RPC atomik `record_collection_activity`, `create_promise_to_pay`, `correct_promise_to_pay`, `cancel_promise_to_pay`, `mark_promise_broken` (Gate 2C, migration `20260828000001`, commit `dcc4ad4`) — SEMUA menulis audit_logs kanonis penuh (module/event_category/source/outcome) dalam transaksi yang sama dengan mutasi, sejak awal gate ini dibuat | Tidak ada gap untuk lima transisi di atas. **Koreksi dokumentasi 2026-08-17**: baris ini sebelumnya salah ditandai `missing` — migration `dcc4ad4` (16:32 WIB) landed SETELAH matrix ini terakhir di-update (`c6593c5`, 10:18 WIB, hari yang sama), jadi tercatat "belum ada" padahal writernya sudah lengkap sejak awal, dokumen ini saja yang tidak pernah disinkronkan ulang. Ditemukan &amp; diperbaiki saat Founder menanyakan kesiapan struktur audit (bukan kerja baru) | 1D-B | covered | `supabase/migrations/20260828000001_collection_promise_foundation.sql` (baris 511, 655, 795, 898, 1002); test: `apps/web/src/lib/finance/collection-promise-foundation.integration.test.ts` (baris 280, 298, 465, 534, 546, 646, 800-833, verifikasi eksplisit module/event_category/outcome/payload, bukan cuma presence); dikonfirmasi ada 93 baris audit `module='collection'` di DB lokal saat verifikasi |
 | Risk Alert (`/dashboard/risk`) | Acknowledge/tindak lanjut alert (bila ada) | Generate risk alert (Business Guard) | Tidak ditemukan writer | Aktivitas AI & human belum tercatat; CLAUDE.md mengunci alert tidak bisa dihapus role sales — belum ada bukti audit utk enforcement ini | 1D-C (AI) + 1D-B (human ack) | missing | — |
 | AI Insights (`/dashboard/ai`) | Lihat/tindak lanjut insight | Generate insight AI | Tidak ditemukan writer | Aktivitas AI belum tercatat | 1D-C | missing | — |
 | Pelanggan (`/dashboard/customers`) | Create/update pelanggan, verifikasi PIC | — | `logAuditEvent` di actions; RPC PIC master/email | Kontrak baru belum diisi | 1D-B | partial | `apps/web/src/lib/customers/actions.ts`; `supabase/migrations/20260728000001_customer_pic_master.sql`; `20260730000001_customer_pic_email.sql`; `20260728000005_fix_pic_verify_self_verify_rule.sql` |
@@ -67,23 +67,25 @@ PASS setelah seluruh baris di bawah berstatus `covered`.
 
 - Total baris: 18 (17 menu sidebar semula + Delivery Verification, baru
   ditambahkan Kelompok 1 K4 — sebelumnya absen total dari matrix ini).
-- `covered`: 4 — Activity & Audit Log (fondasi reader), KPI Salesman
+- `covered`: 5 — Activity & Audit Log (fondasi reader), KPI Salesman
   (configuration & period target, K1), Sales Order (termasuk Telegram Order
-  Entry, K2), Delivery Verification (create/dispatch/receipt confirmation, K4).
-  Ketiga baris K1/K2/K4 `covered` UNTUK TRANSISI YANG DICAKUP MASING-MASING
-  COMMIT SAJA — sub-domain di luar scope (achievement/call recording KPI,
-  discount decision, evidence-attachment individual, delivery arrival/cancel)
-  TIDAK diklaim covered, lihat kolom Gap masing-masing baris.
+  Entry, K2), Delivery Verification (create/dispatch/receipt confirmation, K4),
+  **Collection** (record activity + promise lifecycle penuh, Gate 2C — status
+  diperbaiki 2026-08-17, sebelumnya salah tercatat `missing`, lihat catatan di
+  baris Collection). Baris K1/K2/K4/Collection `covered` UNTUK TRANSISI YANG
+  DICAKUP MASING-MASING GATE SAJA — sub-domain di luar scope (achievement/call
+  recording KPI, discount decision, evidence-attachment individual, delivery
+  arrival/cancel) TIDAK diklaim covered, lihat kolom Gap masing-masing baris.
 - `partial`: 7 (Laporan Sales, Pelanggan, Produk, Automation Outbox, Pengguna,
   Import Data, Platform) — TIDAK disentuh Kelompok 1, di luar scope K1–K4.
-- `missing`: 7 (Dashboard/page-view, WhatsApp AI, AI Dispatch Planner,
-  Collection, Risk Alert, AI Insights, Automation rule-based, sebagian
-  Pengaturan non-import).
+- `missing`: 6 (Dashboard/page-view, WhatsApp AI, AI Dispatch Planner,
+  Risk Alert, AI Insights, Automation rule-based, sebagian Pengaturan
+  non-import).
 - Discount: TIDAK ADA baris tersendiri — K3 menyimpulkan NOT IMPLEMENTED
   (tidak ada capability approval/override diskon di codebase ini). Lihat
   catatan di atas.
 - Gate 1D **belum PASS** secara keseluruhan — baris `partial`/`missing` yang
-  tersisa di luar scope Kelompok 1 (K1–K4) menunggu Gate 1D-C/gate lanjutan
-  (Kelompok 2+, aktivitas AI/system/automation/navigation/export/messaging/
-  retry/security, dan modul non-K1–K4 seperti Laporan Sales/Pelanggan/Produk/
-  Automation Outbox/Pengguna/Import Data/Platform).
+  tersisa menunggu Gate 1D-C/gate lanjutan (Kelompok 2+, aktivitas
+  AI/system/automation/navigation/export/messaging/retry/security, dan modul
+  non-K1–K4/Collection seperti Laporan Sales/Pelanggan/Produk/Automation
+  Outbox/Pengguna/Import Data/Platform).
