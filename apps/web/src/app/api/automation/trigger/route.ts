@@ -25,6 +25,7 @@ const VALID_TRIGGER_TYPES: AutomationTriggerType[] = [
   "scheduled_daily",
   "scheduled_weekly",
   "manual",
+  "special_price_proposal_submitted",
 ];
 
 interface TriggerRequest {

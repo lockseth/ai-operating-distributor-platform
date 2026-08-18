@@ -55,6 +55,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   scheduled_daily: "Jadwal Harian",
   scheduled_weekly: "Jadwal Mingguan",
   manual: "Manual",
+  special_price_proposal_submitted: "Pengajuan Harga Khusus",
 };
 
 const STATUS_STYLES: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {

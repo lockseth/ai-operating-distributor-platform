@@ -13,7 +13,8 @@ export type AutomationTriggerType =
   | "new_customer"
   | "scheduled_daily"
   | "scheduled_weekly"
-  | "manual";
+  | "manual"
+  | "special_price_proposal_submitted";
 
 export type AutomationActionType =
   | "log"

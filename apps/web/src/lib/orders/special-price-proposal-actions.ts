@@ -27,6 +27,7 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { processAutomationEvent } from "@/lib/automation/engine";
 
 export interface SubmitSpecialPriceProposalItemInput {
   salesOrderItemId: string;
@@ -121,6 +122,45 @@ export async function submitSpecialPriceProposalAction(
   }
 
   revalidatePath(`/dashboard/orders/${input.orderId}`);
+
+  // Notifikasi realtime Owner Approval Inbox -- fire-and-forget lewat
+  // automation engine existing (event -> rule -> call_n8n -> webhook
+  // terkonfigurasi per tenant, lib/automation/engine.ts, TIDAK diubah).
+  // Provider WhatsApp aktual (Bablast) belum dikoneksikan di sisi n8n --
+  // event ini akan no-op (skipped, "Tidak ada webhook terdaftar") sampai
+  // rule+webhook didaftarkan, TIDAK memblokir alur pengajuan sama sekali.
+  // Kegagalan apa pun di sini sengaja ditelan -- pengajuan harga khusus
+  // sudah tersimpan sukses di DB sebelum titik ini, notifikasi best-effort
+  // tidak boleh menggagalkan aksi bisnis yang sudah berhasil.
+  if (row.result_outcome === "submitted" && row.approval_request_id) {
+    try {
+      const { data: orderRow } = await supabase
+        .from("sales_orders")
+        .select("order_number, customers(name)")
+        .eq("id", input.orderId)
+        .maybeSingle();
+      const order = orderRow as { order_number: string; customers: { name: string } | null } | null;
+
+      await processAutomationEvent({
+        trigger_type: "special_price_proposal_submitted",
+        company_id: user.company_id,
+        data: {
+          approval_request_id: row.approval_request_id,
+          order_id: input.orderId,
+          order_number: order?.order_number ?? "-",
+          customer_name: order?.customers?.name ?? "-",
+          requested_by_email: user.email,
+          reason,
+          proposal_version: row.proposal_version,
+          item_count: input.items.length,
+          approval_link: `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/dashboard/orders/approvals`,
+        },
+        fired_at: new Date().toISOString(),
+      });
+    } catch (notifyErr) {
+      console.error("[special-price-proposal] gagal memicu notifikasi automation (diabaikan):", notifyErr);
+    }
+  }
 
   return {
     outcome: row.result_outcome as SubmitSpecialPriceProposalResult["outcome"],
