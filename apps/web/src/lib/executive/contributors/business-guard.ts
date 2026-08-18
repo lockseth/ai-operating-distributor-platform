@@ -1,4 +1,4 @@
-import { generateCollectionRiskReport } from "@/lib/business-guard/engine";
+import { generateCollectionRiskReport, generateDiscountAnomalyReport } from "@/lib/business-guard/engine";
 import type {
   ExecutiveContributor,
   ModuleContribution,
@@ -8,11 +8,13 @@ import type {
 } from "../types";
 
 // =============================================================================
-// Contributor: Business Guard AI -- Milestone 3 dari Collection Risk (lihat
-// lib/business-guard/features/collection-risk.ts + engine.ts). Sales Risk
-// (discount anomaly) SENGAJA belum ikut dikontribusikan ke sini -- masih
-// hanya tampil di halaman /dashboard/risk sendiri, di luar scope perubahan
-// ini (tidak diminta, tidak disentuh).
+// Contributor: Business Guard AI -- Collection Risk (Milestone 3, lihat
+// lib/business-guard/features/collection-risk.ts + engine.ts) DAN Sales Risk/
+// discount anomaly (lib/business-guard/features/discount-anomaly.ts, sudah
+// lama LOCKED & hidup di /dashboard/risk, baru sekarang ikut dikontribusikan
+// ke Executive Intelligence). Tidak ada logic scoring baru sama sekali di
+// sini -- murni menyambungkan dua report yang sudah ada ke kontrak
+// ModuleContribution, pola sama persis dengan Collection Risk.
 // =============================================================================
 
 function formatIDR(n: number): string {
@@ -27,18 +29,33 @@ export const businessGuardContributor: ExecutiveContributor = {
   moduleLabel: "Business Guard",
 
   async contribute({ companyId }): Promise<ModuleContribution> {
-    const report = await generateCollectionRiskReport(companyId);
+    const [collectionReport, discountReport] = await Promise.all([
+      generateCollectionRiskReport(companyId),
+      generateDiscountAnomalyReport(companyId),
+    ]);
 
     const health: HealthComponent[] = [];
-    if (report.length > 0) {
-      const healthyCount = report.filter((r) => r.risk_level === "NONE" || r.risk_level === "LOW").length;
-      const completePct = Math.round((healthyCount / report.length) * 100);
+    if (collectionReport.length > 0) {
+      const healthyCount = collectionReport.filter((r) => r.risk_level === "NONE" || r.risk_level === "LOW").length;
+      const completePct = Math.round((healthyCount / collectionReport.length) * 100);
       health.push({
         key: "collection_risk",
         label: "Kualitas Piutang",
         score: completePct,
         weight: 2,
-        reason: `${healthyCount} dari ${report.length} customer berpiutang dalam kondisi aman/rendah risiko`,
+        reason: `${healthyCount} dari ${collectionReport.length} customer berpiutang dalam kondisi aman/rendah risiko`,
+        trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
+      });
+    }
+    if (discountReport.length > 0) {
+      const healthyCount = discountReport.filter((r) => r.risk_level === "NONE" || r.risk_level === "LOW").length;
+      const completePct = Math.round((healthyCount / discountReport.length) * 100);
+      health.push({
+        key: "sales_discount_risk",
+        label: "Kewajaran Diskon Sales",
+        score: completePct,
+        weight: 2,
+        reason: `${healthyCount} dari ${discountReport.length} sales dengan pola pengajuan harga khusus wajar`,
         trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
       });
     }
@@ -46,8 +63,8 @@ export const businessGuardContributor: ExecutiveContributor = {
     const insights: ExecutiveInsight[] = [];
     const actions: ExecutiveAction[] = [];
 
-    const high = report.filter((r) => r.risk_level === "HIGH");
-    const medium = report.filter((r) => r.risk_level === "MEDIUM");
+    const high = collectionReport.filter((r) => r.risk_level === "HIGH");
+    const medium = collectionReport.filter((r) => r.risk_level === "MEDIUM");
 
     if (high.length > 0) {
       const names = high.map((r) => r.customer_name).slice(0, 5).join(", ");
@@ -80,6 +97,43 @@ export const businessGuardContributor: ExecutiveContributor = {
         priority: "HIGH",
         action: "Follow-up piutang yang mulai menua",
         rationale: `${medium.length} customer masuk kategori risiko sedang`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    const salesHigh = discountReport.filter((r) => r.risk_level === "HIGH");
+    const salesMedium = discountReport.filter((r) => r.risk_level === "MEDIUM");
+
+    if (salesHigh.length > 0) {
+      const names = salesHigh.map((r) => r.sales_name).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "critical",
+        title: `${salesHigh.length} sales dengan pola pengajuan diskon anomali tinggi`,
+        narrative: `${names}${salesHigh.length > 5 ? ", …" : ""} -- pengajuan harga khusus di luar kewajaran dibanding sales lain.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "URGENT",
+        action: "Tinjau pengajuan harga khusus sales berisiko tinggi",
+        rationale: `${salesHigh.length} sales dengan pola anomali diskon`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    if (salesMedium.length > 0) {
+      const names = salesMedium.map((r) => r.sales_name).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "warning",
+        title: `${salesMedium.length} sales perlu dipantau pola diskonnya`,
+        narrative: `${names}${salesMedium.length > 5 ? ", …" : ""} -- pengajuan harga khusus lebih sering/dalam dari rata-rata.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "HIGH",
+        action: "Pantau pengajuan diskon sales bulan ini",
+        rationale: `${salesMedium.length} sales masuk kategori risiko sedang`,
         href: "/dashboard/risk",
       });
     }
