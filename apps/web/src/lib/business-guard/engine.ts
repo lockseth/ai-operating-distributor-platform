@@ -16,6 +16,12 @@ import {
   type CollectionRiskResult,
   type OutstandingInvoiceInfo,
 } from "./features/collection-risk";
+import { detectBehaviorChange, type BehaviorChangeResult } from "./features/behavior-change";
+import {
+  detectTransactionRisk,
+  type TransactionRiskResult,
+  type OrderItemQuantityOutlier,
+} from "./features/transaction-risk";
 
 const LOOKBACK_DAYS = 180;
 
@@ -249,5 +255,228 @@ export async function generateCollectionRiskReport(
   return results.sort((a, b) => {
     const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
     return order[a.risk_level]! - order[b.risk_level]! || b.total_outstanding_amount - a.total_outstanding_amount;
+  });
+}
+
+// =============================================================================
+// Behavior Change -- query sales_orders (confirmed_at, untuk baseline pola
+// order per customer) + customer_relationship_events (Gate PIC master
+// 2026-07-28, LOCKED, sudah mencatat PIC_NAME_CHANGED/PIC_PHONE_CHANGED/
+// PIC_ADDED/PIC_DEACTIVATED/DUPLICATE_PIC_DETECTED/DUPLICATE_STORE_DETECTED),
+// lalu jalankan detectBehaviorChange per customer aktif. Read-only -- tidak
+// menyentuh RPC PIC/order sama sekali, murni SELECT.
+// =============================================================================
+
+const BEHAVIOR_CHANGE_LOOKBACK_DAYS = 180;
+
+const PIC_FIELD_CHANGE_EVENTS = new Set(["PIC_NAME_CHANGED", "PIC_PHONE_CHANGED"]);
+const DUPLICATE_EVENTS = new Set(["DUPLICATE_PIC_DETECTED", "DUPLICATE_STORE_DETECTED"]);
+
+type CustomerRow = { id: string; name: string };
+type OrderDateRow = { customer_id: string; confirmed_at: string };
+type RelationshipEventRow = { customer_id: string; event_type: string };
+
+export async function generateBehaviorChangeReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<BehaviorChangeResult[]> {
+  const supabase = await createClient();
+  const lookbackDate = new Date(now.getTime() - BEHAVIOR_CHANGE_LOOKBACK_DAYS * 86_400_000);
+
+  const [customersResult, ordersResult, eventsResult] = await Promise.all([
+    supabase.from("customers").select("id, name").eq("company_id", companyId).eq("is_active", true),
+    supabase
+      .from("sales_orders")
+      .select("customer_id, confirmed_at")
+      .eq("company_id", companyId)
+      .not("confirmed_at", "is", null)
+      .gte("confirmed_at", lookbackDate.toISOString()),
+    supabase
+      .from("customer_relationship_events")
+      .select("customer_id, event_type")
+      .eq("company_id", companyId)
+      .gte("created_at", lookbackDate.toISOString()),
+  ]);
+
+  const customers = (customersResult.data ?? []) as CustomerRow[];
+  if (customers.length === 0) return [];
+
+  const ordersByCustomer = new Map<string, string[]>();
+  ((ordersResult.data ?? []) as OrderDateRow[]).forEach((o) => {
+    if (!ordersByCustomer.has(o.customer_id)) ordersByCustomer.set(o.customer_id, []);
+    ordersByCustomer.get(o.customer_id)!.push(o.confirmed_at);
+  });
+
+  type PicActivity = { fieldChangeCount: number; hasDeactivated: boolean; hasAdded: boolean; hasDuplicate: boolean };
+  const picActivityByCustomer = new Map<string, PicActivity>();
+  ((eventsResult.data ?? []) as RelationshipEventRow[]).forEach((e) => {
+    const entry: PicActivity = picActivityByCustomer.get(e.customer_id) ?? {
+      fieldChangeCount: 0,
+      hasDeactivated: false,
+      hasAdded: false,
+      hasDuplicate: false,
+    };
+    if (PIC_FIELD_CHANGE_EVENTS.has(e.event_type)) entry.fieldChangeCount += 1;
+    if (e.event_type === "PIC_DEACTIVATED") entry.hasDeactivated = true;
+    if (e.event_type === "PIC_ADDED") entry.hasAdded = true;
+    if (DUPLICATE_EVENTS.has(e.event_type)) entry.hasDuplicate = true;
+    picActivityByCustomer.set(e.customer_id, entry);
+  });
+
+  const results = customers.map((c) => {
+    const picActivity = picActivityByCustomer.get(c.id);
+    return detectBehaviorChange(
+      {
+        customer_id: c.id,
+        customer_name: c.name,
+        confirmed_order_dates: ordersByCustomer.get(c.id) ?? [],
+        pic_field_change_count: picActivity?.fieldChangeCount ?? 0,
+        pic_fully_replaced: !!(picActivity?.hasDeactivated && picActivity?.hasAdded),
+        has_duplicate_flag: picActivity?.hasDuplicate ?? false,
+      },
+      now,
+    );
+  });
+
+  return results.sort((a, b) => {
+    const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+    return order[a.risk_level]! - order[b.risk_level]!;
+  });
+}
+
+// =============================================================================
+// Transaction Risk Score -- skor PER TRANSAKSI (order individual), beda dari
+// 3 slice lain yang agregat per-entity. Query sales_orders (final_amount,
+// dipisah window baseline 180 hari vs recent 30 hari supaya order yang
+// dinilai tidak ikut mencemari baseline-nya sendiri) + sales_order_items
+// (quantity per produk), lalu jalankan detectTransactionRisk per order dalam
+// window recent. Read-only -- tidak menyentuh RPC order sama sekali.
+// =============================================================================
+
+const TX_RISK_LOOKBACK_DAYS = 180;
+const TX_RISK_RECENT_WINDOW_DAYS = 30;
+const MIN_LINES_FOR_PRODUCT_BASELINE = 3;
+const QUANTITY_OUTLIER_MULTIPLIER = 3;
+
+type ScoredOrderRow = {
+  id: string;
+  order_number: string;
+  customer_id: string;
+  confirmed_at: string;
+  final_amount: number;
+  customer: { name: string } | { name: string }[] | null;
+};
+type BaselineOrderRow = { id: string; customer_id: string; final_amount: number };
+type OrderItemRow = { order_id: string; product_id: string | null; product_name_raw: string; quantity: number };
+
+export async function generateTransactionRiskReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<TransactionRiskResult[]> {
+  const supabase = await createClient();
+  const baselineStart = new Date(now.getTime() - TX_RISK_LOOKBACK_DAYS * 86_400_000);
+  const recentStart = new Date(now.getTime() - TX_RISK_RECENT_WINDOW_DAYS * 86_400_000);
+
+  const [recentResult, baselineResult] = await Promise.all([
+    supabase
+      .from("sales_orders")
+      .select("id, order_number, customer_id, confirmed_at, final_amount, customer:customers!customer_id(name)")
+      .eq("company_id", companyId)
+      .not("confirmed_at", "is", null)
+      .gte("confirmed_at", recentStart.toISOString())
+      .order("confirmed_at", { ascending: false }),
+    supabase
+      .from("sales_orders")
+      .select("id, customer_id, final_amount")
+      .eq("company_id", companyId)
+      .not("confirmed_at", "is", null)
+      .gte("confirmed_at", baselineStart.toISOString())
+      .lt("confirmed_at", recentStart.toISOString()),
+  ]);
+
+  const recentOrders = (recentResult.data ?? []) as unknown as ScoredOrderRow[];
+  if (recentOrders.length === 0) return [];
+
+  const baselineOrders = (baselineResult.data ?? []) as BaselineOrderRow[];
+  const recentOrderIds = recentOrders.map((o) => o.id);
+  const baselineOrderIds = baselineOrders.map((o) => o.id);
+
+  const [recentItemsResult, baselineItemsResult] = await Promise.all([
+    recentOrderIds.length > 0
+      ? supabase.from("sales_order_items").select("order_id, product_id, product_name_raw, quantity").in("order_id", recentOrderIds)
+      : Promise.resolve({ data: [] }),
+    baselineOrderIds.length > 0
+      ? supabase.from("sales_order_items").select("order_id, product_id, product_name_raw, quantity").in("order_id", baselineOrderIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const recentItems = (recentItemsResult.data ?? []) as OrderItemRow[];
+  const baselineItems = (baselineItemsResult.data ?? []) as OrderItemRow[];
+
+  // Baseline per-customer avg final_amount, dari order SEBELUM window recent
+  // (order yang sedang dinilai tidak ikut membentuk baseline-nya sendiri).
+  const customerBaseline = new Map<string, { sum: number; count: number }>();
+  baselineOrders.forEach((o) => {
+    const entry = customerBaseline.get(o.customer_id) ?? { sum: 0, count: 0 };
+    entry.sum += o.final_amount;
+    entry.count += 1;
+    customerBaseline.set(o.customer_id, entry);
+  });
+
+  const companyAvgOrderValue =
+    baselineOrders.length > 0
+      ? baselineOrders.reduce((s, o) => s + o.final_amount, 0) / baselineOrders.length
+      : recentOrders.reduce((s, o) => s + o.final_amount, 0) / recentOrders.length;
+
+  // Baseline per-produk avg quantity per baris, dari order SEBELUM window recent.
+  const productBaseline = new Map<string, { sum: number; count: number }>();
+  baselineItems.forEach((it) => {
+    const key = it.product_id ?? it.product_name_raw;
+    const entry = productBaseline.get(key) ?? { sum: 0, count: 0 };
+    entry.sum += it.quantity;
+    entry.count += 1;
+    productBaseline.set(key, entry);
+  });
+
+  const itemsByOrder = new Map<string, OrderItemRow[]>();
+  recentItems.forEach((it) => {
+    if (!itemsByOrder.has(it.order_id)) itemsByOrder.set(it.order_id, []);
+    itemsByOrder.get(it.order_id)!.push(it);
+  });
+
+  const results = recentOrders.map((o) => {
+    const custBaseline = customerBaseline.get(o.customer_id);
+    const items = itemsByOrder.get(o.id) ?? [];
+    const outliers: OrderItemQuantityOutlier[] = [];
+    items.forEach((it) => {
+      const key = it.product_id ?? it.product_name_raw;
+      const prodBaseline = productBaseline.get(key);
+      if (!prodBaseline || prodBaseline.count < MIN_LINES_FOR_PRODUCT_BASELINE) return;
+      const avgQty = prodBaseline.sum / prodBaseline.count;
+      if (avgQty > 0 && it.quantity > avgQty * QUANTITY_OUTLIER_MULTIPLIER) {
+        outliers.push({ product_name: it.product_name_raw, quantity: it.quantity, avg_quantity: avgQty });
+      }
+    });
+
+    return detectTransactionRisk(
+      {
+        order_id: o.id,
+        order_number: o.order_number,
+        customer_id: o.customer_id,
+        customer_name: resolveCustomerName(o.customer),
+        confirmed_at: o.confirmed_at,
+        order_total_amount: o.final_amount,
+        customer_avg_order_value: custBaseline && custBaseline.count > 0 ? custBaseline.sum / custBaseline.count : null,
+        is_first_order: !custBaseline || custBaseline.count === 0,
+        company_avg_order_value: companyAvgOrderValue,
+        item_quantity_outliers: outliers,
+      },
+      now,
+    );
+  });
+
+  return results.sort((a, b) => {
+    const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+    return order[a.risk_level]! - order[b.risk_level]! || b.order_total_amount - a.order_total_amount;
   });
 }

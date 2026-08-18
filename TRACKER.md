@@ -62,7 +62,7 @@ penuh karena masih operasional.
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-18 |
+| Tanggal update terakhir | 2026-08-19 |
 | Branch | `main` |
 | HEAD | `8432a43` — **sinkron penuh dengan `origin/main`** (0 ahead/behind). Mencakup seluruh gate s.d. Risk Alert List gabungan (Business Guard Collection Risk 4 milestone, Sales Risk → Executive Intelligence, PR data toko kredit, Gate P4.08, Owner Approval Inbox, dst.). Vercel production **Ready**, health-check bersih. |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. |
@@ -98,6 +98,14 @@ penuh karena masih operasional.
   ulang sebelum menyimpulkan ada bug.
 - Peta lengkap order-to-cash per tahap: `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`
   (belum diupdate merefleksikan gate-gate terbaru — lihat Backlog).
+- **RESOLVED (2026-08-19)**: Node.js lokal (`v26.3.0`) sempat
+  **segfault/access violation** (2026-08-18) saat load bundle CJS besar
+  (`vitest`, `tsc`, `next dev` semua kena) — **hilang total setelah restart
+  PC**, dikonfirmasi ulang lewat Gate P4.09 (test suite 25/25 PASS, tsc
+  bersih, dev server + browser normal). Root cause pasti tidak diketahui
+  (state proses/memory yang corrupt, bukan bug permanen kode/instalasi) --
+  dicatat di sini murni sebagai jejak kalau gejala serupa muncul lagi:
+  **coba restart PC dulu** sebelum reinstall Node atau ubah nama folder.
 
 ---
 
@@ -114,7 +122,15 @@ memang sudah direncanakan.
 
 ### Sedang Dikerjakan
 
-**KOSONG — semua item berikut sudah DITUTUP.** Ringkasan (detail penuh
+**KOSONG.** Gate P4.10 (Transaction Risk Score) selesai & PASS — lihat Log
+Milestone. **Business Guard AI dinyatakan OFFICIALLY PASS** (4/4 slice
+hidup: Sales Risk, Collection Risk, Behavior Change, Transaction Risk
+Score), semua dikontribusikan ke Executive Intelligence, semua
+terverifikasi test + browser dengan data nyata.
+
+---
+
+**Item lama (arsip, sudah DITUTUP)**. Ringkasan (detail penuh
 versi pra-kompaksi ada di `git log -p` untuk file ini):
 
 1. **Role-play UAT order-to-cash** (2026-08-16) — DITUTUP. Temuan kunci:
@@ -179,6 +195,22 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    Rekomendasi CTO (belum dieksekusi): bangun satu lapisan agregat
    terstruktur dulu sebelum chatbot-nya sendiri. Chatbot wajib lewat
    `packages/ai` (CLAUDE.md #3), bukan panggil vendor AI langsung.
+3. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
+   data multi-tenant — DISETUJUI arahnya (2026-08-18), EKSEKUSI/DESAIN
+   TEKNIS DISERAHKAN PENUH ke CTO, belum dimulai.** Muncul dari diskusi
+   follow-up demo SURABRADJA (lihat juga memory
+   `surabradja-demo-plan` di luar repo). Ide inti: begitu ada >1
+   distributor aktif di platform (mis. Waluyo + SURABRADJA), data
+   lintas-tenant yang governed (`company_id` + RLS per CLAUDE.md #7)
+   berpotensi jadi moat yang susah ditiru kompetitor single-tenant —
+   contoh konkret: skor kredibilitas toko lintas-distributor (broken
+   promise/piutang macet di Distributor A jadi sinyal risiko buat
+   Distributor B sebelum kasih kredit), atau prediksi cash-flow real
+   (bukan cuma Revenue booked) dari kombinasi outstanding invoice +
+   payment terms + Collection Risk. **Belum di-scope teknis** — perlu
+   pertimbangan serius soal privasi/consent lintas-tenant sebelum desain
+   konkret (data sharing antar perusahaan klien beda karakter dari fitur
+   single-tenant biasa), plus baru relevan begitu ada tenant kedua aktif.
 
 ### Ditunda — menunggu keputusan Founder
 
@@ -199,7 +231,7 @@ Rujukan: `docs/product/01_PRD.md` §5, `docs/product/modules/*.md`.
 | **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Enforcement harga khusus LOCKED & hosted-verified; Owner Approval Inbox UI live |
 | **FlowSales AI** (laporan sales, KPI, AI Dispatch Planner, Telegram Sales Order Entry, AI Insights) | Matang, aktif dikembangkan | Gate 3E-D4/D5, Owner BI A–E |
 | **Collection Intelligence** | Diimplementasikan sebagai bagian Finance Operations Workspace | `/dashboard/collection` redirect ke `/dashboard/finance/collection` (Gate 2I.x) |
-| **Business Guard AI** (Risk Alert) | **2 slice hidup + Risk Alert List gabungan, semua dikontribusikan ke Executive Intelligence** — Sales Risk/Discount Anomaly (2026-08-14) + Collection Risk/piutang macet (2026-08-18) + Risk Alert List gabungan (2026-08-18). Sisanya (Behavior Change, Transaction Risk Score) masih "Segera Hadir" | `apps/web/src/lib/business-guard/`, `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx`, `apps/web/src/lib/executive/contributors/business-guard.ts` |
+| **Business Guard AI** (Risk Alert) | **OFFICIALLY PASS — 4/4 slice hidup, semua dikontribusikan ke Executive Intelligence** — Sales Risk/Discount Anomaly (2026-08-14) + Collection Risk/piutang macet (2026-08-18) + Behavior Change/pola customer (2026-08-19, Gate P4.09) + Transaction Risk Score/per-order (2026-08-19, Gate P4.10) + Risk Alert List gabungan. Tidak ada lagi placeholder "Segera Hadir" di halaman Risk. | `apps/web/src/lib/business-guard/`, `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx`, `apps/web/src/lib/executive/contributors/business-guard.ts` |
 | **WhatsApp AI** | **Belum diimplementasi** — UI "Segera Hadir" | `apps/web/src/app/(dashboard)/dashboard/whatsapp/page.tsx` |
 | **Warehouse Intelligence** | **Placeholder resmi MVP** (bukan gap — keputusan produk terkunci, CLAUDE.md aturan #6) | Dashboard dasar delivery stats saja |
 
@@ -245,6 +277,8 @@ debugging/verifikasi panjang dihapus — lihat catatan di kepala dokumen).
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-19 | `[REQUEST FOUNDER]` **Gate P4.10 — Business Guard AI: Transaction Risk Score, slice ke-4 (terakhir) — Business Guard AI OFFICIALLY PASS** | Skor **per transaksi individual** (per sales_order), beda dari 3 slice lain yang agregat per-entity. 3 sinyal per order dalam window recent 30 hari (baseline dari window 180 hari, terpisah dari window recent supaya order yang dinilai tidak mencemari baseline-nya sendiri): (1) nilai order vs rata-rata order historis customer itu sendiri (self-baseline), (2) order pertama customer baru langsung besar vs rata-rata order company, (3) kuantitas item 1 baris jauh melebihi rata-rata kuantitas order untuk produk itu (company-wide, min. 3 baris histori). File: `lib/business-guard/features/transaction-risk.ts` (+test 12 kasus, 2 kasus awal ditemukan salah kalibrasi ambang saat run test lalu diperbaiki), `lib/business-guard/engine.ts` (+`generateTransactionRiskReport`), `app/(dashboard)/dashboard/risk/page.tsx` (card aktif keempat, banner ganti jadi hijau "4 fitur aktif", FEATURE_CARDS placeholder terakhir dihapus karena sudah kosong), `lib/executive/contributors/business-guard.ts` (+health "Kewajaran Transaksi (30 Hari)"). Read-only murni, tanpa migration. Diverifikasi penuh: test suite Business Guard 46/46 PASS, `tsc --noEmit` 0 error baru, browser dikonfirmasi data nyata (`SO-DEV-0001` — Toko Sumber Rejeki, Rp680rb, "Aman") DAN Executive Intelligence menampilkan health baru skor 100 (Business Health Score naik 66→69/100). **Business Guard AI sekarang 4/4 slice hidup, semua dikontribusikan ke Executive Intelligence.** | **PASS — lokal, test + browser terverifikasi, OFFICIALLY PASS** |
+| 2026-08-19 | `[REQUEST FOUNDER]` **Gate P4.09 — Business Guard AI: Behavior Change (customer), slice ke-3** | Rule-based, 2 sinyal customer-level — (1) order pattern drop self-baseline (hari sejak order terakhir vs rata-rata interval historis customer sendiri, min. 3 order utk baseline), (2) PIC berganti (dari `customer_relationship_events` yang sudah ada, tanpa tabel baru). File: `lib/business-guard/features/behavior-change.ts` (+test 12 kasus), `lib/business-guard/engine.ts` (+`generateBehaviorChangeReport`), `app/(dashboard)/dashboard/risk/page.tsx` (card aktif ke-3 + masuk Risk Alert List gabungan), `lib/executive/contributors/business-guard.ts` (+health "Stabilitas Perilaku Customer" weight 1 + insight/action HIGH/MEDIUM). Read-only murni, tanpa migration. Sempat blocked 1 hari oleh bug environment Node v26.3.0 (segfault) — **hilang setelah restart PC**, ternyata bukan masalah kode. Diverifikasi penuh setelah restart: test suite 25/25 PASS, `tsc --noEmit` bersih (0 error baru), browser lokal dikonfirmasi data nyata (`Toko Sumber Rejeki` -- "Aman", histori order <3 sehingga baseline di-skip sesuai desain) DAN Executive Intelligence menampilkan health "Stabilitas Perilaku Customer" skor 100. | **PASS — lokal, test + browser terverifikasi** |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Risk Alert List — gabungan Sales Risk + Collection Risk** (`60e8352`) | Menutup placeholder terakhir "Segera Hadir" yang mudah — murni gabungan + sort severity dari 2 report existing, tanpa logic scoring baru. Diverifikasi browser: urutan & label benar. | **PASS — hosted (push `8432a43`)** |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Sales Risk (discount anomaly) ikut dikontribusikan ke Executive Intelligence** (`45d6901`) | Murni wiring `generateDiscountAnomalyReport` existing ke `businessGuardContributor` — health "Kewajaran Diskon Sales" + insight/action per tier. Diverifikasi browser dengan data nyata. | **PASS — hosted** |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Business Guard — Collection Risk (piutang berisiko macet), 4 milestone** (`ada1a1e`, `bec747a`, `59f4326`, `c2646c6`) | Modul baru: scoring rule-based aging piutang (31-60/61-90/>90 hari, +20/+40/+60) + broken promise (+15/janji, cap 30) + dispute (+10), tier sama Sales Risk (60/35/15). `generateCollectionRiskReport` (read-only) + contributor Executive Intelligence + kartu di `/dashboard/risk`. Diverifikasi end-to-end nyata: 1 invoice asli via `issue_invoice_atomic` + 1 broken promise, dikonfirmasi browser. | **PASS — hosted** |
