@@ -64,25 +64,13 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 
 ---
 
-## Handoff sesi (2026-08-16, rate limit mingguan Founder >90%)
+## Catatan Lingkungan Kerja (evergreen — dipertahankan lintas sesi)
 
-Sesi ini dilanjutkan di akun/sesi lain Founder. Ringkasan supaya sesi
-berikutnya tidak perlu re-derive dari nol:
-
-**Yang sudah PASS terverifikasi lokal, menunggu SATU keputusan Founder:**
-push `git push origin main` (12 commit, sudah PASS lokal semua — build,
-lint, test suite 2563/2564 dengan 1 kegagalan pra-existing tidak terkait
-di `telegram-enrollment-control.security.test.ts`) ke hosted
-(`aodp-waluyo-demo.vercel.app`, deploy otomatis dari `main` — lihat baris
-"Deploy pipeline" di atas). Isi 12 commit itu (`fd5f410`..`30fa6ad`):
-Gate P4.01 (`requested_delivery_date` untuk AI Dispatch Planner) +
-konsolidasi field tanggal, fix role-aware "Sales yang Menangani" +
-perbaikan query roles yang lama rusak, fix bug listbox pencarian
-pelanggan, halaman baru Lihat/Cetak Invoice (Document Engine), hapus menu
-sidebar "Collection", **dan yang paling penting: fix bug 500 yang
-memblokir pembuatan order sejak awal role-play** (root cause:
-`generateOrderNumber()` kena RLS-blind, lihat Log Milestone
-tersegera/Sedang Dikerjakan #1 di bawah untuk detail lengkap).
+**(Sebelumnya berjudul "Handoff sesi 2026-08-16" — sudah DITUTUP LAMA,
+push 12 commit yang dimaksud sudah masuk sejak beberapa push lalu, jauh
+sebelum push besar 2026-08-18 di Log Milestone teratas. Judul & konteks
+"menunggu satu keputusan" dihapus karena sudah usang; bagian di bawah
+ini dipertahankan karena masih berlaku umum lintas sesi.)**
 
 **Konteks lingkungan kerja (supaya sesi baru tidak perlu re-discover)**:
 - Docker Desktop harus jalan dulu sebelum `supabase start`/`db reset` bisa
@@ -100,11 +88,17 @@ tersegera/Sedang Dikerjakan #1 di bawah untuk detail lengkap).
 - Login ke hosted demo (`aodp-waluyo-demo.vercel.app`) sebagai
   `slamatwaluyo@gmail.com` (akun sales asli Pak Waluyo) **wajib dilakukan
   Founder sendiri** — Claude Code tidak pernah pegang passwordnya.
-- Role-play UAT masih di **Tahap 1 selesai** (order dibuat+dikonfirmasi
-  terbukti jalan) — Tahap 3-6 (dispatch→delivery→invoice) sudah dibuktikan
-  jalan **lewat RPC langsung**, belum lewat klik UI penuh karena Delivery
-  Verification cuma ada jalur Telegram (lihat gap di bawah). Peta lengkap:
-  `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`.
+- Role-play UAT end-to-end (1 sesi kontinu Tahap 1-6) **belum diulang**
+  sejak catatan asli 2026-08-16 (Tahap 1 selesai lewat UI, Tahap 3-6
+  lewat RPC langsung, belum lewat klik UI penuh). **TAPI** sejak itu
+  banyak potongan jalur web sudah diverifikasi terpisah lewat browser
+  end-to-end per-gate (bukan 1 alur kontinu) — Gate P4.07 (tombol
+  Kirim/Terkirim, sales diblok terbukti di browser), assign-driver sales
+  all-in (dropdown terbukti di browser), Gate P4.06 klaim pembayaran
+  (submit+approve+reject semua lewat klik sungguhan). Peta lengkap:
+  `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` (dokumen ini sendiri
+  BELUM diupdate merefleksikan gate-gate baru — lihat temuan gap
+  dokumentasi terkait di Log Milestone/Backlog).
 
 ---
 
@@ -122,6 +116,15 @@ ditemukan CTO saat audit/kerja lain · `[TERENCANA]` bagian roadmap yang
 memang sudah direncanakan.
 
 ### Sedang Dikerjakan
+
+**Status per 2026-08-18: KOSONG — ketiga item di bawah ini (role-play UAT,
+rencana checkpoint 4-poin, 5 keputusan bisnis) SEMUANYA sudah DITUTUP.**
+Belum dipindahkan/dipangkas dari section ini secara fisik (narasi
+detailnya punya nilai arsip, terutama root-cause story yang tidak
+diduplikasi di Log Milestone) — dibiarkan di sini sebagai catatan
+historis, BUKAN pekerjaan aktif. Kalau butuh tahu apa yang SEDANG
+dikerjakan sekarang, cek `### Berikutnya` di bawah (isinya genuinely
+belum dikerjakan) — jangan salah baca section ini sebagai backlog aktif.
 
 1. `[REQUEST FOUNDER]` **Role-play UAT order-to-cash end-to-end** — Claude
    Code jalankan siklus penuh sebagai role `sales` (`slamatwaluyo@gmail.com`,
@@ -605,6 +608,7 @@ menghindari risiko salah kategori pada histori yang sudah locked.
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-18 | *(catatan pembaca)* **Semua baris di bawah ini yang berstatus "belum di-push" (Gate P4.04/P4.05/P4.06/P4.07, assign-driver, audit contract, koreksi Collection — tanggal 2026-08-17/18) SUDAH ikut ter-push** lewat baris tepat di bawah ini (`0bb7e52`, push 19 commit). Tidak diedit satu-satu di baris aslinya (menghormati aturan "jangan menimpa baris lama" di atas) — cukup baca baris ini sebagai penanda. | — | — |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Push 19 commit ke `origin/main` + TEMUAN KRITIS: 6 migration belum pernah diterapkan ke hosted, termasuk P4.01/P4.02 yang sebelumnya dikira sudah live** (`0bb7e52`) | Founder minta push. Sebelum push, `git status`/`git fetch` bersih (protected WIP `forgot-password-form.tsx` TETAP tidak ikut, cuma di working tree). `git push origin main` sukses, `origin/main` == lokal (0 selisih), Vercel auto-deploy **Ready** dalam ~1 menit. **Sambil verifikasi rutin, ditemukan gap serius**: `npx supabase migration list` menunjukkan 6 migration (`20261005000001` s/d `20261010000001` — Gate P4.01, P4.02, P4.04, P4.05, P4.06, P4.07) kolom Remote-nya KOSONG, artinya TIDAK PERNAH diterapkan ke database hosted `AODP-Waluyo-Demo` -- termasuk P4.01/P4.02 yang di checkpoint 2026-08-17 sempat disimpulkan "sudah live" (waktu itu cuma dicek KODE frontend-nya via `vercel inspect`, bukan fungsi database-nya). Root cause: build script Vercel (`next build`) tidak pernah menjalankan migration secara otomatis -- `git push` kode dan `supabase db push` migration adalah 2 langkah TERPISAH yang harus dijalankan manual keduanya, gap ini sudah berpotensi bikin fitur-fitur sejak P4.01 (pertengahan Agustus) diam-diam gagal di hosted setiap RPC-nya dipanggil (function signature tidak cocok) tanpa pernah terdeteksi karena Founder belum sempat coba fitur-fitur itu di hosted. **Ditutup langsung**: `npx supabase db push` dijalankan (project sudah linked ke `mcbwgvtkhykrrtvbpeys`), keenam migration berhasil diterapkan (tidak ada ERROR, cuma NOTICE harmless dari `DROP TRIGGER IF EXISTS` pertama kali), dikonfirmasi ulang `migration list` (Local == Remote penuh). Health-check halaman login hosted bersih tanpa console error setelah deploy. **Pelajaran dicatat di Status Ringkas § Deploy pipeline** supaya sesi berikutnya tidak mengulang asumsi yang sama. | **SELESAI — origin/main sinkron, hosted deploy Ready, migration hosted disinkronkan penuh, terverifikasi `vercel ls` + `supabase migration list` + health-check browser** |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Lengkapi kontrak kanonis `logAuditEvent` di 22 titik pemanggilan (Produk/Pelanggan/Platform/Laporan Sales/Import Data/Pengguna/Auth)** (`a449622`) | Founder minta tutup gap audit trail (kekhawatiran anti-kecurangan sales), diarahkan ke "Risk Alert" dulu — investigasi menemukan halaman itu murni read-only (laporan dihitung live, bukan entitas tersimpan, tidak ada aksi apa pun) sehingga tidak ada yang bisa diaudit di sana tanpa membuat event palsu (melanggar prinsip "jangan membuat event palsu" yang sudah dipegang proyek ini). Dialihkan ke opsi #2: tutup gap `partial` yang lebih nyata. Root cause ditemukan: helper bersama `logAuditEvent()` (`lib/actions/audit.ts`), dipakai 22 kali lintas 10 file, TIDAK PERNAH mengisi kolom kanonis Gate 1D-A (`actor_type`/`event_category`/`module`/`source`/`outcome`) sejak awal dibuat. Fix: `module` diubah WAJIB di level TypeScript (compile error kalau ada yang terlewat — dipakai sebagai jaring verifikasi lengkap), `event_category`/`source`/`outcome` dapat default masuk akal, bisa ditimpa eksplisit (`event_category='security'` utk login/logout, menutup gap yang sudah tercatat eksplisit di matrix). Diverifikasi: type-check bersih (0 titik terlewat), test baru `audit.integration.test.ts` (DB-backed, 3 skenario), 216 test modul terkait PASS, full suite 2570/2571 PASS (1 gagal pra-existing), **end-to-end browser**: buat produk sungguhan sebagai owner → muncul benar di Activity & Audit Log. Update `ACTIVITY_AUDIT_COVERAGE_MATRIX.md`: Laporan Sales/Produk/Platform/Auth & Login → `covered`; Pelanggan/Pengguna/Import Data → `partial` (membaik — writer TS selesai, writer RPC terpisah masih perlu sesi lanjutan, scope lebih besar). Koreksi sitasi stale tambahan ditemukan sambil kerja: `app/(auth)/callback/route.ts` tidak ada (path salah di matrix lama). | **PASS — LOKAL, terverifikasi test + browser end-to-end, belum di-push** |
 | 2026-08-18 | `[REQUEST FOUNDER]` **Koreksi dokumentasi: Collection TERNYATA sudah `covered` di Activity & Audit Log, bukan `missing`** (`69ec025`) | Founder tanya kesiapan struktur audit utk Owner. Investigasi ke `docs/owner-control/ACTIVITY_AUDIT_COVERAGE_MATRIX.md` menemukan baris Collection salah tercatat `missing` ("Tidak ditemukan writer") — dicek langsung ke kode, kelima RPC Gate 2C (`record_collection_activity`, `create/correct/cancel_promise_to_pay`, `mark_promise_broken`, migration `20260828000001`) TERNYATA SUDAH menulis `audit_logs` kanonis penuh (module/event_category/source/outcome) sejak RPC-nya dibuat, dengan 41 test integration yang membuktikannya eksplisit. Root cause murni dokumentasi: migration Collection (`dcc4ad4`, 16:32 WIB) landed SETELAH matrix terakhir di-update (`c6593c5`, 10:18 WIB) di hari yang sama — dokumen ini saja yang tidak pernah disinkronkan ulang, bukan gap kode sungguhan. **Jadi TIDAK ADA kode baru yang ditulis untuk item ini** — murni koreksi status dokumen dari `missing` ke `covered` (5 dari 18 baris matrix sekarang `covered`, 6 `missing`). Diverifikasi end-to-end: psql konfirmasi 122 baris `audit_logs` `module='collection'` sudah ada di DB (dari test suite berjalan), ditambah 1 baris baru dibuat via RPC langsung utk company seed lokal — dikonfirmasi muncul benar di halaman Owner "Activity & Audit Log" (filter `module=collection`), lengkap dgn detail before/after (note, channel, invoice_id, customer_id, dll). | **PASS — LOKAL, koreksi dokumentasi + verifikasi browser end-to-end, belum di-push** |
