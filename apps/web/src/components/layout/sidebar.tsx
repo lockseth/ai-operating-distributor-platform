@@ -181,6 +181,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "WhatsApp AI",   href: "/dashboard/whatsapp",   icon: <IconChat />,       roles: ["super_admin", "owner", "manager", "admin"] },
       { label: "Kunjungan Sales", href: "/dashboard/sales-visits", icon: <IconVisit />,  roles: ["sales"] },
       { label: "Sales Order",   href: "/dashboard/orders",     icon: <IconOrders />,     permission: "orders.view" },
+      { label: "Persetujuan Harga Khusus", href: "/dashboard/orders/approvals", icon: <IconShield />, roles: ["owner"] },
       { label: "AI Dispatch Planner", href: "/dashboard/dispatch", icon: <IconDispatch />, permission: "dispatch.view" },
       { label: "Laporan Sales", href: "/dashboard/reports",    icon: <IconChart />,      permission: "reports.view" },
       { label: "KPI Salesman",  href: "/dashboard/kpi",        icon: <IconTarget />,     permission: "sales_kpi.view" },

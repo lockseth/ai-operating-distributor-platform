@@ -26,6 +26,7 @@ import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface SubmitSpecialPriceProposalItemInput {
   salesOrderItemId: string;
@@ -126,6 +127,187 @@ export async function submitSpecialPriceProposalAction(
     requiresApproval: row.requires_approval ?? false,
     approvalRequestId: row.approval_request_id,
     proposalVersion: row.proposal_version,
+    orderStatus: row.order_status,
+  };
+}
+
+// =============================================================================
+// Owner Approval Inbox -- daftar semua permintaan harga khusus PENDING
+// lintas order (tenant-wide), dan aksi keputusan Owner (approve/reject) lewat
+// RPC existing (Gate 3E-D4-C3, LOCKED) decide_special_price_proposal_atomic.
+//
+// RPC ini juga hanya di-GRANT ke `authenticated` (bukan service_role) --
+// createClient() session-scoped wajib dipakai, sama seperti submit action di
+// atas. Decider harus role='owner' murni (dicek RAW di dalam RPC, bukan lewat
+// permission table) -- guard role di sini murni defense-in-depth app-layer.
+// =============================================================================
+
+export interface PendingSpecialPriceProposalItem {
+  approvalRequestId: string;
+  orderId: string;
+  orderNumber: string;
+  customerName: string;
+  requestedByName: string;
+  proposalVersion: number;
+  reason: string | null;
+  requestedAt: string;
+  lines: {
+    productName: string;
+    quantity: number;
+    masterUnitPrice: number;
+    proposedUnitPrice: number;
+    impliedDiscountPercentage: number;
+  }[];
+}
+
+export async function getPendingSpecialPriceProposals(
+  companyId: string,
+  client?: SupabaseClient
+): Promise<PendingSpecialPriceProposalItem[]> {
+  const supabase = client ?? (await createClient());
+
+  const { data, error } = await supabase
+    .from("special_price_approval_requests")
+    .select(
+      "id, proposal_version, reason, requested_at, requested_by, sales_orders(id, order_number, customers(name)), special_price_approval_lines(product_name_snapshot, quantity, master_unit_price, proposed_unit_price, implied_discount_percentage, line_number)"
+    )
+    .eq("company_id", companyId)
+    .eq("status", "PENDING")
+    .order("requested_at", { ascending: true });
+
+  if (error) throw new Error(`pending_special_price_proposals: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    proposal_version: number;
+    reason: string | null;
+    requested_at: string;
+    requested_by: string;
+    sales_orders: { id: string; order_number: string; customers: { name: string } | null } | null;
+    special_price_approval_lines: {
+      product_name_snapshot: string;
+      quantity: number;
+      master_unit_price: number;
+      proposed_unit_price: number;
+      implied_discount_percentage: number;
+      line_number: number;
+    }[];
+  }>;
+
+  const requesterIds = [...new Set(rows.map((r) => r.requested_by))];
+  const { data: requesterRows, error: requesterErr } = requesterIds.length
+    ? await supabase.from("users").select("id, full_name").in("id", requesterIds)
+    : { data: [], error: null };
+  if (requesterErr) throw new Error(`pending_special_price_proposals requesters: ${requesterErr.message}`);
+  const nameMap = new Map(((requesterRows ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+
+  return rows.map((row) => ({
+    approvalRequestId: row.id,
+    orderId: row.sales_orders?.id ?? "",
+    orderNumber: row.sales_orders?.order_number ?? "-",
+    customerName: row.sales_orders?.customers?.name ?? "-",
+    requestedByName: nameMap.get(row.requested_by) ?? "-",
+    proposalVersion: row.proposal_version,
+    reason: row.reason,
+    requestedAt: row.requested_at,
+    lines: [...row.special_price_approval_lines]
+      .sort((a, b) => a.line_number - b.line_number)
+      .map((line) => ({
+        productName: line.product_name_snapshot,
+        quantity: line.quantity,
+        masterUnitPrice: line.master_unit_price,
+        proposedUnitPrice: line.proposed_unit_price,
+        impliedDiscountPercentage: line.implied_discount_percentage,
+      })),
+  }));
+}
+
+export interface DecideSpecialPriceProposalInput {
+  approvalRequestId: string;
+  orderId: string;
+  decision: "APPROVED" | "REJECTED";
+  idempotencyKey: string;
+  decisionReason?: string;
+}
+
+export interface DecideSpecialPriceProposalResult {
+  approvalRequestId: string;
+  decision: string;
+  proposalVersion: number;
+  orderStatus: string | null;
+}
+
+type DecideRpcRow = {
+  result_outcome: string;
+  approval_request_id: string | null;
+  decision: string | null;
+  proposal_version: number | null;
+  order_status: string | null;
+  decided_at: string | null;
+};
+
+export async function decideSpecialPriceProposalAction(
+  input: DecideSpecialPriceProposalInput
+): Promise<DecideSpecialPriceProposalResult> {
+  const user = await getAuthUser();
+  if (!hasRole(user.roles, "owner")) {
+    throw new Error("Hanya Owner yang dapat memutuskan permintaan harga khusus.");
+  }
+
+  const decisionReason = input.decisionReason?.trim() || undefined;
+  if (input.decision === "REJECTED" && !decisionReason) {
+    throw new Error("Alasan penolakan wajib diisi.");
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("decide_special_price_proposal_atomic", {
+    p_approval_request_id: input.approvalRequestId,
+    // RPC menerima verb 'APPROVE'/'REJECT' (bukan 'APPROVED'/'REJECTED' --
+    // itu nilai kolom `decision` hasil, lihat migration 20260925000001:609-613).
+    p_decision: input.decision === "APPROVED" ? "APPROVE" : "REJECT",
+    p_idempotency_key: input.idempotencyKey,
+    p_decision_reason: decisionReason ?? null,
+  });
+
+  if (error) throw new Error(error.message);
+  const row = ((data ?? []) as DecideRpcRow[])[0];
+  if (!row) throw new Error("decide_special_price_proposal_atomic: empty RPC result");
+
+  switch (row.result_outcome) {
+    case "approved":
+    case "rejected":
+      break;
+    case "unauthenticated":
+      throw new Error("Sesi login tidak valid, silakan login ulang.");
+    case "forbidden":
+      throw new Error("Hanya Owner yang dapat memutuskan permintaan harga khusus.");
+    case "not_found":
+      throw new Error("Permintaan harga khusus tidak ditemukan.");
+    case "invalid_decision":
+      throw new Error("Keputusan tidak valid.");
+    case "invalid_idempotency_key":
+      throw new Error("Permintaan tidak valid -- muat ulang halaman dan coba lagi.");
+    case "reason_required":
+      throw new Error("Alasan penolakan wajib diisi.");
+    case "idempotency_conflict":
+      throw new Error("Permintaan sebelumnya masih diproses dengan data berbeda -- muat ulang halaman dan coba lagi.");
+    case "already_decided":
+      throw new Error("Permintaan ini sudah diputuskan sebelumnya -- muat ulang halaman untuk melihat status terbaru.");
+    case "invalid_order_state":
+      throw new Error("Order sudah berubah status -- muat ulang halaman untuk melihat status terbaru.");
+    case "snapshot_mismatch":
+      throw new Error("Data order sudah berubah sejak permintaan diajukan -- muat ulang halaman untuk melihat detail terbaru.");
+    default:
+      throw new Error(`Gagal memutuskan permintaan harga khusus: ${row.result_outcome}`);
+  }
+
+  revalidatePath("/dashboard/orders/approvals");
+  revalidatePath(`/dashboard/orders/${input.orderId}`);
+
+  return {
+    approvalRequestId: row.approval_request_id ?? input.approvalRequestId,
+    decision: row.decision ?? input.decision,
+    proposalVersion: row.proposal_version ?? 0,
     orderStatus: row.order_status,
   };
 }
