@@ -11,6 +11,7 @@ import type {
   SalesKpiCalibrationBaseline,
 } from "@/lib/sales-kpi/types";
 import type { SalesKpiRepository } from "@/lib/sales-kpi/repository";
+import type { CustomerDataGapCounts, CustomerDataGapRepository } from "@/lib/customers/data-completeness";
 
 export interface MorningBriefContext {
   tenantName: string;
@@ -22,6 +23,15 @@ export interface MorningBriefContext {
   projection: SalesKpiAchievementProjection | null;
   /** null jika tidak relevan ditampilkan (mis. sudah SUFFICIENT). */
   baseline: SalesKpiCalibrationBaseline | null;
+  /**
+   * PR data toko kredit (foto depan toko/GPS kosong) -- opsional/null kalau
+   * dependency tidak disediakan pemanggil (skip bagian ini, bukan error).
+   * Toko CASH TIDAK PERNAH masuk hitungan ini (lihat
+   * lib/customers/data-completeness.ts).
+   */
+  dataGaps?: CustomerDataGapCounts | null;
+  /** Link ke daftar toko kredit yang bisa dilengkapi -- hanya dipakai kalau dataGaps ada gap. */
+  customersUrl?: string | null;
 }
 
 export interface MorningBriefContent {
@@ -32,6 +42,19 @@ export interface MorningBriefContent {
 export function formatLine(target: number | null, actual: number, percentage: number | null): string {
   if (target === null) return `${actual} (Data belum cukup -- target belum ditetapkan)`;
   return `${actual}/${target} (${percentage ?? 0}%)`;
+}
+
+/** PR data toko kredit -- ditambahkan di akhir brief, terlepas dari status periode KPI. */
+function appendDataGapLines(lines: string[], ctx: MorningBriefContext): void {
+  if (!ctx.dataGaps) return;
+  const { missingPhoto, missingGps } = ctx.dataGaps;
+  if (missingPhoto === 0 && missingGps === 0) return;
+
+  lines.push("");
+  lines.push("PR Data Toko Kredit:");
+  if (missingPhoto > 0) lines.push(`${missingPhoto} toko belum ada foto depan toko`);
+  if (missingGps > 0) lines.push(`${missingGps} toko belum ada titik GPS`);
+  if (ctx.customersUrl) lines.push(`Lengkapi: ${ctx.customersUrl}`);
 }
 
 export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent {
@@ -45,6 +68,7 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
   if (!ctx.activePeriod || !ctx.projection) {
     lines.push("Periode KPI belum diaktifkan Owner.");
     lines.push("Target belum tersedia -- bukan berarti target 0.");
+    appendDataGapLines(lines, ctx);
     return {
       text: lines.join("\n"),
       structured: {
@@ -54,6 +78,7 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
         businessDate: ctx.businessDate,
         activePeriod: null,
         status: "NO_ACTIVE_PERIOD",
+        dataGaps: ctx.dataGaps,
       },
     };
   }
@@ -83,6 +108,8 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
     lines.push("Catatan: baseline historis Anda masih di bawah ambang kecukupan data.");
   }
 
+  appendDataGapLines(lines, ctx);
+
   return {
     text: lines.join("\n"),
     structured: {
@@ -103,6 +130,7 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
       ecRate,
       baselineSufficiency: ctx.baseline?.sufficiency ?? null,
       status: "ACTIVE_PERIOD",
+      dataGaps: ctx.dataGaps,
     },
   };
 }
@@ -118,7 +146,7 @@ export function morningBriefIdempotencyKey(salespersonId: string, businessDate: 
  * baseline untuk Morning Brief -- mencegah drift antara kedua jalur.
  */
 export async function composeMorningBriefForSalesman(
-  deps: { salesKpiRepository: SalesKpiRepository },
+  deps: { salesKpiRepository: SalesKpiRepository; customerDataGapRepository?: CustomerDataGapRepository },
   companyId: string,
   actorId: string,
   salesman: { userId: string; fullName: string; coverageAreas: string[] },
@@ -147,6 +175,12 @@ export async function composeMorningBriefForSalesman(
     baseline = baselineResult.outcome === "ok" ? baselineResult.baseline : null;
   }
 
+  const dataGaps = deps.customerDataGapRepository
+    ? await deps.customerDataGapRepository.getGapCountsForSalesperson(companyId, salesman.userId)
+    : null;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+  const customersUrl = dataGaps ? `${appUrl}/dashboard/customers?sales=${salesman.userId}` : null;
+
   return buildMorningBrief({
     tenantName,
     salesmanFullName: salesman.fullName,
@@ -155,5 +189,7 @@ export async function composeMorningBriefForSalesman(
     activePeriod,
     projection,
     baseline,
+    dataGaps,
+    customersUrl,
   });
 }

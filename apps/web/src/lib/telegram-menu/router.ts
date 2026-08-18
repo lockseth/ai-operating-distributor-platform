@@ -23,6 +23,7 @@ import type { DeliveryRepositoryInterface } from "@/lib/delivery/repository";
 import type { TodayDeliveryRepository } from "@/lib/daily-session/deliveries";
 import type { TodayOrdersRepository } from "@/lib/daily-session/orders";
 import type { ProblemReportRepository } from "./handlers/report-problem";
+import type { CustomerDataGapRepository } from "@/lib/customers/data-completeness";
 import {
   detectMenuTrigger,
   parseMenuCallbackData,
@@ -64,6 +65,8 @@ export interface MenuRouterDeps {
   todayOrdersRepository: TodayOrdersRepository;
   deliveryRepository: Pick<DeliveryRepositoryInterface, "getDelivery" | "getConfirmedOrder" | "setConversationState">;
   problemReportRepository: ProblemReportRepository;
+  /** PR data toko kredit di Morning Brief on-demand (/start) -- opsional, skip kalau tidak disediakan. */
+  customerDataGapRepository?: CustomerDataGapRepository;
 }
 
 export interface MenuRouterContext {

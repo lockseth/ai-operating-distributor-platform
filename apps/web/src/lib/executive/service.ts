@@ -1,6 +1,6 @@
 import { flowsalesContributor } from "./contributors/flowsales";
+import { customerHealthContributor } from "./contributors/customer-health";
 import {
-  customerHealthContributor,
   collectionContributor,
   businessGuardContributor,
   whatsappContributor,

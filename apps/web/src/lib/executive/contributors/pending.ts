@@ -25,10 +25,6 @@ function pendingContributor(module: ModuleKey, moduleLabel: string): ExecutiveCo
   };
 }
 
-export const customerHealthContributor = pendingContributor(
-  "customer_health",
-  "Customer Health"
-);
 export const collectionContributor = pendingContributor("collection", "Collection");
 export const businessGuardContributor = pendingContributor(
   "business_guard",

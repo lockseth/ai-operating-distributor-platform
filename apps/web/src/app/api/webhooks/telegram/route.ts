@@ -48,6 +48,7 @@ import { SupabaseMenuConversationRepository, detectMenuTrigger } from "@/lib/tel
 import { handleMenuUpdate, type MenuRouterContext, type MenuRouterDeps } from "@/lib/telegram-menu/router";
 import { buildTaggedOrderText, isPendingOrderIntakeText } from "@/lib/telegram-menu/handlers/order-intake";
 import { SupabaseProblemReportRepository } from "@/lib/telegram-menu/handlers/report-problem";
+import { SupabaseCustomerDataGapRepository } from "@/lib/customers/data-completeness";
 import { SupabaseDailySessionRepository } from "@/lib/daily-session/repository";
 import { SupabaseAgendaRepository } from "@/lib/daily-session/agenda";
 import { SupabaseTodayDeliveryRepository } from "@/lib/daily-session/deliveries";
@@ -104,6 +105,7 @@ function buildMenuRouterDeps(supabase: SupabaseClient, sender: HttpTelegramSende
     todayOrdersRepository: new SupabaseTodayOrdersRepository(supabase),
     deliveryRepository: new SupabaseDeliveryRepository(supabase),
     problemReportRepository: new SupabaseProblemReportRepository(supabase),
+    customerDataGapRepository: new SupabaseCustomerDataGapRepository(supabase),
   };
 }
 

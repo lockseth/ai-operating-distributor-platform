@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { LoadingSpinner } from "@/components/ui/loading-state";
 import { CustomerFilters } from "@/components/customers/customer-filters";
+import { SupabaseCustomerDataGapRepository } from "@/lib/customers/data-completeness";
 import { Plus, Users, Edit2 } from "lucide-react";
 
 export const metadata = { title: "Pelanggan — AODP" };
@@ -36,6 +37,8 @@ interface SearchParams {
   sales?: string;
   status?: string;
   page?: string;
+  /** "photo" | "gps" -- deep-link dari PR data toko kredit (Executive Intelligence / Daily Brief). */
+  data_gap?: string;
 }
 
 function formatDate(iso: string | null) {
@@ -59,13 +62,14 @@ async function CustomerTable({
   params: SearchParams;
   canEdit: boolean;
 }) {
-  const q      = params.q ?? "";
-  const city   = params.city ?? "";
-  const area   = params.area ?? "";
-  const sales  = params.sales ?? "";
-  const status = params.status ?? "active";
-  const page   = Math.max(1, parseInt(params.page ?? "1"));
-  const offset = (page - 1) * PAGE_SIZE;
+  const q       = params.q ?? "";
+  const city    = params.city ?? "";
+  const area    = params.area ?? "";
+  const sales   = params.sales ?? "";
+  const status  = params.status ?? "active";
+  const dataGap = params.data_gap ?? "";
+  const page    = Math.max(1, parseInt(params.page ?? "1"));
+  const offset  = (page - 1) * PAGE_SIZE;
 
   const supabase = await createClient();
 
@@ -85,6 +89,17 @@ async function CustomerTable({
   if (sales)  query = query.eq("assigned_sales_id", sales);
   if (status === "active")   query = query.eq("is_active", true);
   if (status === "inactive") query = query.eq("is_active", false);
+
+  // Deep-link "PR data toko kredit" (Executive Intelligence / Daily Brief) --
+  // scope SAMA seperti hitungan di sana: hanya toko yang pernah diisi
+  // payment_terms_days (lib/customers/data-completeness.ts), toko CASH tidak
+  // ikut difilter di sini walau kebetulan juga belum ada foto/GPS.
+  if (dataGap === "photo" || dataGap === "gps") {
+    const creditIds = await new SupabaseCustomerDataGapRepository(supabase).getCreditCustomerIds(companyId);
+    query = query.in("id", creditIds.length > 0 ? creditIds : ["00000000-0000-0000-0000-000000000000"]);
+    if (dataGap === "photo") query = query.is("storefront_photo_url", null);
+    else query = query.or("latitude.is.null,longitude.is.null");
+  }
 
   const { data, count } = await query;
 

@@ -11,6 +11,7 @@ import { composeMorningBriefForSalesman } from "@/lib/n8n-automation/morning-bri
 import type { SalesKpiRepository } from "@/lib/sales-kpi/repository";
 import type { DailySessionRepository } from "@/lib/daily-session/repository";
 import type { DailySessionStatus } from "@/lib/daily-session/types";
+import type { CustomerDataGapRepository } from "@/lib/customers/data-completeness";
 
 export interface BuildOnDemandBriefInput {
   companyId: string;
@@ -35,10 +36,14 @@ function dayStatusLabel(status: DailySessionStatus | "NOT_STARTED"): string {
 
 export async function buildOnDemandBrief(
   input: BuildOnDemandBriefInput,
-  deps: { salesKpiRepository: SalesKpiRepository; dailySessionRepository: DailySessionRepository },
+  deps: {
+    salesKpiRepository: SalesKpiRepository;
+    dailySessionRepository: DailySessionRepository;
+    customerDataGapRepository?: CustomerDataGapRepository;
+  },
 ): Promise<string> {
   const content = await composeMorningBriefForSalesman(
-    { salesKpiRepository: deps.salesKpiRepository },
+    { salesKpiRepository: deps.salesKpiRepository, customerDataGapRepository: deps.customerDataGapRepository },
     input.companyId,
     input.actorId,
     { userId: input.salesmanId, fullName: input.salesmanFullName, coverageAreas: input.coverageAreas },

@@ -16,6 +16,7 @@ import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directo
 import { composeMorningBriefForSalesman, morningBriefIdempotencyKey } from "@/lib/n8n-automation/morning-brief";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
+import { SupabaseCustomerDataGapRepository } from "@/lib/customers/data-completeness";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -52,6 +53,7 @@ export async function POST(request: Request) {
     const tenantName = (companyRow as { name: string } | null)?.name ?? "AODP";
 
     const salesKpiRepository = new SupabaseSalesKpiRepository(admin);
+    const customerDataGapRepository = new SupabaseCustomerDataGapRepository(admin);
 
     const directory = new SupabaseSalesmanDirectory(admin);
     const recipients = await directory.listEligibleMorningBriefRecipients(credential.companyId);
@@ -62,7 +64,7 @@ export async function POST(request: Request) {
 
     for (const recipient of recipients) {
       const content = await composeMorningBriefForSalesman(
-        { salesKpiRepository },
+        { salesKpiRepository, customerDataGapRepository },
         credential.companyId,
         credential.id,
         { userId: recipient.userId, fullName: recipient.fullName, coverageAreas: recipient.coverageAreas },
