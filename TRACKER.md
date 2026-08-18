@@ -11,6 +11,15 @@ lintas sesi kerja.
 Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 (readiness report, migration header, commit) alih-alih menyalin isinya.
 
+**Catatan 2026-08-18**: dokumen ini di-**compact** atas permintaan Founder
+(hemat token) — entri Log Milestone yang sudah OFFICIALLY PASS/LOCKED
+dipadatkan jadi 1-2 kalimat (fakta inti: gate ID/commit/tanggal/status
+dipertahankan penuh, narasi debugging/verifikasi panjang dihapus). Detail
+penuh versi sebelum kompaksi tetap ada di `git log -p` untuk file ini bila
+suatu saat dibutuhkan kembali. Section prospektif (Sedang Dikerjakan/
+Berikutnya/Ditunda) TIDAK ikut dipadatkan — masih dipertahankan detail
+penuh karena masih operasional.
+
 ## Cara update dokumen ini
 
 1. **Sebelum mulai kerja apapun** (request Founder, temuan CTO, bug report),
@@ -23,7 +32,8 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
    — jangan menimpa baris lama. **Beri tag asal**: `[TERENCANA]` (memang
    sudah direncanakan) · `[TEMUAN]` (ditemukan CTO saat audit/kerja lain,
    tidak direncanakan) · `[REQUEST FOUNDER]` (diminta langsung Founder,
-   di luar rencana berjalan).
+   di luar rencana berjalan). Ringkasan Log Milestone cukup 1-2 kalimat
+   padat (apa + kenapa + status) — bukan narasi debugging lengkap.
 3. Perbarui [Status Ringkas](#status-ringkas) (tanggal, HEAD, gate terakhir).
 4. Jika milestone tsb menutup atau membuka gap baru, perbarui
    [Backlog & Gap Diketahui](#backlog--gap-diketahui). Kalau membuka gap yang
@@ -54,51 +64,40 @@ Tracker ini hanya mencatat **status**, dan merujuk ke dokumen detail
 |---|---|
 | Tanggal update terakhir | 2026-08-18 |
 | Branch | `main` |
-| HEAD | `0bb7e52` — **0 commit ahead dari `origin/main` (sinkron penuh, baru saja di-push 2026-08-18)**. Mencakup: Gate P4.04/P4.05/P4.06/P4.07, assign-driver sales all-in, koreksi audit Collection, kontrak `logAuditEvent` 22 titik. Deploy production Vercel **Ready** (dikonfirmasi `vercel ls`, ~3 menit setelah push), health-check login page bersih tanpa console error. |
-| Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain (`aodp-architecture-demo-v0.1`, dst.) hanya menghasilkan **Preview deployment** terpisah, TIDAK mengupdate domain demo — dikonfirmasi ulang 2026-08-15 lewat GitHub Deployments API. `aodp-architecture-demo-v0.1` tetap dipakai sebagai target branch untuk PR (CLAUDE.md), bukan branch deploy. **Vercel CLI sudah terinstall & project sudah linked** (`.vercel/project.json`) — `vercel ls`/`vercel inspect` bisa dipakai langsung utk cek status deploy real, jangan asumsi dari tanggal terakhir di tracker ini (rawan basi). **PENTING (ditemukan 2026-08-18)**: `git push` KODE saja TIDAK menerapkan migration database ke hosted — `apps/web` build script cuma `next build`, tidak ada auto `supabase db push`. Migration WAJIB diterapkan manual (`npx supabase db push`, project sudah linked ke `mcbwgvtkhykrrtvbpeys`) SETIAP kali push mencakup file baru di `supabase/migrations/`, cek dulu dengan `npx supabase migration list` (kolom Remote kosong = belum diterapkan). |
-| Status Phase 3 | **100% — OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — lihat `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. Blocker P0 (enforcement harga khusus) tertutup penuh & diverifikasi hidup di hosted lewat 5 skenario UAT (2026-08-13/14). |
-| Deployment | Vercel `aodp-waluyo-demo` menjalankan commit `0bb7e52` (production, dikonfirmasi via `vercel ls` 2026-08-18) — mencakup SELURUH kode sampai Gate P4.07 + audit contract. **Migration database hosted disinkronkan penuh 2026-08-18** — 6 migration yang sebelumnya cuma jalan di lokal (`20261005000001` s/d `20261010000001`, Gate P4.01/P4.02/P4.04/P4.05/P4.06/P4.07) diterapkan ke `AODP-Waluyo-Demo` via `supabase db push`, dikonfirmasi `supabase migration list` (Local == Remote utk semua baris). `.env.local` → Supabase lokal (`127.0.0.1`) untuk dev; `.env.demo.local` → hosted demo (kredensial demo di file itu **basi**, lihat Backlog) |
-| Full LOCK Phase 3 | **Sudah** — lihat closeout final. Owner Approval Inbox UI selesai dibangun 2026-08-18 (`b6fe1d9`, LOKAL, belum di-push) — di luar cakupan Phase 3, gate terpisah untuk next workstream |
-| Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP** (menggantikan ChatGPT sebagai CTO+PM). Keputusan teknis/arsitektur diputuskan langsung oleh Claude Code (didokumentasikan di sini/commit message); keputusan arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
-| Data Operasional (tenant Waluyo, hosted) | KPI Setup lengkap — 5/5 KPI governed punya target aktif periode Agustus 2026 (Call 15, Effective Call 15, Order Count 15, Revenue Rp100jt, NOO 3 toko). Dashboard Owner sekarang menampilkan progres real untuk semuanya, bukan lagi "Data belum cukup". |
+| HEAD | `8432a43` — **sinkron penuh dengan `origin/main`** (0 ahead/behind). Mencakup seluruh gate s.d. Risk Alert List gabungan (Business Guard Collection Risk 4 milestone, Sales Risk → Executive Intelligence, PR data toko kredit, Gate P4.08, Owner Approval Inbox, dst.). Vercel production **Ready**, health-check bersih. |
+| Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. |
+| Status Phase 3 | **100% OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. |
+| Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP**. Keputusan teknis/arsitektur diputuskan langsung (didokumentasikan di sini/commit message); arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
+| Data Operasional (tenant Waluyo, hosted) | KPI Setup lengkap — 5/5 KPI governed punya target aktif periode Agustus 2026 (Call 15, Effective Call 15, Order Count 15, Revenue Rp100jt, NOO 3 toko). |
 
 ---
 
 ## Catatan Lingkungan Kerja (evergreen — dipertahankan lintas sesi)
 
-**(Sebelumnya berjudul "Handoff sesi 2026-08-16" — sudah DITUTUP LAMA,
-push 12 commit yang dimaksud sudah masuk sejak beberapa push lalu, jauh
-sebelum push besar 2026-08-18 di Log Milestone teratas. Judul & konteks
-"menunggu satu keputusan" dihapus karena sudah usang; bagian di bawah
-ini dipertahankan karena masih berlaku umum lintas sesi.)**
-
-**Konteks lingkungan kerja (supaya sesi baru tidak perlu re-discover)**:
 - Docker Desktop harus jalan dulu sebelum `supabase start`/`db reset` bisa
-  connect (sempat gagal "Docker Desktop is unable to start" sebelum
-  dinyalakan manual oleh Founder).
+  connect.
 - Port 3000 bisa bentrok dengan sesi chat lain — `.claude/launch.json`
-  sudah diset `"autoPort": true` untuk `aodp-web`, otomatis pindah port
-  kalau bentrok (lihat hasil `preview_start` untuk port aktual).
-- Seed lokal: `pnpm seed:dev` → `owner@aodp.test` / `sales@aodp.test`,
-  password `Aodp2026!` (login manual, tombol "🧪 Masuk Demo" beda akun).
-- **Vercel CLI sudah terpasang & terautentikasi** di sesi ini (`.vercel/`
-  sudah linked ke project `aodp-waluyo-demo`) — `vercel logs
-  <deployment-url>` berguna untuk debug tapi cuma live-snapshot (reproduksi
-  dulu errornya, baru langsung panggil `vercel logs`, bukan riwayat lama).
-- Login ke hosted demo (`aodp-waluyo-demo.vercel.app`) sebagai
-  `slamatwaluyo@gmail.com` (akun sales asli Pak Waluyo) **wajib dilakukan
-  Founder sendiri** — Claude Code tidak pernah pegang passwordnya.
-- Role-play UAT end-to-end (1 sesi kontinu Tahap 1-6) **belum diulang**
-  sejak catatan asli 2026-08-16 (Tahap 1 selesai lewat UI, Tahap 3-6
-  lewat RPC langsung, belum lewat klik UI penuh). **TAPI** sejak itu
-  banyak potongan jalur web sudah diverifikasi terpisah lewat browser
-  end-to-end per-gate (bukan 1 alur kontinu) — Gate P4.07 (tombol
-  Kirim/Terkirim, sales diblok terbukti di browser), assign-driver sales
-  all-in (dropdown terbukti di browser), Gate P4.06 klaim pembayaran
-  (submit+approve+reject semua lewat klik sungguhan). Peta lengkap:
-  `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` (dokumen ini sendiri
-  BELUM diupdate merefleksikan gate-gate baru — lihat temuan gap
-  dokumentasi terkait di Log Milestone/Backlog).
+  sudah diset `"autoPort": true` untuk `aodp-web`.
+- Seed lokal: `pnpm seed:dev` → `owner@aodp.test` / `sales@aodp.test` /
+  `salma@aodp.test` / `waluyo@aodp.test` / `driver@aodp.test` /
+  `admin@aodp.test`, password `Aodp2026!` (login manual, tombol "🧪 Masuk
+  Demo" beda akun).
+- **Vercel CLI terpasang & terautentikasi** (`.vercel/` linked ke project
+  `aodp-waluyo-demo`) — `vercel logs <deployment-url>` cuma live-snapshot
+  (reproduksi errornya dulu, baru panggil).
+- Login ke hosted demo sebagai `slamatwaluyo@gmail.com` (akun sales asli
+  Pak Waluyo) **wajib dilakukan Founder sendiri** — Claude Code tidak
+  pernah pegang passwordnya.
+- Infra lokal kadang flaky: Kong gateway (`supabase_kong_AODP`) atau
+  container `supabase_vector_AODP` sesekali unresponsive/crash-loop
+  bersamaan — fix `docker restart supabase_kong_AODP` (kadang perlu +
+  `supabase_vector_AODP` juga). Kalau browser tool melaporkan konten
+  kosong/`Viewport: 0x0` tapi server log menunjukkan response 200 normal,
+  itu artefak tooling (`get_page_text`/innerText gagal ekstrak saat
+  viewport 0x0) — pakai `read_page` (accessibility tree) untuk verifikasi
+  ulang sebelum menyimpulkan ada bug.
+- Peta lengkap order-to-cash per tahap: `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`
+  (belum diupdate merefleksikan gate-gate terbaru — lihat Backlog).
 
 ---
 
@@ -106,10 +105,8 @@ ini dipertahankan karena masih berlaku umum lintas sesi.)**
 
 Ini **bagian prospektif** (apa yang sedang/akan dikerjakan) — beda dari
 [Log Milestone](#log-milestone-terbaru-di-atas) yang **retrospektif** (apa
-yang sudah selesai). Sebelumnya tracker ini tidak punya bagian ini sama
-sekali, sehingga kerja terasa "lompat-lompat" — mulai dari sini semua item
-baru wajib singgah di sini dulu sebelum dikerjakan. Lihat juga
-`docs/development/WORKFLOW.md` untuk alur lengkapnya.
+yang sudah selesai). Semua item baru wajib singgah di sini dulu sebelum
+dikerjakan. Lihat juga `docs/development/WORKFLOW.md` untuk alur lengkapnya.
 
 Tag asal: `[REQUEST FOUNDER]` diminta langsung Founder · `[TEMUAN]`
 ditemukan CTO saat audit/kerja lain · `[TERENCANA]` bagian roadmap yang
@@ -117,395 +114,79 @@ memang sudah direncanakan.
 
 ### Sedang Dikerjakan
 
-**Status per 2026-08-18: KOSONG — ketiga item di bawah ini (role-play UAT,
-rencana checkpoint 4-poin, 5 keputusan bisnis) SEMUANYA sudah DITUTUP.**
-Belum dipindahkan/dipangkas dari section ini secara fisik (narasi
-detailnya punya nilai arsip, terutama root-cause story yang tidak
-diduplikasi di Log Milestone) — dibiarkan di sini sebagai catatan
-historis, BUKAN pekerjaan aktif. Kalau butuh tahu apa yang SEDANG
-dikerjakan sekarang, cek `### Berikutnya` di bawah (isinya genuinely
-belum dikerjakan) — jangan salah baca section ini sebagai backlog aktif.
+**KOSONG — semua item berikut sudah DITUTUP.** Ringkasan (detail penuh
+versi pra-kompaksi ada di `git log -p` untuk file ini):
 
-1. `[REQUEST FOUNDER]` **Role-play UAT order-to-cash end-to-end** — Claude
-   Code jalankan siklus penuh sebagai role `sales` (`slamatwaluyo@gmail.com`,
-   tenant PT Sumber Warna Alam Sudiada) sesuai
-   `docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md`, Founder mengamati lewat
-   Browser pane, login dilakukan Founder sendiri. Environment: **hosted
-   demo** `aodp-waluyo-demo.vercel.app` — order/invoice yang dibuat nambah
-   data sungguhan di situ. Aturan interupsi berlaku: stop, jawab, catat,
-   tidak lanjut tanpa perintah eksplisit.
-   - **STATUS: RESOLVED — root cause ditemukan & DITUTUP (2026-08-16)**.
-     Sempat BLOCKED lama di Tahap 1 (order dibuat) — percobaan pertama
-     (Pelanggan "Tk Agung abadi", 1x DEMO-Cat Kayu Besi 1kg, harga normal
-     tanpa diskon, qty 1) gagal `POST /dashboard/orders/new → HTTP 500`,
-     pesan error diredaksi total oleh Next.js production (Backlog #4),
-     RPC `create_sales_order_atomic` sudah dibaca lengkap dan semua jalur
-     errornya bersih — jadi sempat disimpulkan penyebabnya di luar RPC,
-     butuh akses log yang saat itu belum ada.
-     **Cara ketemu**: `vercel logs` CLI ternyata sudah ter-install &amp;
-     terautentikasi di sesi ini (project sudah linked via `.vercel/`,
-     tidak perlu login ulang) — tapi cuma live-snapshot, bukan riwayat
-     lama. Direproduksi ulang persis (customer/produk sama, sesi Waluyo
-     yang masih aktif di hosted) lalu `vercel logs` langsung dipanggil
-     sesudahnya — dapat digest error `790590101`:
-     ```
-     Error: duplicate key value violates unique constraint
-     "sales_orders_company_id_order_number_key"
-     ```
-     **Root cause**: `generateOrderNumber()` (`lib/orders/actions.ts`)
-     pakai `createClient()` (kena RLS) untuk cari nomor urut order
-     terakhir bulan ini, padahal RLS `sales_orders_select` cuma izinkan
-     role `sales` lihat order **miliknya sendiri** (`sales_id =
-     auth.uid()`) — constraint unique `order_number`-nya company-wide.
-     Kalau ada order bulan ini dari sales lain/owner yang tidak terlihat
-     sales ini, nomor yang dihasilkan undercount dan tabrakan dengan yang
-     sudah ada. **Fix**: `generateOrderNumber()` diganti pakai
-     `getAdminClient()` (bypass RLS, sama seperti RPC call
-     `create_sales_order_atomic` yang sudah pakai admin client di fungsi
-     yang sama) — konsisten, sekarang selalu lihat nomor tertinggi
-     company-wide. Diverifikasi lokal: reproduksi kondisi sama (order
-     `SO-2608-0002` milik role lain yang RLS-blind untuk `sales@aodp.test`)
-     → order baru `SO-2608-0003` berhasil dibuat tanpa duplicate key.
-     Build PASS, test order PASS. **Belum di-deploy ke hosted.**
-   - **Temuan #1 (dikonfirmasi benar)**: auto-attribution `sales_id` ke
-     actor sales sendiri + guard "toko tidak bisa pindah sales sembarangan"
-     sudah terimplementasi persis sesuai insight Pak Waluyo — Gate
-     3E-D3-A (`20260919000001_gate_3e_d3_a_sales_auto_attribution.sql`).
-     Dropdown "Sales yang Menangani" di form tetap tampil tapi tidak
-     berpengaruh untuk role sales (server override) — bukan bug, tapi
-     berpotensi membingungkan karena tampak seperti pilihan yang nyata.
-   - **Temuan #2 (gap baru) — DITUTUP Fase A, Gate P4.01, checkpoint lokal
-     PASS**: field "Tanggal Pengiriman" di form create order mengisi
-     `sales_orders.delivery_date` — murni catatan/tampilan (muncul di list
-     & detail order), **bukan** sinyal yang dipakai AI Dispatch Planner.
-     Planner sebenarnya baca kolom terpisah `sales_orders.
-     requested_delivery_date` ("preferensi tanggal kirim customer",
-     `20260721000001_dispatch_planning.sql`) — tapi kolom itu tidak punya UI
-     sama sekali. Ditutup lewat migration `20261005000001` (param baru
-     `p_requested_delivery_date DATE DEFAULT NULL` di
-     `create/update_sales_order_atomic`, pola additive identik gate foto/GPS
-     toko) + field baru "Tanggal Diminta Customer" di `order-form.tsx`.
-     Diverifikasi lokal: build+lint PASS, `supabase db reset` PASS tanpa
-     error, 2563/2564 test suite PASS (1 gagal pra-existing tidak terkait,
-     soal tombol Telegram enrollment), RPC create & update dites langsung
-     lewat psql — kolom `requested_delivery_date` tersimpan &amp; ter-update
-     terpisah dari `delivery_date`, terbukti benar. **Belum di-deploy ke
-     hosted** — menunggu keputusan Founder (lihat Berikutnya).
-     Field "Sales yang Menangani" (Temuan #1) sengaja BELUM dikerjakan —
-     Fase B, sesi terpisah, atas permintaan Founder (rate limit).
-   - **Susulan (koreksi UX, masih Fase A)**: Founder tes lokal, sadar 2
-     field tanggal terpisah ("Tanggal Pengiriman" vs "Tanggal Diminta
-     Customer") berisiko membingungkan sales — kemungkinan besar sales cuma
-     isi salah satu, field yang benar-benar dipakai AI Dispatch Planner
-     tetap tidak kepakai (gap cuma pindah tempat, bukan tertutup). Digabung
-     jadi **1 field** ("Tanggal Kirim Diminta Customer (opsional)") yang
-     mengisi KEDUA kolom sekaligus (`delivery_date` &amp; `requested_delivery_date`
-     dapat nilai sama dari 1 input) — sales tidak perlu tahu ada 2 konsep di
-     baliknya. `order-form.tsx`/`actions.ts` disederhanakan (tidak ubah
-     migration `20261005000001`, kolomnya tetap 2, cuma sumber datanya
-     disatukan di form). Diverifikasi ulang end-to-end lewat browser lokal
-     (login sales, buat order `SO-2608-0001`, tanggal "30 Agustus 2026") +
-     query DB langsung: `delivery_date` &amp; `requested_delivery_date`
-     sama-sama terisi benar. Observasi tambahan: order berhasil dibuat
-     tanpa error di local — kontras dengan bug 500 di hosted (blocker Tahap
-     1), memperkuat dugaan akar masalah 500 spesifik ke environment hosted
-     (data/RLS/state), bukan bug di kode order-creation itu sendiri.
-   - **Temuan #1 — DITUTUP Fase B, checkpoint lokal PASS**: field "Sales
-     yang Menangani" sekarang role-aware di `order-form.tsx`. Role sales →
-     teks read-only (nama sales sendiri, tanpa dropdown palsu). Role
-     owner/manager/admin/super_admin → dropdown tetap seperti semula.
-     **Bonus temuan sambil mengerjakan**: query `salesUsers` di
-     `orders/new/page.tsx` &amp; `orders/[id]/edit/page.tsx` pakai
-     `.contains("roles", ["sales"])` — kolom `roles` **tidak ada** di tabel
-     `users` (dicek langsung ke schema), jadi query ini gagal senyap dan
-     dropdown itu **selalu kosong** untuk owner/admin selama ini, bug lama
-     tidak terkait role-split. Diganti pakai pola join yang sudah terbukti
-     benar di `users/page.tsx` (`user_roles!user_id(role:roles(name))` +
-     filter di JS). Diverifikasi browser lokal 2 role: sales lihat "Sales
-     Pertama" (read-only, tanpa prefix "Ditangani oleh:" atas permintaan
-     Founder), owner lihat dropdown terisi benar ("Belum ditugaskan" +
-     "Sales Pertama"). Build+typecheck PASS.
-   - **Bug ditemukan Founder saat tes lokal — DITUTUP**: field "Pelanggan"
-     pakai search box + `<select size>` listbox terpisah (bukan native
-     autocomplete). Klik opsi di listbox **secara fungsional benar**
-     (`customerId` ter-set — dikonfirmasi visual: baris jadi biru terpilih),
-     tapi search box tidak ikut ter-update/dikosongkan dan listbox tidak
-     collapse — jadi terlihat seperti tidak terjadi apa-apa, padahal
-     datanya benar. Root cause: bug feedback visual, bukan data binding.
-     Fix: `setCustomerSearch("")` dipanggil bareng `setCustomerId()` saat
-     memilih — pola identik yang sudah benar di search produk
-     (`selectProduct` mengosongkan `productSearch` setelah pilih).
-     Diverifikasi browser: search "tok" → klik opsi → search box kosong,
-     dropdown collapse menampilkan "Toko Sumber Rejeki..." terpilih jelas.
-     Build PASS.
-   - **Temuan besar — lanjutan role-play ke Tahap 3-6 (lokal, order
-     `SO-2608-0002`)**: setelah order dikonfirmasi, ditemukan 2 gap terkait
-     Delivery Verification & Invoice yang belum tercatat di
-     `AODP_ORDER_TO_CASH_WORKFLOW.md`:
-     1. **Tombol status generik ("Proses"/"Kirim"/"Tandai Terkirim") di
-        `orders/[id]/page.tsx` sama sekali tidak terhubung ke tabel
-        `deliveries`** — `update_sales_order_status_atomic` tidak punya
-        pengecekan apa pun ke bukti pengiriman sebelum mengizinkan status
-        `delivering`/`delivered`. Artinya siapa pun dengan akses
-        `orders.update` bisa menandai order "Terkirim" tanpa foto/GPS/driver
-        sama sekali — jalur ini **disengaja ada** sebagai "override manusia
-        yang valid" (komentar migration `20260717000001`), tapi tidak
-        ada guardrail/role-restriction/log tambahan yang membedakannya dari
-        jalur Delivery Verification asli yang sudah PASS/LOCKED.
-     2. **Tidak ada jalur web UI sama sekali untuk menerbitkan invoice** —
-        dikonfirmasi lewat komentar eksplisit di `finance/invoices/page.tsx`:
-        `issue_invoice_atomic` "dipicu alur Delivery Verification, bukan
-        workspace ini". Tidak ada tombol "Buat Invoice" di halaman detail
-        order maupun di workspace Finance. Satu-satunya jalur adalah bot
-        Telegram (driver terdaftar) — yang tidak tersedia di environment
-        manapun yang sedang diuji (lokal maupun hosted demo).
-     Kedua gap ini **membuat Tahap 5-6 pada `AODP_ORDER_TO_CASH_WORKFLOW.md`
-     perlu direvisi statusnya** — PASS hanya benar untuk jalur Telegram,
-     belum ada jalur web/manual yang setara amannya. Perlu update dokumen
-     workflow itu terpisah (belum dikerjakan sesi ini).
-   - **Pembuktian mekanisme asli (RPC langsung, bukan bypass tombol
-     generik)** — atas persetujuan Founder, dibuktikan Tahap 3→6 order
-     `SO-2608-0002` bisa selesai lewat RPC yang sama persis dipakai jalur
-     Telegram, tanpa perlu setup bot: `create_delivery_atomic` →
-     `dispatch_delivery_atomic` → `finalize_delivery_item_quantities`
-     (full coverage, qty 15+18) → `sync_sales_order_delivery_status`
-     (order → `delivered`) → `issue_invoice_atomic` (invoice
-     `AODPDEV-INV-20260816-000001` terbit, Rp833.990, order → `invoiced`,
-     dikonfirmasi `outstanding` di `invoice_receivable_balances`). Satu
-     syarat tambahan ditemukan: `issue_invoice_atomic` menolak
-     (`COMPANY_PROFILE_INCOMPLETE`) sampai profil company (legal_address,
-     contact_email, contact_phone, document_number_prefix) lengkap — data
-     seed lokal awalnya tidak mengisi ini, dilengkapi manual via SQL untuk
-     testing (data lokal, bukan tenant nyata). **Kesimpulan: mekanisme
-     backend Tahap 5-6 terbukti benar dan solid — gap-nya murni di lapisan
-     UI/aksesibilitas jalur non-Telegram, bukan di RPC/data integrity.**
-   - **Halaman baru — Lihat/Cetak Invoice, DITUTUP, checkpoint lokal PASS**:
-     Founder minta bisa benar-benar melihat dokumen nota/invoice (bukti
-     database saja tidak cukup), sejalan arahan channel baru: Web dipakai
-     Sales (Telegram disisihkan dulu) + Owner/Admin (WA menyusul). Route
-     baru `finance/invoices/[id]/print` menyambungkan komponen Document
-     Engine yang sudah lengkap & teruji (`PrintDocumentPanel`,
-     `buildPrintViewModel`, `paginatePrintDocument`) — sebelumnya cuma
-     dipakai di test integration (render ke HTML statis di scratchpad),
-     tidak pernah ada di satu pun route aplikasi. Tombol "Lihat/Cetak
-     Invoice" ditambahkan di halaman detail invoice existing.
-     **Temuan arsitektur sambil mengerjakan**: ternyata ada 2 jalur
-     pembuatan snapshot invoice yang independen dan sudah divergen — RPC
-     SQL `issue_invoice_atomic` (jalur transaksional locked, dipakai role-
-     play ini) menulis snapshot "tipis" (lines/totals/nomor dokumen saja),
-     sedangkan builder TypeScript `issueInvoiceDocument()`
-     (`document-engine/issuance.ts`, HANYA dipakai di
-     `full-path-demo.integration.test.ts`, tidak pernah dipanggil jalur
-     produksi manapun) menghasilkan snapshot lengkap (+ tenant/store/
-     salesman/signatures). Ditutup TANPA menyentuh RPC yang locked: halaman
-     print melengkapi 4 bagian yang hilang (`tenant`, `store`, `salesman`,
-     `signatures`) dari tabel `companies`/`sales_orders`/`deliveries` saat
-     baca, snapshot tersimpan di DB tidak diubah. **Follow-up yang belum
-     dikerjakan**: apakah dua jalur snapshot ini sengaja dibiarkan berbeda,
-     atau `issue_invoice_atomic` seharusnya ikut menulis snapshot lengkap
-     dari awal — perlu keputusan terpisah, bukan diputuskan sepihak di sini.
-     Diverifikasi browser lokal: invoice `AODPDEV-INV-20260816-000001`
-     tampil lengkap (kop perusahaan, data toko, item, subtotal/diskon/
-     grand total/terbilang, kolom tanda tangan). Build+typecheck PASS.
-   - **Audit template vs `AODP_DOCUMENT_LAYOUT_GUIDE.md` (LOCKED, sesi
-     23 Juli 2026)** — diminta Founder. 5 dari 7 elemen sesuai (header,
-     9 kolom item, panel Data Toko/Customer 2-kolom, Totals Subtotal/
-     Potongan/Grand Total/Terbilang, tanda tangan Salesman/Pengirim/
-     Penerima). **2 gap ditemukan, disepakati dikerjakan nanti (bukan
-     sekarang)**:
-     1. Baris **"Tempo"/termin pembayaran hilang** — LOCKED spec bilang
-        wajib (`PAYMENT_TERMS_INCOMPLETE` saat issuance). Form order Web
-        **tidak punya field termin sama sekali**, `orders/actions.ts:240`
-        hardcode `p_payment_terms_days: null` saat konfirmasi. RPC
-        produksi `issue_invoice_atomic` juga **tidak menegakkan**
-        validasi wajib ini — hanya jalur TS yang tidak terpakai
-        (`assertPaymentTermsComplete`, `document-engine/repository-adapter.ts`)
-        yang punya pengecekan itu. Ini gap bisnis nyata, bukan cuma
-        tampilan: invoice bisa terbit tanpa termin.
-     2. **Belum pakai `PhysicalPrintSheet.tsx`** (2 panel 9.5x5.5in per
-        lembar fisik 9.5x11in, untuk cetak continuous form 3 ply) —
-        halaman yang dibuat cuma render `PrintDocumentPanel` satuan
-        berurutan, cukup untuk "Lihat" di layar tapi belum sesuai kalau
-        untuk cetak fisik ke printer dot-matrix.
-   - **Klarifikasi tambahan (2026-08-16)**: Founder tunjukkan gambar
-     referensi template "Continuous Form 4 Ply, 1 dokumen = 1 halaman
-     penuh, tanda tangan 'DITERIMA OLEH'" — sekilas bertentangan dengan
-     spec LOCKED di atas (3 Ply, 2 panel/lembar, "Penerima"). Dicek ke
-     revision history `AODP_DOCUMENT_LAYOUT_GUIDE.md`: format di gambar
-     itu persis versi PAGI 23 Juli 2026 yang **sudah dibatalkan sendiri**
-     malam harinya di hari yang sama (dikoreksi ke 3 Ply/2 panel/
-     "Penerima" — LOCK final). **Dikonfirmasi Founder: gambar itu
-     referensi lama yang sudah dibatalkan, bukan keputusan baru** — kode
-     Document Engine saat ini (`PrintDocumentPanel`, `print-pagination`,
-     `print.css`) sudah benar mengikuti versi LOCKED final, tidak perlu
-     direvisi. Dicatat di sini supaya kalau gambar yang sama muncul lagi
-     di sesi lain, tidak perlu diinvestigasi ulang dari nol.
-   - **Sidebar: item "Collection" dihapus — DITUTUP, checkpoint lokal
-     PASS**: Founder laporkan klik "Collection" di sidebar mengarah ke
-     Finance Operations (membingungkan) — memang benar redirect disengaja
-     (Gate 2I.4-G11, `/dashboard/collection` → `/dashboard/finance/collection`,
-     workspace Finance Operations sudah punya tab "Collection & Janji
-     Bayar" sendiri, jadi menu sidebar terpisah jadi redundan). Item +
-     `IconCollection` dihapus dari `sidebar.tsx`; route redirect-nya TETAP
-     ada (untuk bookmark/link lama). Test regresi lama yang justru
-     mengunci KEBERADAAN item ini (`sidebar.test.ts`) diperbarui jadi
-     mengunci KETIADAANNYA. Diverifikasi: build PASS, test PASS
-     (2563/2564, 1 gagal pra-existing tidak terkait), browser lokal
-     dicek sidebar owner — "Collection" hilang, langsung KPI Salesman →
-     Finance Operations.
-
-2. `[REQUEST FOUNDER]` **Rencana checkpoint 4-poin (disetujui 2026-08-17)**
-   — Founder minta progres AODP diaudit, CTO ajukan urutan prioritas,
-   disetujui, dieksekusi bertahap dengan checkpoint + update tracker tiap
-   poin selesai:
-   1. ~~Commit 4 dokumen readiness Gate 3D-B3-F5/3E-D0~~ — **DITUTUP**, lihat
-      Log Milestone (`8ec2eb0`).
-   2. ~~Push Gate P4.01 (`requested_delivery_date`) + P4.02
-      (`payment_terms_days`) ke hosted~~ — **TERNYATA SUDAH LIVE**, dicek
-      2026-08-17 lewat `vercel inspect` (lihat Log Milestone koreksi). Tidak
-      ada push baru diperlukan untuk gate-gate ini — hanya 2 commit
-      docs-only (checkpoint #1 + tracker) yang masih menunggu push, itu
-      pun bukan bagian rencana asli poin ini.
-   3. Fix gap validasi status pengiriman: tombol status generik
-      ("Proses"/"Kirim"/"Tandai Terkirim") di `orders/[id]/page.tsx` tidak
-      terhubung ke tabel `deliveries` — **DITUTUP sebagian, Gate P4.04**
-      (`0152422`), lihat Log Milestone. Audit visibility ditambahkan
-      (`delivery_verified`/`manual_override` di `audit_logs.new_data`),
-      jalur override TIDAK diblokir (sengaja, sudah didesain sejak
-      `20260717000001`). Keputusan apakah perlu restriksi role/blocking
-      penuh tetap dibundel ke poin #4 di bawah (bisnis, bukan teknis).
-   4. Kumpulkan & ajukan sekaligus 5 keputusan bisnis yang menggantung (NOO
-      reversal, konsolidasi password recovery, role `driver` utk sales
-      all-in, akses `payment.record`, **+baru dari poin #3**: apakah tombol
-      status generik "Kirim"/"Tandai Terkirim" perlu dibatasi role
-      tertentu — **DITUTUP**, diajukan & dijawab Founder 2026-08-17 (5
-      keputusan sekaligus, termasuk 1 pertanyaan susulan soal role
-      `driver` untuk sales all-in yang berkembang jadi diskusi lebih luas
-      — lihat poin #5 baru di bawah untuk hasil & eksekusinya).
-   Item lebih besar (P4.03 Fase B voice note, Business Guard Collection
-   Risk) sengaja ditaruh setelah rencana 4-poin ini (sekarang 5, lihat
-   poin #5) selesai.
-
-5. `[REQUEST FOUNDER]` **5 keputusan bisnis dari bundel poin #4 di atas —
-   DIPUTUSKAN Founder 2026-08-17, eksekusi bertahap dengan checkpoint per
-   item (pola sama seperti 4-poin sebelumnya)**:
-   1. **NOO reversal saat order pembuka toko dibatalkan → TAMBAHKAN** —
-      **DITUTUP, Gate P4.05** (`8199a6a`), lihat Log Milestone.
-   2. **Password recovery email legacy → TETAP AKTIF** (tidak dimatikan).
-      Tidak ada perubahan kode diperlukan — dicatat sebagai keputusan
-      final, item ini closed tanpa eksekusi.
-   3. **`payment.record` untuk sales/driver all-in → BERI AKSES DENGAN
-      GUARDRAIL** — **DITUTUP, Gate P4.06** (`e310001`), lihat Log
-      Milestone. Founder mengonfirmasi arah "klaim pembayaran + review
-      Finance" (2026-08-17, setelah sesi terpisah soal prioritas
-      Collection Intelligence & anti-kecurangan) dan instruksi tambahan:
-      bukti pada sisi klaim (submit) dibuat OPSIONAL dulu sampai ada
-      keputusan Pak Waluyo langsung — bukti tetap WAJIB di titik approve.
-   4. **Tombol status generik "Kirim"/"Tandai Terkirim" → DIBATASI ke
-      role owner/manager/admin saja** — **DITUTUP, Gate P4.07** (`d3bace3`),
-      lihat Log Milestone.
-   5. **Role `driver` untuk sales all-in → DITUTUP dengan pendekatan LEBIH
-      SEDERHANA** (`24afd47`), bukan role baru. Investigasi menemukan
-      role `driver` untuk user existing sebenarnya TIDAK bisa dieksekusi
-      lewat jalur resmi manapun — form "Buat Pengguna" hardcode
-      `{admin, sales}` (Gate 3E-C-C2-B3), RLS `user_roles_insert` (Gate
-      3E-C-B0-S1, hotfix keamanan eskalasi role) juga membatasi allowlist
-      yang sama persis. Ditanya ulang ke Founder: dibatalkan opsi bangun
-      RPC baru / bypass allowlist via SQL, diganti pendekatan yang JAUH
-      lebih sederhana — dropdown "Assign driver" cukup diperluas
-      menampilkan role `sales` juga (dicek dulu: `create_delivery_atomic`,
-      20260823000001, TIDAK PERNAH mensyaratkan role driver di
-      `assigned_driver_id`, murni filter UI). Tidak menyentuh RBAC/
-      security allowlist sama sekali. Lihat Log Milestone untuk detail.
+1. **Role-play UAT order-to-cash** (2026-08-16) — DITUTUP. Temuan kunci:
+   bug 500 saat create order, root cause `generateOrderNumber()` pakai
+   RLS-scoped client (undercount nomor order lintas-sales, tabrakan unique
+   constraint) — fix ganti ke admin client. Turunan gate dari role-play ini:
+   Gate P4.01 (`requested_delivery_date` untuk AI Dispatch Planner), field
+   "Sales yang Menangani" jadi role-aware, fix UX search pelanggan (listbox
+   tidak collapse), temuan gap Delivery/Invoice Tahap 5-6 (jalur web belum
+   ada UI terbit invoice, cuma Telegram — lihat Backlog), halaman baru
+   Lihat/Cetak Invoice, audit template invoice vs LOCKED guide (gap baris
+   "Tempo" → ditutup Gate P4.02; gap `PhysicalPrintSheet` continuous-form →
+   ditutup entri cetak-batch di Log Milestone), sidebar "Collection"
+   dihapus (redirect lama tetap jalan).
+2. **Checkpoint 4-poin** (disetujui 2026-08-17) — DITUTUP semua: commit
+   dokumen readiness (`8ec2eb0`), konfirmasi P4.01/P4.02 ternyata sudah
+   live hosted (tidak perlu push ulang), Gate P4.04 (audit visibility
+   override status pengiriman), bundel 5 keputusan bisnis (lihat poin
+   berikut).
+3. **5 keputusan bisnis Founder** (2026-08-17) — DITUTUP semua: NOO
+   reversal saat order pembuka toko dibatalkan → Gate P4.05; password
+   recovery email legacy → tetap aktif (keputusan final, tanpa eksekusi
+   kode); `payment.record` untuk sales/driver all-in → Gate P4.06 (klaim
+   pembayaran + review Finance); tombol status generik "Kirim"/"Terkirim"
+   → Gate P4.07 (dibatasi role owner/manager/admin); role `driver` untuk
+   sales all-in → **tidak jadi role baru**, cukup dropdown "Assign driver"
+   diperluas menampilkan role `sales` juga (`24afd47`), TANPA menyentuh
+   RBAC/security allowlist.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
 1. `[REQUEST FOUNDER]` **Redesain Laporan Sales — Fase A SELESAI (2026-08-16,
-   lihat Log Milestone Gate P4.03), Fase B (voice note) masih menunggu.**
-   Fase A yang sudah dikerjakan: form `dashboard/reports/new` TIDAK LAGI
-   minta sales ketik ulang `target_oa`/`achieved_oa`/`target_revenue`/
-   `achieved_revenue`/`items[]` — semua otomatis dari governed KPI ledger +
-   `sales_order_items`, server tidak pernah percaya angka dari client.
-   Sales cuma isi `area`/`remaining_working_days`/`notes` (bagian kualitatif
-   yang memang tidak bisa diotomatisasi). Ranking "Performa Sales" juga
-   sudah ditarik dari target KPI governed asli (Target/Gap/Pencapaian per
-   sales), bukan dihilangkan — lihat Log Milestone.
+   Gate P4.03), Fase B (voice note) masih menunggu.** Fase A: form
+   `dashboard/reports/new` tidak lagi minta sales ketik ulang angka KPI —
+   semua otomatis dari governed KPI ledger + `sales_order_items`. Sales
+   cuma isi `area`/`remaining_working_days`/`notes`.
 
    **Sisa scope (Fase B, dari voice note Pak Waluyo ke Mas Hendro,
    2026-08-16) — BELUM dikerjakan, masih menunggu keputusan Founder**:
-   kalimat kunci beliau *"saya sudah menerima rekapan dari SISTEM"* (bukan
-   "laporan dari sales") memvalidasi arah Fase A, tapi voice note ini
-   menambah 3 kebutuhan baru yang BELUM tercakup:
-   1. **Jadwal kirim otomatis ~16.00-17.00** setiap hari kerja sales,
-      supaya begitu sales pulang kantor, Owner sudah bisa langsung
-      briefing/evaluasi. Kemungkinan ini pas dengan fitur "Executive
-      WhatsApp Report" yang sudah disebut di
-      `docs/product/AODP_PRODUCT_CONSTITUTION.md` §13 (laporan harian ke
-      WhatsApp owner) — **belum pernah dibangun**, jadi bagian ini
-      kemungkinan besar bukan cuma redesain form, tapi juga scheduled
-      job/notification baru (scope lebih besar dari sekadar ubah
-      `reports/new/page.tsx`, perlu di-assess ulang saat mulai
-      dieksekusi).
-   2. **Konten spesifik yang diminta** (urutan sesuai voice note): EC
-      (Effective Call)/kunjungan toko → dari situ berapa yang **berhasil
-      transaksi** (EC-to-transaksi, bukan cuma kunjungan) → Tagihan
-      (status collection/penagihan) → Omzet (nominal + % dari target).
-      Opsional: breakdown per periode (pagi/siang/sore, "udah dapat
-      berapa"). Ini detail lebih spesifik dari sekadar "5 KPI governed" —
-      perlu dipetakan field-per-field ke KPI code yang sudah ada
-      (CALL/EFFECTIVE_CALL/REVENUE) + cek apakah "Tagihan" (piutang/
-      collection) sudah masuk governed KPI atau perlu sumber terpisah
-      (Collection Intelligence/Finance Operations).
-   3. **Varian laporan PAGI terpisah, isinya beda dari sore** — bukan
-      hasil kerja, tapi RENCANA hari itu: toko mana yang mau ditagih
-      ("tagihan toko yang mau dibawa"). Ini konsep baru (laporan
-      forward-looking), belum ada padanannya di rencana redesain awal
-      yang cuma bahas 1 laporan (sore/hasil).
-   Catatan: satu bagian transkrip tidak jelas ("LFD bekolnya") — tidak
-   ditebak maknanya, perlu klarifikasi ulang ke rekaman/Pak Waluyo
-   langsung sebelum dieksekusi, bukan diasumsikan.
-2. `[REQUEST FOUNDER]` **Fondasi data untuk chatbot bisnis Owner — DISETUJUI
-   arahnya (2026-08-16), EKSEKUSI SENGAJA DITUNDA** ("simpan dulu di
-   tracker, kerjakan kalau waktunya tiba"). Konteks: Founder tanya sebagai
-   SPV, data/laporan apa yang dibutuhkan supaya nanti Owner bisa tanya
-   chatbot soal bisnisnya (misal "produk apa paling laku", "toko mana
-   paling banyak order bulan ini", "tagihan mana yang bakal macet").
-   Audit kesiapan per kategori:
-   - **SIAP, tinggal digeneralisir** — "Produk paling laku" & "Toko
-     paling banyak order": data mentahnya sudah lengkap (`sales_order_items`
-     + `sales_orders` confirmed+, sama pola dengan `getDailySoldItems`
-     Gate P4.03) — tinggal buat agregat per rentang tanggal bebas
-     (bukan cuma "hari ini"), di-groupkan per produk atau per customer.
-   - **SUDAH ADA, tinggal disurfacing ke chatbot** — governed KPI
-     (Call/EC/Order/Revenue/NOO per sales, sekarang termasuk Target/Gap/
-     Pencapaian per Log Milestone di bawah), Business Guard discount
-     anomaly (`lib/business-guard/`), sinyal pelanggan tidak aktif >45
-     hari (sudah muncul di widget "Perlu Follow Up" Dashboard Owner).
-   - **BELUM ADA SAMA SEKALI, butuh logic baru** — "Tagihan mana yang
-     bakal macet": data mentah (invoice, saldo piutang, riwayat bayar)
-     sudah ada di Finance Operations, tapi skor risiko "macet"-nya
-     sendiri belum ada. Ini persis modul **Business Guard Collection
-     Risk** yang sudah tercatat sebagai gap di Backlog (baru ada slice
-     Sales Risk/discount anomaly, Collection Risk belum dikerjakan) —
-     kalau chatbot mau menjawab pertanyaan ini, Collection Risk harus
-     dibangun dulu (bukan cuma query, perlu definisi "macet" -- umur
-     piutang + pola bayar historis -- yang belum ada presedennya).
-   Rekomendasi CTO (belum dieksekusi): bangun **satu lapisan agregat
-   terstruktur** dulu sebelum chatbot-nya sendiri (bukan query ad-hoc
-   per pertanyaan), dan prioritaskan Collection Risk lebih dulu karena
-   itu satu-satunya kategori yang benar-benar kosong, bukan cuma perlu
-   disambungkan. Sesuai AI provider layer rule (`CLAUDE.md` #3), chatbot
-   nanti wajib lewat `packages/ai`, bukan panggil vendor AI langsung.
+   1. **Jadwal kirim otomatis ~16.00-17.00** setiap hari kerja sales
+      (kemungkinan terkait fitur "Executive WhatsApp Report" di
+      `AODP_PRODUCT_CONSTITUTION.md` §13, belum pernah dibangun — scope
+      lebih besar dari sekadar redesain form, perlu di-assess ulang saat
+      mulai).
+   2. **Konten spesifik**: EC/kunjungan toko → EC-to-transaksi (bukan
+      cuma kunjungan) → Tagihan (status collection/penagihan) → Omzet
+      (nominal + % target). Perlu dipetakan ke KPI code existing +
+      dicek apakah "Tagihan" sudah governed atau perlu sumber terpisah.
+   3. **Varian laporan PAGI terpisah** — bukan hasil kerja, tapi RENCANA
+      hari itu (toko mana yang mau ditagih). Konsep forward-looking baru,
+      belum ada padanannya.
+   Catatan: satu bagian transkrip tidak jelas ("LFD bekolnya") — perlu
+   klarifikasi ulang ke Pak Waluyo langsung sebelum dieksekusi.
+2. `[REQUEST FOUNDER]` **Fondasi data untuk chatbot bisnis Owner —
+   DISETUJUI arahnya (2026-08-16), EKSEKUSI SENGAJA DITUNDA** ("kerjakan
+   kalau waktunya tiba"). Audit kesiapan: "Produk paling laku"/"Toko
+   paling banyak order" — data mentah sudah lengkap, tinggal digeneralisir
+   jadi agregat rentang tanggal bebas. Governed KPI + Business Guard
+   discount anomaly — sudah ada, tinggal disurfacing. "Tagihan mana yang
+   bakal macet" — **sekarang SUDAH ADA** (Business Guard Collection Risk,
+   dibangun 2026-08-18), sebelumnya ini satu-satunya kategori kosong.
+   Rekomendasi CTO (belum dieksekusi): bangun satu lapisan agregat
+   terstruktur dulu sebelum chatbot-nya sendiri. Chatbot wajib lewat
+   `packages/ai` (CLAUDE.md #3), bukan panggil vendor AI langsung.
 
 ### Ditunda — menunggu keputusan Founder
 
 | Item | Tag | Sejak | Konteks |
 |---|---|---|---|
-| WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Masih relevan meski password recovery legacy diputuskan tetap aktif (2026-08-17) — RPC yang dipanggil tetap belum ada di migration aktif. Detail: Backlog #14 |
+| WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Detail: Backlog #14 |
 | Halaman drill-down Call/Effective Call lintas-salesman untuk Owner/Manager | `[TEMUAN]` | 2026-08-15 | Detail: Backlog #7 |
-| Notifikasi WhatsApp realtime ke Owner (Owner Approval Inbox) belum benar-benar kirim — provider Bablast dipilih Founder tapi API key/endpoint/template WA belum disetujui Meta | `[REQUEST FOUNDER]` | 2026-08-18 | Sisi AODP (trigger event + payload pesan + link) sudah selesai & teruji (Gate P4.08). Yang ditunggu: Founder ambil API key + endpoint "Send Message" dari dashboard Bablast (menu API/Integrasi, BUKAN halaman webhook config yang sudah dibagikan — itu untuk pesan masuk), plus template pesan business-initiated harus disetujui Meta dulu (syarat WABA resmi). Begitu tersedia, tinggal daftarkan `n8n_webhooks` (event_type `special_price_proposal_submitted`) — tidak perlu kode baru di sisi AODP. |
-
-*(4 item lain yang sebelumnya di tabel ini — NOO reversal, password recovery, role driver sales all-in, payment.record — sudah DIPUTUSKAN Founder 2026-08-17, lihat poin #5 di § Sedang Dikerjakan di atas untuk hasil & status eksekusi.)*
+| Notifikasi WhatsApp realtime ke Owner (Owner Approval Inbox) belum benar-benar kirim — provider Bablast dipilih Founder tapi API key/endpoint/template WA belum disetujui Meta | `[REQUEST FOUNDER]` | 2026-08-18 | Sisi AODP (trigger event + payload pesan + link) sudah selesai & teruji (Gate P4.08). Yang ditunggu: Founder ambil API key + endpoint "Send Message" dari dashboard Bablast (menu API/Integrasi, bukan halaman webhook config), plus template pesan disetujui Meta dulu. Begitu tersedia, tinggal daftarkan `n8n_webhooks` — tidak perlu kode baru. |
 
 ---
 
@@ -515,10 +196,10 @@ Rujukan: `docs/product/01_PRD.md` §5, `docs/product/modules/*.md`.
 
 | Modul | Status | Catatan |
 |---|---|---|
-| **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Enforcement harga khusus LOCKED & hosted-verified (Gate 3E-D6-A/B); Owner Approval Inbox UI selesai 2026-08-18 (LOKAL, belum di-push) |
+| **Core Platform** (auth, RBAC multi-tenant, sales order, customers, products, delivery, finance/invoicing) | Matang, gate terbanyak (3A–3D, 3E-D3–D5) | Enforcement harga khusus LOCKED & hosted-verified; Owner Approval Inbox UI live |
 | **FlowSales AI** (laporan sales, KPI, AI Dispatch Planner, Telegram Sales Order Entry, AI Insights) | Matang, aktif dikembangkan | Gate 3E-D4/D5, Owner BI A–E |
 | **Collection Intelligence** | Diimplementasikan sebagai bagian Finance Operations Workspace | `/dashboard/collection` redirect ke `/dashboard/finance/collection` (Gate 2I.x) |
-| **Business Guard AI** (Risk Alert) | **2 slice hidup, keduanya dikontribusikan ke Executive Intelligence, + Risk Alert List gabungan** — Sales Risk/Discount Anomaly (2026-08-14, wiring ke dashboard Owner 2026-08-18) + Collection Risk/piutang macet (2026-08-18) + Risk Alert List (gabungan keduanya, 2026-08-18). Sisanya (Behavior Change, Transaction Risk Score) masih "Segera Hadir" | `apps/web/src/lib/business-guard/`, `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx`, `apps/web/src/lib/executive/contributors/business-guard.ts` |
+| **Business Guard AI** (Risk Alert) | **2 slice hidup + Risk Alert List gabungan, semua dikontribusikan ke Executive Intelligence** — Sales Risk/Discount Anomaly (2026-08-14) + Collection Risk/piutang macet (2026-08-18) + Risk Alert List gabungan (2026-08-18). Sisanya (Behavior Change, Transaction Risk Score) masih "Segera Hadir" | `apps/web/src/lib/business-guard/`, `apps/web/src/app/(dashboard)/dashboard/risk/page.tsx`, `apps/web/src/lib/executive/contributors/business-guard.ts` |
 | **WhatsApp AI** | **Belum diimplementasi** — UI "Segera Hadir" | `apps/web/src/app/(dashboard)/dashboard/whatsapp/page.tsx` |
 | **Warehouse Intelligence** | **Placeholder resmi MVP** (bukan gap — keputusan produk terkunci, CLAUDE.md aturan #6) | Dashboard dasar delivery stats saja |
 
@@ -533,131 +214,86 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 
 ### Next workstream (di luar Phase 3, tidak blocking)
 
-1. ~~Web order create/update RPC tidak validasi `unit_price`...~~ —
-   **DITUTUP** Gate 3E-D6-A (`ff74a2e`), diverifikasi hidup di hosted.
-2. ~~Special-price approval workflow sisi Sales tidak punya UI~~ —
-   **DITUTUP** Gate 3E-D6-B (`60e2d9e`), diverifikasi hidup di hosted.
-3. ~~Owner Approval Inbox UI belum ada~~ — **DITUTUP** 2026-08-18
-   (`b6fe1d9`), halaman `/dashboard/orders/approvals` dibangun di atas
-   RPC existing `decide_special_price_proposal_atomic` tanpa RPC/migration
-   baru, diverifikasi browser end-to-end dua arah (approve & reject).
-   LOKAL, belum di-push ke hosted.
-4. Pesan error Server Action di-redaksi generik oleh Next.js production
-   (app-wide, bukan spesifik D6-A/D6-B) — accepted limitation, follow-up UX
-   kecil terpisah.
-5. Kredensial demo `.env.demo.local` basi (3 akun demo tidak eksis di
-   hosted) — accepted limitation, perlu regenerasi + investigasi kaitan ke
-   #7 di bawah.
-6b. ~~NOO tidak punya mekanisme reversal saat order pembuka toko
-   dibatalkan~~ — **DITUTUP 2026-08-17, Gate P4.05** (`8199a6a`). Lihat
-   Log Milestone untuk detail fix (trigger reversal + index rescope +
-   bug idempotency_key yang ditemukan saat verifikasi).
-6. React error #418 (hydration) intermiten saat automated testing hosted —
-   root cause tidak 100% dipastikan (kemungkinan artefak tooling), accepted
-   limitation, perlu spot-check manual non-automated.
-7. **[USULAN, BELUM DIKERJAKAN]** Halaman laporan kunjungan sales untuk
-   Owner/Manager (drill-down Call/Effective Call lintas-salesman). Saat ini
-   kartu Call & Effective Call di `/dashboard/kpi` HANYA bisa diklik saat
-   sales melihat achievement dirinya sendiri (link ke `/dashboard/sales-visits`,
-   yang role-gated khusus sales, self-only) -- saat Owner/Manager melihat
-   achievement salesman lain, dua kartu itu sengaja dibiarkan TIDAK
-   clickable (daripada link ke halaman yang bakal redirect membingungkan).
-   Perlu halaman baru (bukan reuse `/dashboard/sales-visits`) kalau Owner
-   mau bisa drill-down riwayat kunjungan siapapun.
+1. ~~Web order create/update RPC tidak validasi `unit_price`~~ — **DITUTUP** Gate 3E-D6-A (`ff74a2e`).
+2. ~~Special-price approval workflow sisi Sales tidak punya UI~~ — **DITUTUP** Gate 3E-D6-B (`60e2d9e`).
+3. ~~Owner Approval Inbox UI belum ada~~ — **DITUTUP** (`b6fe1d9`), `/dashboard/orders/approvals` di atas RPC existing.
+4. Pesan error Server Action di-redaksi generik oleh Next.js production (app-wide) — accepted limitation, follow-up UX kecil terpisah.
+5. Kredensial demo `.env.demo.local` basi (3 akun demo tidak eksis di hosted) — accepted limitation, terkait #7.
+6. React error #418 (hydration) intermiten saat automated testing hosted — root cause tidak 100% dipastikan (kemungkinan artefak tooling), accepted limitation.
+6b. ~~NOO tidak punya mekanisme reversal saat order pembuka toko dibatalkan~~ — **DITUTUP** Gate P4.05 (`8199a6a`).
+7. **[USULAN, BELUM DIKERJAKAN]** Halaman laporan kunjungan sales untuk Owner/Manager (drill-down Call/Effective Call lintas-salesman). Kartu Call/EC di `/dashboard/kpi` hanya clickable saat sales melihat achievement dirinya sendiri — Owner/Manager melihat salesman lain, kartu sengaja tidak clickable (belum ada halaman aman untuk drill-down lintas-salesman).
 
 ### Accepted limitations (dari audit 2026-08-12, tidak berubah, tidak blocking)
 
-7. ~~Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 (hosted clean-slate) tidak
-   pernah di-commit ke git~~ — **DITUTUP 2026-08-17** (`8ec2eb0`), 4 dokumen
-   (runbook cleanup, execution SQL, hosted inventory, pre-cleanup snapshot)
-   di-commit. Status eksekusi destruktif hosted sekarang bisa diverifikasi
-   dari repo. Bukti tambahan 2026-08-14: state hosted saat ini koheren, tenant
-   isolation utuh (tidak menjamin runbook dieksekusi, tapi tidak ada bukti
-   dampak runtime/security).
-8. `docs/product/discovery/AODP_WALUYO_SALESMAN_KPI_FINAL.md` (LOCKED) belum
-   diperbarui untuk mencerminkan keputusan Gate 3E-D5-B (EFFECTIVE_CALL tidak
-   lagi wajib punya order).
-9. Tidak ada `error.tsx` di route Dashboard Owner; beberapa fetcher Owner BI
-   tidak fault-isolated (beda dengan kontributor Executive Intelligence).
-10. Dead code `getMonthlySalesPerformance` (0 caller, sejenis `pctOa` yang
-    sudah dibersihkan Gate Owner BI-E).
-11. REVENUE governed belum menyesuaikan credit note/return; NOO belum
-    reversal saat order pembuka toko baru dibatalkan — sudah terdokumentasi
-    eksplisit sebagai accepted risk di migration header, bukan oversight.
-12. Gate 3B/3C/3C-A/3E-D2 (seluruh family) tidak punya dokumen kontrak
-    `docs/` sendiri — hanya commit message + komentar migration.
-13. **3 mekanisme password recovery aktif bersamaan**: email magic-link
-    legacy (`forgot-password-form.tsx`, protected WIP user, live), super-admin
-    DB-only reset, dan Telegram self-service. Perlu klarifikasi Founder apakah
-    email legacy disengaja tetap hidup atau seharusnya dimatikan.
-14. WIP `forgot-password-form.tsx` (protected, belum di-commit) memanggil RPC
-    `begin_self_recovery_password_change` yang migration-nya **hanya ada di
-    `supabase/migrations_archive/`**, bukan `supabase/migrations/` aktif —
-    akan gagal runtime bila di-deploy apa adanya. Belum diperbaiki karena
-    berstatus protected WIP milik user.
+7. ~~Dokumen Gate 3D-B3-F5 dan seluruh Gate 3E-D0 tidak pernah di-commit~~ — **DITUTUP** (`8ec2eb0`), 4 dokumen di-commit.
+8. `AODP_WALUYO_SALESMAN_KPI_FINAL.md` (LOCKED) belum diperbarui untuk mencerminkan Gate 3E-D5-B (EFFECTIVE_CALL tidak lagi wajib punya order).
+9. Tidak ada `error.tsx` di route Dashboard Owner; beberapa fetcher Owner BI tidak fault-isolated.
+10. Dead code `getMonthlySalesPerformance` (0 caller).
+11. REVENUE governed belum menyesuaikan credit note/return — accepted risk terdokumentasi di migration header.
+12. Gate 3B/3C/3C-A/3E-D2 (seluruh family) tidak punya dokumen kontrak `docs/` sendiri — hanya commit message + komentar migration.
+13. **3 mekanisme password recovery aktif bersamaan**: email magic-link legacy (protected WIP), super-admin DB-only reset, Telegram self-service. Keputusan Founder 2026-08-17: email legacy tetap aktif.
+14. WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya hanya ada di `supabase/migrations_archive/` — akan gagal runtime bila dideploy apa adanya. Protected WIP, belum diperbaiki.
 
 ---
 
 ## Log Milestone (terbaru di atas)
 
-Tag `[TERENCANA]`/`[TEMUAN]`/`[REQUEST FOUNDER]` (lihat legenda di
-[Sedang Dikerjakan / Berikutnya / Ditunda](#sedang-dikerjakan--berikutnya--ditunda))
-berlaku untuk entri **sejak 2026-08-15**. Entri sebelumnya tidak ditandai
-retroaktif — bukan oversight, sengaja tidak ditulis ulang massal untuk
-menghindari risiko salah kategori pada histori yang sudah locked.
+Tag `[TERENCANA]`/`[TEMUAN]`/`[REQUEST FOUNDER]` berlaku untuk entri sejak
+2026-08-15. Entri sebelumnya tidak ditandai retroaktif. **Entri sejak
+2026-08-14 dipadatkan 2026-08-18** (fakta inti dipertahankan, narasi
+debugging/verifikasi panjang dihapus — lihat catatan di kepala dokumen).
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
-| 2026-08-18 | `[REQUEST FOUNDER]` **Risk Alert List — gabungan Sales Risk + Collection Risk** (`60e8352`) | Susulan langsung dari wiring Sales Risk ke Executive Intelligence (baris di bawah) -- Founder minta lagi item paling kecil/pasti tanpa investigasi tambahan. Menutup placeholder "Risk Alert List" ("Segera Hadir", salah satu dari 3 slice Business Guard yang tersisa) -- murni penggabungan + pengurutan severity dari dua report yang sudah ada (`generateDiscountAnomalyReport` + `generateCollectionRiskReport`), **tidak ada logic scoring baru sama sekali**. Hanya entitas `risk_level != NONE` yang masuk daftar (ini "alert", bukan rekap penuh), diurutkan HIGH->MEDIUM->LOW, ditampilkan di atas kedua kartu detail existing di `/dashboard/risk`. 2 placeholder tersisa: Behavior Change, Transaction Risk Score. Diverifikasi: type-check bersih, **browser end-to-end dengan data nyata**: "2 perlu perhatian" tampil, urutan benar (Waluyo/Sales Risk MEDIUM sebelum Toko Sumber Rejeki/Collection Risk LOW), label kategori & rekomendasi masing-masing benar. Tidak ada test baru -- mengikuti presedan page.tsx ini sendiri (render logic tidak pernah dites terpisah dari `lib/business-guard/features/*.test.ts`). | **PASS — LOKAL, terverifikasi type-check + browser end-to-end, sudah commit lokal, belum di-push** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Sales Risk (discount anomaly) ikut dikontribusikan ke Executive Intelligence** (`45d6901`) | Susulan langsung dari Collection Risk (baris di bawah) -- Founder minta rekomendasi item paling kecil/mudah berikutnya, dipilih ini: Sales Risk sudah LOCKED lama & hidup di `/dashboard/risk`, tapi baris di bawah sempat mencatat "SENGAJA belum ikut dikontribusikan ke Executive Intelligence" -- sekarang ditutup. **Tidak ada logic scoring baru sama sekali** -- murni menyambungkan `generateDiscountAnomalyReport` (existing, LOCKED) ke `businessGuardContributor` yang sudah dibangun untuk Collection Risk, pola identik: health component baru "Kewajaran Diskon Sales" (% sales dengan pola wajar), insight+action per tier HIGH/MEDIUM (bundling nama sales), href ke `/dashboard/risk`. Diverifikasi: type-check bersih, 37 test existing PASS tanpa perubahan (murni wiring, `detectDiscountAnomaly` sendiri sudah 9 unit test sejak lama, tidak perlu ditest ulang), **browser end-to-end dengan data nyata**: dashboard Owner menampilkan "Kewajaran Diskon Sales: 2 dari 3 sales" + action baru "Pantau pengajuan diskon sales bulan ini -- 1 sales masuk kategori risiko sedang", persis konsisten dengan temuan MEDIUM Waluyo yang sudah lama terlihat di halaman Risk Alert sendiri (jumlah insight naik dari 4 ke 5, tepat +1). | **PASS — LOKAL, terverifikasi type-check + test suite + browser end-to-end, sudah commit lokal, belum di-push** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Business Guard — Collection Risk (piutang berisiko macet), 4 milestone** (`ada1a1e`, `bec747a`, `59f4326`, `c2646c6`) | Founder minta rekomendasi CTO utk kerjaan berikutnya, dipilih Collection Risk (satu-satunya slice Business Guard AI yang benar-benar kosong, bukan cuma perlu disambungkan -- lihat Backlog). Founder minta dipecah beberapa milestone kecil biar coding tidak berat sekali jalan -- dipecah 4: (1) pure scorer, (2) DB engine, (3) wiring Executive Intelligence, (4) UI Risk Alert page. **Koreksi arah Founder saat Milestone 1 baru mulai**: awalnya scoring relatif ke peer rata-rata (pola Sales Risk) -- diganti ambang absolut aging piutang standar (31-60/61-90/>90 hari lewat jatuh tempo = +20/+40/+60, dicap 100) + janji bayar diingkari (+15/janji, dicap 30) + dispute belum selesai (+10), tier HIGH/MEDIUM/LOW/NONE (60/35/15) sama persis Sales Risk utk konsistensi lintas fitur. Dibangun: `features/collection-risk.ts` (pure function, mirror pola `discount-anomaly.ts`); `engine.ts` ditambah `generateCollectionRiskReport` (SELECT read-only `invoice_receivable_balances`+`invoices`+`promises_to_pay`+`collection_activities`, Gate 2A/2C LOCKED, tidak menyentuh RPC collection sama sekali); contributor baru `business-guard.ts` di Executive Intelligence (placeholder kosong sejak awal project, sama seperti Customer Health sebelum sesi ini) -- health "Kualitas Piutang", insight+action bundling nama customer per tier, href ke `/dashboard/risk`; kartu baru "Collection Risk" di halaman Risk Alert, sebelah kartu Sales Risk existing, pola UI identik. Sales Risk (discount anomaly) SENGAJA belum ikut dikontribusikan ke Executive Intelligence -- di luar scope yang diminta, tidak disentuh. Diverifikasi: type-check bersih tiap milestone, 37 test PASS (13 baru + 24 existing, tanpa integration test DB-backed -- sengaja mengikuti presedan module yang sama, discount-anomaly juga cuma unit test pure function), **end-to-end nyata**: dibuat 1 invoice sungguhan lewat RPC `issue_invoice_atomic` (Gate 2B LOCKED, order->delivery->invoice asli, tidak dimock) + 1 broken promise sungguhan, dikonfirmasi browser sebagai Owner -- kartu Collection Risk & Kualitas Piutang keduanya menampilkan data konsisten dan benar. **Kebingungan verifikasi sempat terjadi** (bukan bug) -- halaman Executive Intelligence sempat tampak "hang"/kosong di `get_page_text` browser tool dengan `Viewport: 0x0` dilaporkan; diselidiki serius (isolasi dgn mencopot `businessGuardContributor` sementara dari `CONTRIBUTORS` -- hang TETAP terjadi, membuktikan bukan kode milestone ini), root cause infra: `supabase_vector_AODP` crash-loop bersamaan (pola sama yg sudah tercatat di tracker sebelumnya) + `get_page_text`/innerText browser tool gagal ekstrak teks saat viewport dilaporkan 0x0 -- dikonfirmasi via `read_page` (accessibility tree, tidak bergantung viewport) bahwa konten sebenarnya SUDAH benar sejak awal. Data uji coba (order `SO-COLRISK-TEST-1`, invoice, broken promise) dibiarkan di DB lokal -- invoice immutable (trigger LOCKED), tidak mengganggu tenant nyata, pola sama dgn throwaway data sesi-sesi sebelumnya. | **PASS — LOKAL, terverifikasi type-check + test suite + browser + DB end-to-end nyata (bukan psql/mock), belum di-push** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **PR kelengkapan data toko kredit (foto/GPS) di Executive Intelligence + Daily Brief** (`64690df`) | Founder minta ketiadaan foto depan toko/titik GPS jadi "PR" yang muncul di Daily Brief sales dan dashboard Owner (contoh konkret: "5 toko kelolaan Salma belum foto, 3 belum GPS"). Dikonfirmasi ke `TRACKER.md`/kode: ide ini belum pernah tercatat/dibangun sebelumnya -- fondasinya (`storefront_photo_url`/`latitude`/`longitude`, migration 2026-08-15) opsional sejak awal untuk toko CASH. **Koreksi scope di tengah kerja (Founder)**: "toko cash tidak diribetkan tapi toko kredit kalau diribetkan wajar" -- PR HANYA berlaku toko kredit, bukan semua toko aktif. Investigasi menemukan skema TIDAK punya kolom "kredit" tetap di `customers` -- diturunkan dari `sales_orders.payment_terms_days` (Termin Pembayaran per order). Definisi dikonfirmasi Founder: toko dianggap kredit kalau MINIMAL SATU order-nya (kapan pun) pernah diisi termin. Dibangun `lib/customers/data-completeness.ts` (satu sumber query dipakai Executive Intelligence DAN Morning Brief, supaya definisi tidak drift); contributor baru "Customer Health" (sebelumnya placeholder kosong sejak awal project) di Executive Intelligence dengan health component + insight + action per gap, rincian per sales, href deep-link; filter baru `?data_gap=photo\|gps` di halaman Pelanggan (scope sama -- toko cash tidak ikut muncul); Morning Brief (proaktif cron DAN on-demand Telegram `/start`, satu composer bersama) dapat section "PR Data Toko Kredit" di akhir pesan, dependency baru dibuat opsional supaya tidak memutus test/caller existing. Diverifikasi: type-check bersih, 213 test terkait PASS, **browser + DB end-to-end penuh**: toggle `payment_terms_days` toko seed antara kredit/cash, dikonfirmasi PR muncul tepat saat kredit ("1 toko kredit belum ada foto" di action card + business health breakdown "Kelengkapan Data Toko Kredit 0/1") dan hilang total saat cash; filter halaman Pelanggan dikonfirmasi presisi pakai 2 toko pembanding (1 kredit tanpa foto vs 1 cash murni tanpa order sama sekali -- HANYA yang kredit muncul); teks Daily Brief dikonfirmasi lewat pemanggilan composer nyata terhadap DB lokal (script sekali-pakai, sudah dihapus) -- persis "PR Data Toko Kredit: 1 toko belum ada foto depan toko, 1 toko belum ada titik GPS" + link. Sempat ada 1 kebingungan verifikasi (bukan bug kode) -- badge "N pelanggan" di filter bar ternyata query TERPISAH di level parent yang memang tidak pernah mengikuti filter apa pun (q/city/area/sales/data_gap semua tidak memengaruhinya, existing behavior sebelum perubahan ini) -- dikonfirmasi lewat debug log server bahwa data terfilter yang sesungguhnya (baris tabel + pagination) sudah benar sejak awal. | **PASS — LOKAL, terverifikasi type-check + test suite + browser + DB end-to-end penuh, belum di-push** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Gate P4.08 — picu event automation saat harga khusus diajukan (bagian tanpa kredensial provider)** (`1410584`, migration `20261011000001`) | Lanjutan langsung dari Owner Approval Inbox — Founder tanya bisa tidak notifikasi realtime WhatsApp ke Owner saat ada pengajuan, provider dipilih Bablast (WhatsApp gateway Indonesia berbasis WABA resmi Meta, dikonfirmasi via web search, BUKAN Wablas). Investigasi menemukan API kirim pesan Bablast belum terdokumentasi publik dan pesan business-initiated via WABA WAJIB pakai template yang disetujui Meta dulu -- Founder pilih opsi "bangun dulu bagian yang tidak perlu API key" sambil cari kredensial paralel. Diaudit arsitektur automation existing: ada 2 pipeline terpisah -- `automation_outbox` (scheduled job, dipakai MORNING_BRIEF/KPI_DAILY_SUMMARY, RPC `enqueue_automation_job`, TIDAK cocok karena butuh n8n inbound credential yang tidak tersedia dari server action user) vs `automation_rules`/`n8n_webhooks`/`processAutomationEvent()` (event-driven generic, dipakai large_order/churn_risk, webhook URL dikonfigurasi bebas per company_id+event_type, TEPAT cocok -- pola yang sama persis dengan channel-routing kanonik "Sales->Telegram, eskalasi Owner->WhatsApp" yang sudah ada). Dibangun: migration tambah `special_price_proposal_submitted` ke whitelist CHECK constraint `automation_rules.trigger_type`; `submitSpecialPriceProposalAction` memanggil `processAutomationEvent()` fire-and-forget (try/catch, kegagalan notifikasi TIDAK PERNAH menggagalkan pengajuan yang sudah tersimpan sukses) dengan payload lengkap (order_number, customer_name, reason, approval_link ke Inbox). Diverifikasi end-to-end: `db reset` + reseed PASS, type-check bersih, 166 test terkait automation/orders PASS, **browser + DB langsung**: submit proposal sungguhan sebagai Sales (Waluyo) tanpa rule terdaftar -> event no-op bersih tanpa error (baseline realistis saat ini, tidak ada webhook Bablast terdaftar); lalu insert 1 automation_rule uji sementara (action `log`, dihapus setelah verifikasi) -> submit ulang -> `automation_logs` mencatat `status=success` dengan `trigger_data` lengkap dan `actions_executed` benar -- membuktikan pipa **sudah siap penuh**, tinggal Founder daftarkan `n8n_webhooks` (event_type sama) begitu API key/endpoint Bablast + template WA disetujui Meta tersedia (dicatat di Ditunda). | **PASS — LOKAL, terverifikasi type-check + test suite + browser + DB end-to-end, belum di-push. Bagian provider (kirim WA nyata) DITUNDA menunggu kredensial Bablast + template Meta.** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Owner Approval Inbox — halaman terpusat persetujuan harga khusus** (`b6fe1d9`) | Founder tanya "owner approval inbox itu apa" lalu setujui ("boleh kerjakan") rekomendasi CTO untuk membangunnya. Sebelumnya Owner harus buka tiap order satu-satu untuk tahu ada permintaan harga khusus (Gate 3E-D4) yang menunggu keputusan -- tidak ada cara sistematis. Dibangun halaman baru `/dashboard/orders/approvals` (link sidebar baru, role='owner' strict) yang menampilkan SEMUA `special_price_approval_requests` berstatus PENDING lintas order dalam satu tabel, dengan tombol Setujui/Tolak langsung dari situ. **Murni UI/wiring baru di atas RPC existing LOCKED** (Gate 3E-D4-C2/C3: `submit_special_price_proposal_atomic`/`decide_special_price_proposal_atomic`, migration `20260923000001`/`20260925000001`) -- tidak ada RPC/tabel/migration baru sama sekali, sesuai investigasi awal yang mengonfirmasi RPC decide sudah lengkap (approve/reject, snapshot-mismatch guard, decider harus role owner murni) sejak gate itu ditutup. **Bug ditemukan & diperbaiki saat verifikasi end-to-end browser** (bukan cuma type-check/test lolos): RPC `decide_special_price_proposal_atomic` ternyata menerima `p_decision` berupa verb `'APPROVE'`/`'REJECT'`, BUKAN `'APPROVED'`/'REJECTED'` (itu nilai kolom hasil `decision`, beda parameter) -- percobaan approve pertama di browser gagal nyata dengan pesan "Keputusan tidak valid", baru ketahuan lewat klik sungguhan, bukan asumsi dari baca kode RPC saja. Diperbaiki di `special-price-proposal-actions.ts` (mapping eksplisit + komentar penjelas). Diverifikasi: type-check bersih (0 error baru), 242 test modul `orders` PASS + 39 test sidebar/action PASS, **end-to-end browser penuh dua arah**: sebagai sales buat order draft baru + ajukan harga khusus (klik nyata) -> sebagai owner buka Inbox, approve pengajuan pertama (harga terkunci, order kembali ke Draft) -> ajukan pengajuan kedua -> reject dengan alasan (tervalidasi client-side wajib diisi minimal 3 karakter, lalu ditolak sungguhan -- harga dikonfirmasi restore ke harga master `Rp34.000`, catatan Owner tampil benar di order). | **PASS — LOKAL, terverifikasi type-check + test suite + browser end-to-end dua arah (approve & reject), sudah commit lokal, belum di-push** |
-| 2026-08-18 | *(catatan pembaca)* **Semua baris di bawah ini yang berstatus "belum di-push" (Gate P4.04/P4.05/P4.06/P4.07, assign-driver, audit contract, koreksi Collection — tanggal 2026-08-17/18) SUDAH ikut ter-push** lewat baris tepat di bawah ini (`0bb7e52`, push 19 commit). Tidak diedit satu-satu di baris aslinya (menghormati aturan "jangan menimpa baris lama" di atas) — cukup baca baris ini sebagai penanda. | — | — |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Push 19 commit ke `origin/main` + TEMUAN KRITIS: 6 migration belum pernah diterapkan ke hosted, termasuk P4.01/P4.02 yang sebelumnya dikira sudah live** (`0bb7e52`) | Founder minta push. Sebelum push, `git status`/`git fetch` bersih (protected WIP `forgot-password-form.tsx` TETAP tidak ikut, cuma di working tree). `git push origin main` sukses, `origin/main` == lokal (0 selisih), Vercel auto-deploy **Ready** dalam ~1 menit. **Sambil verifikasi rutin, ditemukan gap serius**: `npx supabase migration list` menunjukkan 6 migration (`20261005000001` s/d `20261010000001` — Gate P4.01, P4.02, P4.04, P4.05, P4.06, P4.07) kolom Remote-nya KOSONG, artinya TIDAK PERNAH diterapkan ke database hosted `AODP-Waluyo-Demo` -- termasuk P4.01/P4.02 yang di checkpoint 2026-08-17 sempat disimpulkan "sudah live" (waktu itu cuma dicek KODE frontend-nya via `vercel inspect`, bukan fungsi database-nya). Root cause: build script Vercel (`next build`) tidak pernah menjalankan migration secara otomatis -- `git push` kode dan `supabase db push` migration adalah 2 langkah TERPISAH yang harus dijalankan manual keduanya, gap ini sudah berpotensi bikin fitur-fitur sejak P4.01 (pertengahan Agustus) diam-diam gagal di hosted setiap RPC-nya dipanggil (function signature tidak cocok) tanpa pernah terdeteksi karena Founder belum sempat coba fitur-fitur itu di hosted. **Ditutup langsung**: `npx supabase db push` dijalankan (project sudah linked ke `mcbwgvtkhykrrtvbpeys`), keenam migration berhasil diterapkan (tidak ada ERROR, cuma NOTICE harmless dari `DROP TRIGGER IF EXISTS` pertama kali), dikonfirmasi ulang `migration list` (Local == Remote penuh). Health-check halaman login hosted bersih tanpa console error setelah deploy. **Pelajaran dicatat di Status Ringkas § Deploy pipeline** supaya sesi berikutnya tidak mengulang asumsi yang sama. | **SELESAI — origin/main sinkron, hosted deploy Ready, migration hosted disinkronkan penuh, terverifikasi `vercel ls` + `supabase migration list` + health-check browser** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Lengkapi kontrak kanonis `logAuditEvent` di 22 titik pemanggilan (Produk/Pelanggan/Platform/Laporan Sales/Import Data/Pengguna/Auth)** (`a449622`) | Founder minta tutup gap audit trail (kekhawatiran anti-kecurangan sales), diarahkan ke "Risk Alert" dulu — investigasi menemukan halaman itu murni read-only (laporan dihitung live, bukan entitas tersimpan, tidak ada aksi apa pun) sehingga tidak ada yang bisa diaudit di sana tanpa membuat event palsu (melanggar prinsip "jangan membuat event palsu" yang sudah dipegang proyek ini). Dialihkan ke opsi #2: tutup gap `partial` yang lebih nyata. Root cause ditemukan: helper bersama `logAuditEvent()` (`lib/actions/audit.ts`), dipakai 22 kali lintas 10 file, TIDAK PERNAH mengisi kolom kanonis Gate 1D-A (`actor_type`/`event_category`/`module`/`source`/`outcome`) sejak awal dibuat. Fix: `module` diubah WAJIB di level TypeScript (compile error kalau ada yang terlewat — dipakai sebagai jaring verifikasi lengkap), `event_category`/`source`/`outcome` dapat default masuk akal, bisa ditimpa eksplisit (`event_category='security'` utk login/logout, menutup gap yang sudah tercatat eksplisit di matrix). Diverifikasi: type-check bersih (0 titik terlewat), test baru `audit.integration.test.ts` (DB-backed, 3 skenario), 216 test modul terkait PASS, full suite 2570/2571 PASS (1 gagal pra-existing), **end-to-end browser**: buat produk sungguhan sebagai owner → muncul benar di Activity & Audit Log. Update `ACTIVITY_AUDIT_COVERAGE_MATRIX.md`: Laporan Sales/Produk/Platform/Auth & Login → `covered`; Pelanggan/Pengguna/Import Data → `partial` (membaik — writer TS selesai, writer RPC terpisah masih perlu sesi lanjutan, scope lebih besar). Koreksi sitasi stale tambahan ditemukan sambil kerja: `app/(auth)/callback/route.ts` tidak ada (path salah di matrix lama). | **PASS — LOKAL, terverifikasi test + browser end-to-end, belum di-push** |
-| 2026-08-18 | `[REQUEST FOUNDER]` **Koreksi dokumentasi: Collection TERNYATA sudah `covered` di Activity & Audit Log, bukan `missing`** (`69ec025`) | Founder tanya kesiapan struktur audit utk Owner. Investigasi ke `docs/owner-control/ACTIVITY_AUDIT_COVERAGE_MATRIX.md` menemukan baris Collection salah tercatat `missing` ("Tidak ditemukan writer") — dicek langsung ke kode, kelima RPC Gate 2C (`record_collection_activity`, `create/correct/cancel_promise_to_pay`, `mark_promise_broken`, migration `20260828000001`) TERNYATA SUDAH menulis `audit_logs` kanonis penuh (module/event_category/source/outcome) sejak RPC-nya dibuat, dengan 41 test integration yang membuktikannya eksplisit. Root cause murni dokumentasi: migration Collection (`dcc4ad4`, 16:32 WIB) landed SETELAH matrix terakhir di-update (`c6593c5`, 10:18 WIB) di hari yang sama — dokumen ini saja yang tidak pernah disinkronkan ulang, bukan gap kode sungguhan. **Jadi TIDAK ADA kode baru yang ditulis untuk item ini** — murni koreksi status dokumen dari `missing` ke `covered` (5 dari 18 baris matrix sekarang `covered`, 6 `missing`). Diverifikasi end-to-end: psql konfirmasi 122 baris `audit_logs` `module='collection'` sudah ada di DB (dari test suite berjalan), ditambah 1 baris baru dibuat via RPC langsung utk company seed lokal — dikonfirmasi muncul benar di halaman Owner "Activity & Audit Log" (filter `module=collection`), lengkap dgn detail before/after (note, channel, invoice_id, customer_id, dll). | **PASS — LOKAL, koreksi dokumentasi + verifikasi browser end-to-end, belum di-push** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.06 — Klaim Pembayaran sales/driver + review Owner/Finance** (`e310001`, migration `20261010000001`) | Poin #5.3 dari bundel keputusan bisnis. Founder klarifikasi visi produk (AODP = "ERP AI yang jagain owner", bukan ERP biasa) dan tegaskan prioritas: penagihan sales tidak boleh punya ruang gerak curang thd owner. Audit ditemukan sistem SUDAH sangat ketat (`collection.record`/`payment.record` tidak pernah diberikan ke sales sama sekali) -- tapi ini justru bikin sales "all-in" (order+kirim+tagih sendiri) tidak punya jalur resmi apa pun melapor uang yang diterima. Dibangun fitur baru: `submit_payment_claim_atomic` (permission baru `payment.claim`, HANYA sales/driver) -- status PENDING, TIDAK PERNAH menyentuh `receivable_ledger`; `approve_payment_claim_atomic` (permission `payment.record`, tetap owner/finance, TIDAK diperluas) -- delegasi PENUH ke `record_verified_payment_atomic` (Gate 2D, LOCKED, tidak diubah/diduplikasi sama sekali), bukti verifikasi WAJIB di titik ini (Finance yang membuktikan, bukan sekadar percaya klaim); `reject_payment_claim_atomic` -- murni ubah status, ledger tidak tersentuh. Guardrail anti-kecurangan: kolom klaim inti terkunci sejak submit (trigger, independen dari RLS/service_role), klaim tidak bisa diputuskan dua kali, alokasi invoice divalidasi harus milik customer yang sama dengan klaim asal. **Keputusan sementara Founder**: bukti sisi klaim (submit) dibuat OPSIONAL dulu ("sebelum dapat keputusan dari Pak Waluyo langsung") -- bukti tetap WAJIB minimal 1 di titik approve, jadi tidak ada uang masuk ledger tanpa bukti sama sekali. UI baru: `/dashboard/payment-claims` (sales/driver lapor+riwayat) dan `/dashboard/finance/payment-claims` (Finance antrian review). Diverifikasi: `db reset` PASS, 8+ skenario psql (happy path, double-approve, direct edit/delete diblokir trigger, reject tanpa alasan ditolak, sales forbidden approve, alokasi customer salah ditolak ALLOCATION_CUSTOMER_MISMATCH), type-check bersih, full suite 2567/2568 PASS (1 gagal pra-existing tidak terkait), **end-to-end browser penuh**: sales submit via form sungguhan (klik nyata, bukan RPC langsung) -> owner review & reject via UI sungguhan, approve dialog juga diverifikasi terbuka dengan data terkunci + peringatan bukti kosong yang akurat. | **PASS — LOKAL, terverifikasi psql + test suite + browser end-to-end penuh, belum di-push** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.05 — NOO reversal saat order pembuka toko dibatalkan** (`8199a6a`, migration `20261009000001`) | Poin #5.1 dari bundel keputusan bisnis, menutup Backlog #6b. NOO (Gate 3E-D5-A, LOCKED) sengaja tidak reversal sejak awal -- beda dari ORDER_COUNT/REVENUE yang sudah reversal utk kejadian pemicu identik (`order->cancelled`). Risiko yang ditutup: kredit NOO bisa "diakali" (confirm sebentar lalu dibatalkan, kredit tetap nempel selamanya) DAN memblokir toko itu dapat kredit NOO sah di masa depan. Fix 3 bagian, pola identik `reverse_order_kpi_for_sales_order`: (1) trigger reversal baru, ledger append-only; (2) unique index `uq_skae_noo_credited_once` diganti scope dari `customer_id` (1x seumur hidup) ke `order_id` (retry protection per-order, pola identik ORDER_COUNT/REVENUE) -- "hanya 1 kredit aktif per customer" sekarang dijamin live-status check trigger crediting (tidak berubah) + advisory lock, bukan index itu sendiri; (3) **bug ditemukan SAAT verifikasi manual** (bukan asumsi) -- `idempotency_key` crediting asal (`'noo:' || customer_id`) ternyata customer-scoped, collide lintas order milik customer sama, bikin re-credit legitimate diam-diam gagal walau sudah lolos fix #2. Diperbaiki jadi order-scoped. Diverifikasi: `db reset` PASS, 4 skenario psql manual langsung (credit → cancel → reversed → order baru re-credit → order ketiga saat order kedua masih aktif TIDAK double-credit), 1 integration test baru ditambah ke `noo-achievement.integration.test.ts` (14 test total di file itu), full suite 2566/2567 PASS (1 gagal pra-existing tidak terkait). | **PASS — LOKAL, terverifikasi psql + integration test + full suite, belum di-push** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Sales all-in bisa di-assign sebagai driver order sendiri, TANPA role driver baru** (`24afd47`) | Poin #5.5 dari bundel keputusan bisnis. Rencana awal (tambah role `driver` ke `slamatwaluyo@gmail.com` hosted) dihentikan setelah investigasi: role `driver` untuk user EXISTING ternyata tidak bisa lewat jalur resmi manapun -- form "Buat Pengguna" (`add-tenant-user-form.tsx`) hardcode allowlist `{admin, sales}` (Gate 3E-C-C2-B3, komentar eksplisit "super_admin TIDAK PERNAH boleh muncul di sini"), RLS `user_roles_insert` (Gate 3E-C-B0-S1, hotfix keamanan menutup celah eskalasi role Agustus 2026) juga membatasi ke allowlist yang sama lewat `is_tenant_assignable_role()`. Diajukan ulang ke Founder: (A) bangun RPC baru resmi extend allowlist, (B) one-off SQL bypass allowlist ke hosted, (C) skip. Founder pilih pendekatan lebih sederhana di luar 3 opsi itu: **tidak perlu role driver sama sekali** -- cukup sales yang mengirim+menagih sendiri. Dicek ke `create_delivery_atomic` (20260823000001): `assigned_driver_id` TIDAK PERNAH mensyaratkan role driver di level RPC/DB, cuma perlu user aktif di company yang sama -- filter role='driver' murni di query dropdown UI (`orders/[id]/page.tsx`). Fix: dropdown diperluas include role `sales` (dedupe by user id, prioritas label "driver" kalau user punya keduanya), label dibedakan "(Sales)"/"(Driver)". TIDAK menyentuh RBAC/security allowlist/RPC sama sekali -- solusi jauh lebih sempit dari rencana awal. Diverifikasi: type-check bersih, browser lokal end-to-end sebagai owner -- dropdown tampil "Sales Pertama (Sales)", "Kurir Pertama (Driver)", "Salma (Sales)", "Waluyo (Sales)" tanpa duplikat. **Belum dieksekusi ke hosted** (tidak perlu data migration, cukup deploy kode). | **PASS — LOKAL, terverifikasi browser end-to-end, belum di-push** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.07 — batasi override status kirim/terkirim ke owner/manager/admin/super_admin** (`d3bace3`, migration `20261008000001`) | Poin #5.4 dari bundel keputusan bisnis. Extend `update_sales_order_status_atomic` (Gate P4.04): transisi ke `delivering`/`delivered` sekarang HANYA diizinkan role owner/manager/admin/super_admin (`delivery_override_role_required` kalau bukan) — sales/driver wajib lewat Delivery Verification asli. `processing`/`cancelled` tidak disentuh. `updateOrderStatusAction` (`lib/orders/actions.ts`) ditambah case eksplisit menerjemahkan outcome barunya. Diverifikasi lokal: `db reset` PASS, 4 skenario psql langsung (sales diblok processing→delivering, sales diblok →delivered, owner tetap bisa keduanya), test suite `orders`+`finance` 247/247 PASS (termasuk test baru di `update-order-status-guard.test.ts`), **end-to-end browser sebagai `sales@aodp.test`**: klik tombol "Kirim" pada order status Diproses → pesan error "Status Kirim/Terkirim hanya dapat diubah manual oleh Owner/Manager/Admin..." tampil di halaman, status order tetap "Diproses" (tidak berubah, blocking terbukti bekerja). | **PASS — LOKAL, terverifikasi psql + test suite + browser end-to-end, belum di-push** |
-| 2026-08-17 | `[TEMUAN]` **Gate P4.04 — audit visibility untuk override status pengiriman via tombol generik** (`0152422`, migration `20261007000001`) | Checkpoint #3 dari rencana 4-poin. `update_sales_order_status_atomic` (dipanggil tombol "Proses"/"Kirim"/"Tandai Terkirim") tidak pernah cek tabel `deliveries` sebelum izinkan status `delivering`/`delivered` — siapa pun ber-permission `orders.update` bisa "menandai terkirim" tanpa bukti apa pun, tanpa jejak yang membedakannya dari jalur Delivery Verification asli (temuan role-play UAT 2026-08-16). Diinvestigasi lebih dalam: jalur ini TERNYATA sengaja ada sebagai "override manusia yang valid" (komentar eksplisit migration `20260717000001`, `sync_sales_order_delivery_status`) — bukan bug, keputusan desain lama. Karena itu fix TIDAK memblokir jalur override (mengubah itu = keputusan bisnis, bukan teknis) — murni menambah observability: `audit_logs.new_data` sekarang merekam `delivery_verified`/`manual_override` untuk transisi delivering/delivered, logic dihitung identik `sync_sales_order_delivery_status` (dispatched/arrived/fully_received/partially_received/verified utk delivering; SUM `received_quantity` menutup penuh `sales_order_items.quantity` utk delivered) supaya konsisten dengan definisi "delivered" yang sudah locked. Diverifikasi: `supabase db reset` PASS (sempat gagal sekali karena `supabase_kong_AODP` unresponsive — masalah sama yang tercatat kemarin, fix `docker restart supabase_kong_AODP`), RPC dites langsung psql 3 skenario (tanpa evidence → override=true; item belum tertutup penuh → override=true; order tanpa item sama sekali → vacuously verified=true, sama seperti perilaku existing `sync_sales_order_delivery_status`, bukan bug baru). Full test suite: 2564/2565 PASS (1 gagal pra-existing tidak terkait, `telegram-enrollment-control.security.test.ts`, dikonfirmasi ulang lewat isolasi file). **Bonus temuan & fix sambil verifikasi**: `gate-2i2-workspace-containment.test.ts` ternyata GAGAL di `origin/main` (regresi sudah live di hosted) — refactor cetak-batch invoice (commit sebelumnya, `f006868`) memindahkan rendering tabel dari `finance/invoices/page.tsx` ke komponen baru `InvoiceSelectionTable`, assertion lama cuma baca `page.tsx` jadi salah gagal padahal semantiknya (DataTable, bukan `<table>` mentah) tetap benar. Diperbaiki dengan mengecek kedua file, bukan melonggarkan assertion. Sempat ada 1 test lain timeout (`gate-3e-d4-c3...concurrent APPROVE vs REJECT`) saat suite penuh dijalankan bersamaan — dikonfirmasi flaky (resource contention DB lokal saat banyak test paralel), PASS bersih 742ms saat dijalankan sendirian, tidak terkait perubahan ini. | **PASS — LOKAL, terverifikasi psql + full test suite, belum di-push** |
-| 2026-08-17 | `[TEMUAN]` **Koreksi: Gate P4.01/P4.02/P4.03 Fase A + document engine print/batch TERNYATA sudah live hosted, bukan "belum di-deploy"** | Checkpoint #2 dari rencana 4-poin (harusnya "push P4.01+P4.02 ke hosted") ternyata sudah tidak perlu — `git log origin/main` menunjukkan commit gate-gate itu (`fd5f410`, `a991806`, `acab3ac`, dst.) sudah ada di `origin/main` (tip `f006868`), dan `vercel inspect` mengonfirmasi deployment production 12 jam lalu persis match commit tsb, alias `aodp-waluyo-demo.vercel.app` aktif, health-check halaman login bersih. Root cause ketidaksesuaian: entri "Sedang Dikerjakan"/Log Milestone sebelumnya ditulis SEBELUM push terjadi dan tidak diupdate retroaktif setelah push (sesuai aturan #545 dokumen ini) — bukan bug produk, murni dokumentasi tracker yang basi. **Pelajaran**: `vercel ls`/`vercel inspect` (CLI sudah terinstall & project linked) harus jadi sumber kebenaran status deploy, bukan asumsi dari catatan tracker lama. | **DIKONFIRMASI LIVE — tidak ada push baru diperlukan untuk P4.01/P4.02** |
-| 2026-08-17 | `[TEMUAN]` **Commit 4 dokumen readiness Gate 3D-B3-F5 & 3E-D0 (hosted cleanup)** (`8ec2eb0`) | Founder minta diprioritaskan poin #1 dari rencana checkpoint (docs(readiness) commit). Menutup Backlog #7 (dokumen tereksekusi tapi tidak pernah di-commit) — runbook cleanup, execution SQL, hosted inventory, pre-cleanup snapshot sekarang tercatat di repo, isinya sudah dicek tidak mengandung secret/kredensial. | **DITUTUP — commit lokal, belum di-push** |
-| 2026-08-17 | `[TEMUAN]` **Fix bug: ikon amplop/telepon di header cetak pecah ke baris terpisah dari teksnya** (`components/document-engine/print.css`) | Founder laporkan teks email "harusnya disebelah logo amplop" -- ditelusuri dengan scale transform 3x via javascript inspection (bukan asumsi visual), terbukti ikon amplop rendering di baris sendiri, teks email di baris bawahnya (ikon telepon kebetulan tidak kelihatan pecah karena teks nomornya pendek, jadi kelihatan normal walau root cause sama). Root cause: Tailwind preflight men-set `svg { display: block }` secara global di seluruh app -- SVG ikon (`MailIcon`/`PhoneIcon` di `PrintDocumentPanel.tsx`) jadi block-level, memaksa line-break sebelum+sesudahnya, bukan render inline di sebelah teks. Percobaan pertama (`white-space: nowrap` di span) TIDAK memperbaiki -- dibuktikan salah lewat pengukuran `getBoundingClientRect()` sebelum menyimpulkan berhasil (root cause bukan soal wrapping teks). Fix final: `.doc-engine-contact-icon` diberi `display: inline-block` eksplisit, override preflight. Diverifikasi ulang dengan teknik scale-transform+screenshot yang sama -- ikon+teks sekarang sebaris persis seperti referensi Founder. Type-check bersih, tidak ada console error. | **PASS — LOKAL, terverifikasi browser (root cause diverifikasi via DOM measurement, bukan tebakan)** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Identitas company lokal diganti ke data tenant asli PT Sumber Warna Alam Sudiada + logo asli terpasang** (data-only + `apps/web/public/logos/pt-sumber-warna-alam-sudiada.jpeg` baru) | Founder kirim contoh header cetak asli (nama, alamat, email, telepon, logo bulat) dan minta header template dibuat seperti itu -- dikonfirmasi logo filenya memang sudah ada di repo (`docs/document-engine/assets/samples/waluyo/logo-pt-sumber-warna-alam-sudiada.jpeg`, dipakai sebagai fixture test `PhysicalPrintSheet.test.ts` sebelumnya, sekarang datanya sama persis dipakai ke company sungguhan). Header `PrintDocumentPanel.tsx` sendiri TIDAK diubah -- strukturnya sudah persis cocok dengan referensi (logo + nama hijau bold + alamat + email/telepon berikon), yang kurang cuma data company lokal masih placeholder seed ("AODP Dev Distributor") dan `logo_url` NULL. Fix: logo dicopy ke `apps/web/public/logos/` (dari `docs/` yang tidak public-servable) supaya bisa diakses `/logos/...`, lalu `companies` row lokal (`b253dc2a-...`) diupdate `name`/`legal_address`/`contact_email`/`contact_phone`/`logo_url` ke data asli PT Sumber Warna Alam Sudiada (script sekali-pakai, sudah dihapus). Ini konsisten dengan data SWAS (produk+pelanggan) yang sudah diimport sebelumnya ke company yang sama -- sekarang identitas company-nya sendiri juga otentik, bukan cuma isi datanya. Diverifikasi browser lokal: halaman print invoice (`AODPDEV-INV-20260816-000005`) menampilkan logo asli, nama, alamat, email, telepon persis sesuai referensi, tidak ada console error (gambar termuat). **Koreksi (masih sesi sama)**: Founder tunjukkan hasil belum sama persis -- root cause nama company salah ditulis Title Case ("PT Sumber Warna Alam Sudiada") padahal referensi ALL CAPS ("PT SUMBER WARNA ALAM SUDIADA", sama seperti fixture test `PhysicalPrintSheet.test.ts`); email/telepon yang tadinya terlihat bertumpuk 2 baris ternyata cuma artefak viewport screenshot sempit (700px), bukan bug CSS -- di viewport lebar (`display:flex` di `.doc-engine-company-contact`) keduanya sebaris seperti seharusnya. Nama diperbaiki ke ALL CAPS via script sekali-pakai (sudah dihapus), diverifikasi ulang di viewport lebar (1300px) -- sekarang identik dengan referensi. **Belum ada UI upload logo di Settings** (gap pra-existing, sudah tercatat sebelumnya) -- perubahan ini isi langsung ke DB, bukan lewat form. | **PASS — LOKAL, terverifikasi browser (setelah 1 koreksi casing)** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Tombol "Cetak Sekarang" di halaman print invoice (single & batch)** (`components/document-engine/print-now-button.tsx` baru, `finance/invoices/[id]/print/page.tsx`, `finance/invoices/print-batch/page.tsx`) | Founder tanya (murni tanya dulu) kenapa tidak ada tombol print/pengaturan printer dot-matrix di halaman cetak. Dijelaskan: pengaturan printer (driver, continuous-form feed, alignment, port) memang di luar jangkauan web app mana pun -- itu level OS/driver, browser cuma bisa panggil dialog print sistem. Yang realistis ditambahkan cuma shortcut tombol supaya tidak perlu tahu Ctrl+P -- Founder minta ditambahkan. Komponen client kecil `PrintNowButton` (`window.print()`, fixed bottom-right, `print:hidden` supaya tombolnya sendiri tidak ikut tercetak) dipasang di kedua halaman print (single & batch). Diverifikasi browser lokal: tombol muncul di kedua halaman, diklik tidak error di console (dialog print native OS tidak bisa di-screenshot lewat automation, tapi tidak ada exception JS). Type-check bersih. | **PASS — LOKAL, terverifikasi browser** |
-| 2026-08-17 | `[REQUEST FOUNDER]` **Cetak Invoice Batch — pilih banyak invoice, cetak sekaligus 1 lembar fisik continuous form** (`lib/finance/print-snapshot.ts` baru, `components/finance/invoice-selection-table.tsx` baru, `finance/invoices/print-batch/page.tsx` baru, `finance/invoices/page.tsx`, `finance/invoices/[id]/print/page.tsx`) | Lanjutan langsung dari penyambungan `PhysicalPrintSheet.tsx` (baris di bawah) -- Founder konfirmasi pola cetak nyata di lapangan adalah **sekaligus/batch**, bukan satu-satu real-time, jadi 2 invoice pendek yang sebelumnya masing-masing membuang panel bawah kosong sekarang bisa berbagi 1 lembar fisik (hemat kertas karbon 3 rangkap). Diaudit dulu: sebelum ini TIDAK ADA UI multi-pilih sama sekali di manapun (daftar invoice cuma tautan "Lihat/Cetak Invoice" satu-satu), jadi ini fitur baru genuinely, bukan sekadar nyambungin gate lama. `buildPrintSheets()` sendiri sudah didesain sejak awal untuk multi-dokumen (sudah punya test "dua transaksi berbeda menempati panel atas dan bawah" + guard `CrossTenantBatchError`), jadi Document Engine TIDAK disentuh sama sekali. Yang dibangun murni lapisan aplikasi baru: (1) `lib/finance/print-snapshot.ts` -- extract `fillMissingIdentities`+`getInvoicePrintViewModel` dari `[id]/print/page.tsx` (sebelumnya private ke file itu) jadi helper dipakai bersama oleh print single & batch, DRY, tidak ada logic baru; (2) `InvoiceSelectionTable` (client component) -- checkbox per baris (desktop table via kolom baru di `DataTable`, mobile via card), "Pilih semua di halaman ini", sticky action bar "N invoice dipilih" + tombol "Cetak Terpilih" (buka tab baru ke `print-batch?ids=...`) -- selection murni state lokal per page-load, sengaja tidak dipersist (scope-nya "pilih-cetak-selesai", bukan draft); (3) `print-batch/page.tsx` -- baca `?ids=`, urutkan invoice berdasar nomor invoice (bukan urutan klik user, supaya batch yang sama selalu hasilkan susunan lembar fisik yang sama persis), invoice yang belum punya `issued_documents` aktif di-skip dengan banner peringatan (bukan menggagalkan seluruh batch). Halaman `[id]/print/page.tsx` (single) direfactor pakai helper yang sama, tidak ada perubahan perilaku. Sempat ketemu 1 masalah infrastruktur SAAT verifikasi (bukan bug kode): Kong gateway lokal (`supabase_kong_AODP`) sempat unresponsive (connection accepted lalu "empty reply", root cause tidak dikonfirmasi -- kemungkinan terkait `supabase_vector_AODP` yang crash-loop bersebelahan) sehingga login browser sempat gagal "Email atau password tidak valid" walau password benar -- diperbaiki dengan `docker restart supabase_kong_AODP` (infra lokal saja, tidak ada data tersentuh), lalu reset password `owner@aodp.test` lewat script sekali-pakai (sudah dihapus) karena tidak yakin password lama sebelum insiden. Diverifikasi end-to-end browser lokal: pilih 2 invoice (`AODPDEV-INV-20260816-000001` & `000002`) di daftar, klik "Cetak Terpilih", 1 lembar fisik tampil dengan invoice 000001 di panel atas + 000002 di panel bawah, urutan & angka benar, server log 200 bersih tanpa error setelah reload. Type-check bersih di seluruh file yang disentuh. | **PASS — LOKAL, terverifikasi browser end-to-end** |
-| 2026-08-16 | `[TEMUAN]` **Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx` (2 panel/lembar, continuous form 3 ply)** (`app/(dashboard)/dashboard/finance/invoices/[id]/print/page.tsx`) | Founder minta ditunjukkan dulu hasil cetak invoice yang sekarang sebelum bahas gap dot-matrix — dikonfirmasi visual browser lokal (1 panel penuh A4-style), lalu ditunjukkan juga bentuk `PhysicalPrintSheet.tsx` (2 panel 5.5in/lembar, sudah lengkap+lulus test sejak sebelumnya tapi TIDAK PERNAH dipanggil dari route app manapun) via render sekali-pakai (script sementara, sudah dihapus) dari 2 invoice asli lokal. Founder konfirmasi eksplisit: printer Pak Waluyo memang **continuous form 3 ply**, jadi gap ini nyata (layout A4 penuh salah kalau dicetak ke kertas roll 5.5in/panel) — bukan cuma gap kalau-kalau. Diminta kerjakan sekarang. Fix: halaman print diganti dari render `PrintDocumentPanel` satuan berurutan (loop `paginatePrintDocument`) jadi `buildPrintSheets([viewModel])` + `<PhysicalPrintSheet sheet={...}>` per lembar fisik — murni penyambungan, TIDAK ada perubahan pada komponen/CSS Document Engine itu sendiri (sudah LOCKED sejak 23 Juli 2026). Untuk 1 invoice yang dicetak sendirian, panel bawah otomatis kosong (`EmptyPrintPanel`, bukan dummy document) sesuai desain yang sudah ada. Field `documentVersion` yang sebelumnya dithread manual dari `docRow.version` dihapus dari pemanggilan (dicek dulu: field itu tidak pernah dirender di `PrintDocumentPanel.tsx` sama sekali, jadi tidak ada regresi tampilan). Diverifikasi browser lokal: invoice `AODPDEV-INV-20260816-000005` (TK YATI) tampil di panel atas, panel bawah kosong bersih, server log bersih setelah HMR recompile (3 request terakhir 200 tanpa error). Batch-print (banyak invoice berbeda mengisi 1 lembar bersama) BUKAN scope perubahan ini — route yang ada memang cetak 1 invoice per panggilan. | **PASS — LOKAL, terverifikasi browser** |
-| 2026-08-16 | `[TEMUAN]` **Audit (role-play lokal Tahap 3-6): 3 gap "all-in sales" (order+kirim+tagih) + laporan status Proof Payment & Collection Intelligence** (investigasi, 1 fix kecil dilakukan) | Founder jelaskan konteks bisnis: sebagian distributor punya sales "all-in" (terima order + antar barang + nagih sendiri, kasus Pak Waluyo) berbeda dari yang cuma terima order. Diaudit ke kode, 3 temuan: **(1) FIXED** -- `TELEGRAM_PAIRING_ELIGIBLE_ROLES` (`lib/telegram-enrollment/capability.ts`) tidak menyertakan role `driver`, padahal `docs/architecture/TELEGRAM_SALES_ORDER_ENTRY.md` sudah lama menyatakan driver "memakai mekanisme yang sama persis" dengan sales untuk pairing Telegram -- akibatnya halaman Pengguna tidak pernah menampilkan tombol "Buat tautan Telegram" untuk role driver sama sekali, dan "Assign & Kirim Tugas" di order detail SELALU gagal "Driver ini belum terdaftar di Telegram" tanpa ada jalur perbaikan. Ditambahkan `driver` ke array (TIDAK ditambahkan ke `CAPABILITY_ROLES` manapun -- pairing beda dari capability password-reset/order-intake). Diverifikasi: tombol muncul di halaman Pengguna, test `capability.test.ts` (termasuk test baru: driver eligible pairing TAPI tidak dapat capability apa pun) + `page.security.test.ts` PASS. **(2) DICATAT, belum diputuskan** -- dropdown "Assign driver" (`orders/[id]/page.tsx`) `.filter(role === "driver")` ketat -- sales yang antar order sendiri TIDAK otomatis muncul di situ. AODP sudah mendukung 1 user multi-role (`user_roles` many-to-many), jadi solusi teknisnya kemungkinan besar operasional (tambahkan role `driver` ke akun sales "all-in", bukan bikin akun kedua) -- bukan perubahan kode, tapi belum dieksekusi/diputuskan. **(3) DICATAT, keputusan produk** -- permission `payment.record` (migration `20260829000001`, RPC `record_verified_payment_atomic`) HANYA `owner`/`finance`, eksplisit TIDAK termasuk `sales`/`driver`/`manager`/`admin` (lebih sempit dari pola izin finance lain, sesuai instruksi gate aslinya). Sales "all-in" yang terima cash langsung dari toko TIDAK PUNYA jalur mencatatnya sendiri di sistem manapun (Web maupun Telegram) -- ini genuinely kosong, bukan bug, tapi kontrol internal (siapa boleh catat uang masuk) yang butuh keputusan Founder, bukan diputuskan sepihak. Sambil audit, dilaporkan juga status 2 hal yang ditanya Founder (murni laporan, TIDAK diimplementasikan apa pun): **Proof Pembayaran** (Gate 2D, migration `20260829000001`) -- RPC + UI (`RecordPaymentPanel`) sudah ada, tapi bukti pembayaran cuma 2 text field (jenis bukti + referensi/tautan), **BUKAN widget upload foto/file** (komentar migration eksplisit: "belum ada storage-upload primitive di design system, di luar scope"). **Collection Intelligence** (Gate 2I.2, `/dashboard/finance/collection`) -- promise-to-pay + riwayat aktivitas collection sudah jalan (41 test collection-promise-foundation PASS per audit workflow doc sebelumnya), tapi Business Guard "Collection Risk" (skor risiko piutang macet proaktif) masih kosong sama sekali (baru ada slice #1 discount anomaly) -- Owner masih harus pantau manual, belum ada alert otomatis. | **PASS (fix #1) + 2 TEMUAN dicatat untuk keputusan Founder** |
-| 2026-08-16 | `[TEMUAN]` **Fix bug: mengunci periode KPI mematikan seluruh Dashboard Owner + rewire ranking Laporan Sales ke target governed asli** (`lib/dashboard/owner-sales-kpi-performance.ts`, `lib/executive/contributors/flowsales.ts`, `reports/page.tsx`, `reports/[id]/page.tsx`) | Founder benar menegur: sesi sebelumnya sempat menghapus kolom Target/Gap/Pencapaian dari tabel ranking "Performa Sales" karena isinya "—" semua, alih-alih memperbaiki sumbernya. Root cause ganda ditemukan: (1) kolom itu kosong karena dijumlahkan dari `sales_reports.target_revenue` yang MEMANG sengaja 0 sejak Gate P4.03 (tidak ada "target harian") -- padahal target ASLI per-periode sudah ada di `sales_kpi_targets` (diisi via KPI Setup), cuma tidak pernah disambungkan ke halaman ini. (2) Sambil investigasi, ditemukan bug jauh lebih besar: begitu Founder klik "Kunci Periode" (LOCKED) di KPI Setup, `getOwnerSalesKpiPerformance()` (dipakai Dashboard Owner) dan `flowsalesContributor` (Executive Intelligence) query periodenya `.eq("status", "ACTIVE")` -- LOCKED dianggap "tidak ada periode", SELURUH tile governed (Call/EC/Order/Omzet/NOO/Gap) di Dashboard Owner jatuh ke "Data belum cukup", dan **Business Health Score salah tampil 87/100 "Bisnis Sehat"** padahal angka asli 45/100 "Perlu Tindakan Segera" (pencapaian omzet cuma 4%) -- locked SEHARUSNYA cuma berarti "target tidak bisa diedit lagi", BUKAN "sembunyikan datanya dari laporan". Fix: kedua query diganti `.in("status", ["ACTIVE","LOCKED"])` + `.order("end_date", {ascending:false}).limit(1)` supaya tetap ambil periode paling relevan kalau ada lebih dari satu baris non-DRAFT. `findActivePeriod()` (dipakai jalur TULIS -- rekam Call, set target baru) SENGAJA TIDAK ikut diubah, tetap ACTIVE-only -- itu benar, periode terkunci memang seharusnya menolak input baru. Ranking "Performa Sales" di `reports/page.tsx` dirombak: tidak lagi menjumlah dari snapshot `sales_reports` (cuma selengkap laporan yang sempat difile hari itu, bisa understate kalau ada hari bolong), sekarang ditarik langsung dari `getOwnerSalesKpiPerformance()` -- SAMA PERSIS sumbernya dengan Dashboard Owner/KPI Setup, jadi Target/Gap/Pencapaian selalu ada dan tidak pernah beda dari yang Owner lihat di tempat lain. Kolom "OA" di-rename jadi "Order" (lebih jujur, sejak Gate P4.03 memang berisi Order Count bukan Outlet Aktif). Tabel "Laporan Terbaru" (daftar per-hari, terpisah dari ranking) disederhanakan: kolom Gap & Grand Total dihapus -- sebelumnya menampilkan 2 angka Rupiah berbeda (Omzet governed vs Grand Total item-only) tanpa penjelasan, membingungkan. Semua header tabel di 3 halaman Laporan Sales diberi warna (bg-blue-50/text-blue-700) atas permintaan Founder. Diverifikasi browser lokal: Dashboard Owner Business Health kembali benar (45/100), ranking Laporan Sales tampil Target Rp100jt/Gap/Pencapaian per sales sesuai KPI Setup. Test regresi: 14/14 PASS (gate-owner-bi-a/b/c, file yang paling relevan dengan perubahan), full suite diulang sebelum push. | **PASS — LOKAL, bug signifikan tertutup** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **KPI Setup: "Hari Kerja" otomatis + fix layout alasan target yang nyasar** (`components/sales-kpi/kpi-setup-view.tsx`) | (1) Field "Hari kerja" di form buat periode KPI dicek dulu ke kode -- ternyata TIDAK dipakai di perhitungan pacing/achievement manapun (`computeAchievementLine` murni pakai `daysBetween` kalender, bukan working_days), cuma disimpan+divalidasi saat periode dibuat. Sesuai arahan Founder ("kalau tidak berdampak, hilangkan saja"): field dihapus dari tampilan, dihitung otomatis di background (hari kalender dikurangi Minggu) sebelum dikirim ke RPC -- tidak ada perubahan DB/RPC. (2) Founder screenshot laporkan kartu tiap Salesman di KPI Setup menampilkan 2 kotak "Alasan perubahan" berturutan di bagian NOO, tanya apakah ada alasan kuat. Ditelusuri ke kode: BUKAN by design -- blok alasan+tombol "Simpan Target" untuk Call/EC (seharusnya menempel di bawah input Call/EC paling atas) salah taruh di paling bawah JSX komponen, setelah blok Order Count/Revenue DAN blok NOO, tanpa label pembeda sehingga terlihat seperti milik NOO. Fix: blok dipindah ke lokasi yang benar (langsung di bawah input Call/EC), pola 3 section (Call+EC / Order Count+Revenue / NOO) sekarang masing-masing konsisten punya 1 alasan+1 tombol miliknya sendiri, tidak ada lagi yang nyasar. Diverifikasi visual browser lokal (Sales Pertama, Salma) -- struktur benar, type-check bersih. | **PASS — LOKAL, terverifikasi visual** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **Data operasional lokal: import 142 produk + 291 pelanggan SWAS, 3 Wilayah Penjualan, KPI Setup 3 sales** (data-only, tanpa perubahan kode/migration) | Founder minta data lokal (`AODP Dev Distributor`) diisi lebih realistis pakai data asli tenant Waluyo untuk keperluan demo, sebelum lanjut setting Laporan Sales/KPI. (1) Import via jalur resmi Universal Data Onboarding (`stageUploadedFile`/`validateStagedBatch`/`commitBatch`, sama persis dipanggil `uploadImportFileAction`/`commitImportBatchAction` -- browser tidak bisa drive file upload native jadi dipanggil langsung lewat script service-role, bukan bypass validasi): `DAFTAR ALL ITEM SWAS.xls` (dikonversi ke `.xlsx` dulu, `.xls` lama ditolak sistem) -> 142 produk (`PRODUCT_PRICE`, semua nonaktif karena file sumber tidak punya kolom harga -- perilaku by-design, bukan gagal), `NAMA PELANGGAN SWAS.xlsx` -> 291 pelanggan (`CUSTOMER_PIC`, 0 error/warning, PIC memang opsional penuh untuk import ERP massal). (2) 3 Wilayah Penjualan dibuat + di-assign 1:1 ke Waluyo/Salma/Sales Pertama via RPC resmi (`create_coverage_area`, `assign_salesman_coverage_areas`, actor=Owner asli) -- 292 pelanggan dibagi RANDOM rata (98/97/97) ke ketiga sales (`assigned_sales_id`+`coverage_area_id` diset konsisten), sesuai permintaan eksplisit Founder (bukan dicocokkan ke kota asli toko). (3) Periode KPI "Agustus 2026" dibuat+diaktifkan, 5 target (Call 15/EC 15/Order Count 15/Revenue Rp100jt/NOO 3) diisi utk ketiga sales via RPC resmi `set_sales_kpi_target` (sama dipakai tombol UI) -- angka dipilih CTO untuk konsistensi demo (sama pola dgn target hosted Waluyo sebelumnya), bukan keputusan bisnis final. Semua RPC dipanggil dgn service-role tapi actor_id = user asli (Owner/Admin), bukan bypass permission check di level RPC. Diverifikasi browser (Import Data batch detail, halaman Produk/Pelanggan, Wilayah Penjualan, KPI Setup) -- semua angka cocok. | **PASS — LOKAL SAJA, data-only** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **Gate P4.03 — Redesain Laporan Sales Fase A: ringkasan KPI harian otomatis, hapus double-entry** (`lib/sales-reports/{queries,actions,summary}.ts`, `components/sales-reports/sales-report-form.tsx`, `reports/{new,[id],}/page.tsx`, `lib/executive/contributors/flowsales.ts`) | Founder minta gap "Laporan Sales" (sudah diidentifikasi & rencananya diterima sebelumnya, lihat § Ditunda/Berikutnya lama) langsung dikerjakan. Scope Fase A saja (paling kecil & aman): form `reports/new` TIDAK LAGI minta sales ketik ulang `target_oa`/`achieved_oa`/`target_revenue`/`achieved_revenue`/item produk -- SENGAJA TIDAK termasuk 3 kebutuhan tambahan dari voice note Pak Waluyo (jadwal WhatsApp otomatis, field "Tagihan", laporan pagi terpisah), itu masih di "Ditunda" menunggu keputusan Founder. Query baru `getDailyGovernedKpiSummary()` baca `sales_kpi_achievement_events` (ledger yang SAMA dipakai dashboard Owner) di-scope 1 hari, dan `getDailySoldItems()` agregasi `sales_order_items` utk breakdown produk (governed KPI tidak resolusi per-produk). Server (`createSalesReportAction`) TIDAK PERNAH percaya angka dari client -- dihitung ulang dari ledger saat submit, form cuma kirim `area`/`remaining_working_days`/`notes`. Panel "Ringkasan KPI Hari Ini" di form live-refetch (server action `getDailyReportPreviewAction`) tiap tanggal/salesperson diganti -- diverifikasi browser: pilih sales lain langsung update Call/EC/Order/Omzet/NOO + daftar produk terjual sesuai data order sungguhan hari itu. **Tidak ada migration DB** (sesuai rencana awal) -- kolom lama `target_oa`/`achieved_oa`/`target_revenue`/`achieved_revenue` tetap ada, sekarang diisi 0 (target, jujur "tidak ada konsep target harian") dan angka governed asli (achieved) alih-alih diketik manual. Halaman list (`reports/page.tsx`) & ranking bulanan disesuaikan supaya tidak menampilkan badge "100%" palsu saat target=0 (cuma tampil kalau ada laporan lama pre-redesain yang masih bawa target manual asli). Halaman detail (`reports/[id]/page.tsx`) hapus section "Pembanding dari Sales Order" (jadi redundant -- angka achieved SEKARANG MEMANG angka order asli, bukan lagi self-report yang perlu dibandingkan) diganti panel governed KPI yang sama seperti di form, dihitung ulang live dari ledger (append-only, jadi konsisten walau dipanggil ulang kapan saja, termasuk utk laporan lama). **Bonus fix ditemukan sambil verifikasi**: teks placeholder "Ringkasan" (`buildAiSummaryPlaceholder`) awalnya masih klaim "Pencapaian omzet Rp X dari target Rp 0 (100%)... Target omzet sudah tercapai" -- menyesatkan karena target memang sengaja 0. Diganti narasi netral dari angka governed langsung ("N effective call dari M kunjungan, menghasilkan K order senilai Rp X"). Diverifikasi end-to-end browser lokal 2 skenario: sales dengan aktivitas hari itu (order dibuat+dikonfirmasi live saat testing, panel menampilkan Order 3/Omzet Rp1.625.709/NOO 1/2 produk benar) dan sales tanpa aktivitas (semua 0, teks ringkasan tetap jujur, bukan dikarang). `getOrdersSnapshot()` (dead code setelah redesain ini) dihapus. Type-check bersih. **Regresi ditemukan & diperbaiki dari test suite penuh**: percobaan awal mengganti label tile "OA Bulan Ini" di Executive Intelligence (`flowsales.ts`) jadi netral (menghapus "Self-Report — Legacy") menabrak test terkunci `gate-owner-bi-b-governed-kpi-consolidation.integration.test.ts` -- setelah ditelaah ulang, test itu BENAR: kolom `achieved_oa` yang dijumlah tile ini masih tercampur antara laporan BARU (governed, akurat) dan laporan LAMA pre-redesain (self-report bebas, bisa ekstrem seperti skenario test `achieved_oa=500`) -- SUM bulanan tidak bisa membedakan asalnya, jadi label "Legacy" tetap wajib dipertahankan supaya tidak diam-diam dianggap governed. Fix final: label dikembalikan ke "OA Bulan Ini (Self-Report — Legacy)", HANYA bagian tampilan pecahan `X/0` yang diperbaiki (jadi `X` saja, karena target harian memang sengaja 0). Test suite penuh diulang setelah fix: 2563/2564 PASS (1 gagal pra-existing tidak terkait, sama seperti baseline sebelum sesi ini). **Belum ada automated test untuk modul `sales-reports`** (gap pra-existing, bukan baru) -- dicatat sebagai susulan. Sisa scope: Fase B (3 kebutuhan voice note) masih di "Berikutnya". | **PASS — LOKAL, terverifikasi browser + test suite penuh** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **Gate P4.02 — payment_terms_days: sambungkan input "Termin Pembayaran" ke form order** (`supabase/migrations/20261006000001_gate_p4_02_payment_terms_days_order_input.sql`, `lib/orders/actions.ts`, `components/orders/order-form.tsx`) | Lanjutan langsung dari temuan audit template invoice (baris di bawah) -- Founder minta gap "Tempo" ditutup sekarang juga. Investigasi lebih dalam: kolom `sales_orders.payment_terms_days` sudah ada sejak migration `20260812000003`, dan seluruh lapisan Document Engine (`issue_invoice_atomic` menulis `snapshot.paymentTermsDays`, `print-view-model.ts` menghitung `dueDateLabel`/"Tempo" darinya) sudah lengkap & benar -- gap SEMPIT-nya cuma satu: tidak ada jalur (UI maupun parameter RPC create/update) untuk MENGISI kolom itu. `confirm_sales_order_atomic` sudah punya parameter `p_payment_terms_days` tapi satu-satunya caller (`orders/actions.ts`) hardcode `null`. Fix murni ADDITIVE, pola identik Gate P4.01: `p_payment_terms_days INTEGER DEFAULT NULL` ditambah ke `create_sales_order_atomic`/`update_sales_order_atomic` (DROP+CREATE eksplisit, bukan overload), field baru "Termin Pembayaran / Tempo (hari, opsional)" di `order-form.tsx` dengan validasi client-side (harus > 0 kalau diisi, cermin CHECK constraint DB), di-thread lewat `OrderFormData`. `confirm_sales_order_atomic` TIDAK disentuh -- parameternya sendiri sudah preserve nilai existing kalau dikirim null saat konfirmasi, jadi nilai yang diisi saat create otomatis terbawa. Diverifikasi end-to-end lokal: order baru `SO-2608-0004` dibuat lewat form dengan Termin 14 hari -> dikonfirmasi ke DB `payment_terms_days=14` tersimpan -> order dikonfirmasi, delivery dibuat via RPC (`create_delivery_atomic` dst., driver akun baru `driver@aodp.test` -- dropdown "Assign driver" di UI Delivery Verification juga sudah menampilkannya, walau assign lewat UI tetap gagal karena "belum terdaftar di Telegram", gap lama yang sudah tercatat, bukan baru) -> `issue_invoice_atomic` -> invoice `AODPDEV-INV-20260816-000002` terbit -> halaman print menampilkan **"Tempo: 30 Agustus 2026 (14 Hari)"** dengan benar. `type-check` bersih dari error terkait perubahan ini (error lain yang muncul di run yang sama sudah pra-existing, tidak tersentuh perubahan ini). Test suite penuh diulang setelah kedua commit sesi ini: 2563/2564 PASS (1 gagal pra-existing tidak terkait, `telegram-enrollment-control.security.test.ts`). | **PASS — LOKAL, terverifikasi end-to-end** |
-| 2026-08-16 | `[TEMUAN]` **Audit template invoice: logo tenant + "Pengirim" salah tampil "Owner"** (`scripts/seed-dev.ts`, data-only) | Founder tanya kenapa logo tenant tidak tampil di halaman print invoice lokal dan kenapa kartu "Pengirim" menampilkan "Owner AODP". Dicek ke kode: `PrintDocumentPanel.tsx` sudah benar (fallback ke tanpa-logo kalau `companies.logo_url` NULL) -- gap murni data-seed lokal (`scripts/seed-dev.ts` tidak pernah mengisi `logo_url`), bukan bug dan bukan spesifik demo-lokal vs hosted. Belum ada UI upload logo di Settings (baru bisa isi langsung ke DB) -- dicatat sebagai gap terpisah, belum masuk scope perbaikan. "Pengirim" = "Owner AODP" dikonfirmasi ke DB: delivery `SO-2608-0002` (`aea02467-...`) `assigned_driver_id`-nya memang akun Owner -- sisa dari pembuktian RPC Tahap 3-6 sesi lalu yang terpaksa pakai akun Owner sebagai stand-in karena belum ada akun berrole `driver` di seed lokal (role `driver` sendiri sudah ada resmi di tabel `roles`). Perbaikan: tambah 4 user baru di `scripts/seed-dev.ts` (`driver@aodp.test`, `salma@aodp.test`, `waluyo@aodp.test`, `admin@aodp.test`, semua password `Aodp2026!`) lalu delivery direassign ke akun driver baru via service-role, dikonfirmasi visual browser lokal ("PENGIRIM" -> "Kurir Pertama"). **Bonus fix sambil mengerjakan**: `scripts/seed-dev.ts` ternyata sudah gagal total di awal sesi ini (2 bug pra-existing belum ke-commit dari sesi sebelumnya) -- (1) lookup user by email pakai `nextPage`/`lastPage` dari GoTrue lokal yang saling kontradiktif akibat 173 user leftover integration test, diganti hitung berdasar panjang hasil aktual; (2) `upsert` role owner menabrak trigger `enforce_single_owner_per_company` (Gate 3D-B1) yang fire di setiap `UPDATE OF role_id/company_id` walau nilai identik, diganti cek-dulu-baru-insert. Tanpa 2 fix ini script seed tidak bisa jalan sama sekali untuk siapa pun. Commit `4404ceb`. | **PASS — LOKAL SAJA (commit dev-tooling, tidak di-deploy)** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **Push 13 commit ke `origin/main` + deploy hosted** (`f13d594..429f63f`, deployment `dpl_CaLp9UDSxavqNNPZoKZyTeQWDjW7`) | Founder approve push setelah fix bug 500 (root cause RLS-blind `generateOrderNumber()`) selesai diverifikasi lokal. Isi: fix bug 500 order creation, Gate P4.01 (`requested_delivery_date` utk AI Dispatch Planner + konsolidasi field tanggal), fix role-aware "Sales yang Menangani" + query roles yang lama rusak, fix listbox pencarian pelanggan, halaman baru Lihat/Cetak Invoice, hapus menu sidebar "Collection". Dicek via `vercel ls`/`vercel inspect --wait`: build production baru selesai **Ready**, ter-alias ke `aodp-waluyo-demo.vercel.app`. Verifikasi fungsional di hosted (reproduksi skenario order yang dulu gagal 500) belum dilakukan sesi ini — menunggu Founder login manual. | **PASS — DEPLOY READY, verifikasi fungsional hosted menyusul** |
-| 2026-08-16 | `[REQUEST FOUNDER]` **`docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` baru — peta order-to-cash per tahap + status PASS/gap** | Founder minta workflow rinci dari sales buat order sampai tagihan lunas, supaya bisa melacak tahap mana yang belum PASS. Diaudit langsung ke kode (3 Explore agent paralel: order→dispatch, invoice→pelunasan, inventaris gate existing) — bukan menyalin asumsi dari dokumen lama. 9 tahap dipetakan (order dibuat → harga khusus → konfirmasi → dispatch → delivery verification → invoice → payment/collection → lunas → retur/cancel), masing-masing dengan mekanisme RPC/tabel, status, dan gate reference. Ditemukan 1 ketidaksesuaian: Constitution menyebut Delivery Verification "next target" tapi ternyata gate-nya sudah closed 2026-07-16 (dikonfirmasi baca langsung `AODP_DELIVERY_VERIFICATION_IMPLEMENTATION_GATE.md`) — Constitution-nya yang belum update bahasa, bukan gap nyata. 5 gap nyata teridentifikasi & di-rollup di bagian atas dokumen: Owner Approval Inbox UI belum ada, Dispatch Planner belum punya gate readiness resmi, Business Guard Collection Risk belum diimplementasi (baru slice discount anomaly), REVENUE governed belum reconcile credit note/return (sudah ada di Backlog #11), NOO belum reversal saat toko pembuka dibatalkan (sudah ada di Backlog #6b). Ditautkan dari `CLAUDE.md` § Sumber Kebenaran dan `TRACKER.md` § Referensi. | **SELESAI** |
-| 2026-08-15 | `[REQUEST FOUNDER]` **Restrukturisasi TRACKER.md + `docs/development/WORKFLOW.md` baru** | Founder menilai pengerjaan project "lompat-lompat dan bolong-bolong". Root cause dikonfirmasi lewat audit tracker: tidak ada bagian prospektif (cuma log retrospektif), banyak temuan besar tidak sengaja bukan dari rencana, skema Gate ID sudah terlalu dalam, dokumen gate kadang tidak ke-commit, keputusan pending tidak punya penanda. Perbaikan: tambah section Sedang Dikerjakan/Berikutnya/Ditunda, tagging asal kerja, dokumentasi eksplisit branch production (`main`) setelah insiden salah push ke branch demo hari ini, dan dokumen alur kerja baru `docs/development/WORKFLOW.md`. | **SELESAI** |
-| 2026-08-15 | `[REQUEST FOUNDER]` **Dashboard Owner: badge insight/tindakan jadi clickable + Aksi Cepat diganti sesuai scope owner** (`apps/web/src/app/(dashboard)/dashboard/owner/page.tsx`, commit `7fc7875`) | Founder laporkan 2 masalah dari screenshot: (1) badge "Perlu Tindakan Segera" tidak ada aksi — diperbaiki jadi link yang scroll ke daftar Tindakan Direkomendasikan. (2) Aksi Cepat di hero (Laporan Sales/Buat Order/Pelanggan Baru/Import Data) semuanya tugas data-entry sales/admin, bukan tugas owner — bertentangan dengan prinsip Owner First (Constitution §10, "AI merekomendasikan, owner memutuskan"). Diganti ke Risk Alert/Kelola Pengguna/Laporan Sales (lihat)/Pengaturan, dikonfirmasi Founder via pilihan eksplisit sebelum eksekusi. Sempat salah push ke branch `aodp-architecture-demo-v0.1` (dikira branch demo) — ternyata cuma bikin Preview deployment; production Vercel ternyata dari `main`, dikonfirmasi lewat GitHub Deployments API, lalu di-push ulang ke `main` dan dikonfirmasi live. | **PASS — LIVE DI HOSTED** |
-| 2026-08-15 | **KPI Salesman UI: kartu achievement berwarna penuh + clickable** (`apps/web/src/components/sales-kpi/kpi-achievement-view.tsx`) | Permintaan Founder atas screenshot dashboard KPI Salma: warna status (Tertinggal/Sesuai Target/Di Atas Target) sebelumnya cuma di badge kecil pojok kartu, dan kartu tidak bisa diklik. Perbaikan: background+border seluruh kartu sekarang ikut warna pacing status (amber/hijau/biru/abu2), progress bar ikut tone yang sama. Order Count & Revenue jadi link ke `/dashboard/orders` (filter sales+status=confirmed+rentang tanggal periode aktif), NOO jadi link ke `/dashboard/customers` (filter sales) -- keduanya reuse filter query param yang sudah ada di halaman itu, tanpa halaman baru. Call/Effective Call HANYA diberi link ke `/dashboard/sales-visits` saat user melihat achievement dirinya sendiri (halaman itu role-gated khusus sales, self-only) -- saat Owner/Manager melihat achievement salesman lain, dua kartu itu sengaja TIDAK diberi link (tidak ada halaman aman utk drill-down lintas-salesman saat ini, daripada silent-redirect yang membingungkan). Diverifikasi visual di browser lokal dgn data KPI fiktif (target+order dibuat via RPC yg sama seperti produksi): warna kartu sesuai status dikonfirmasi lewat computed style, link Order Count/Revenue/NOO diklik dan berhasil navigasi+filter dengan benar. Lint bersih. Push `a4d809d..7cf598c`, auto-deploy Vercel commit `7cf598c` confirmed Ready ("Compiled successfully"). Tidak ada migration (murni UI). | **PASS — LIVE DI HOSTED** |
-| 2026-08-15 | **Data backfill hosted: 5 kredit NOO Salma yang hilang akibat timing deploy trigger** (data-only, tanpa migration/code change) | Temuan (dicek atas pertanyaan Founder "apa cara dapat achievement NOO"): akun sales nyata "Salma" (tenant PT Sumber Warna Alam Sudiada) punya 5 toko dengan order pertama sudah `confirmed` (6 Agustus) dan `ORDER_COUNT`/`REVENUE` sudah ter-kredit benar, tapi `NOO = 0` utk semuanya. Root cause dikonfirmasi lewat live-test langsung ke hosted: trigger `credit_noo_for_sales_order` (migration `20260930000001`) berfungsi normal HARI INI (toko+order baru fiktif langsung ter-kredit) -- gap murni historis: trigger di-deploy ke hosted SETELAH 5 order pertama Salma itu confirmed, dan trigger tidak retroaktif + tidak bisa re-fire (constraint "1x NOO seumur hidup per customer" sudah "kehabisan jatah" di order pertama yang lolos). Temuan kedua: target KPI yang diisi Founder minggu lalu (Call/EC/Order Count 15, Revenue 100jt, NOO 3) ternyata masuk ke akun **"Waluyo"** (sales terpisah, dikonfirmasi Founder itu memang benar akun sales Pak Waluyo sendiri) -- BUKAN ke akun Salma, yang justru nyata closing order dan sampai saat ini 0 dari 5 KPI code py target. Backfill NOO disetujui Founder (approve eksplisit via AskUserQuestion): insert 5 baris `NOO CREDITED` lewat service_role, bentuk baris identik output trigger asli (`idempotency_key = noo:<customer_id>`, `source_type=SALES_ORDER`, `order_id`/`business_date` merefer order asli), didahului pre-flight check per baris (order status confirmed, sales_id=Salma, benar order PERTAMA customer itu -- tidak ada confirmed order lain lebih awal, belum ada baris NOO existing) supaya tidak mungkin dobel-kredit atau salah order. 5/5 berhasil, diverifikasi ulang query fresh setelah insert. Susulan: Founder minta target Salma disamakan dengan Waluyo -- 5 target (Call 15, Effective Call 15, Order Count 15, Revenue 100jt, NOO 3) diisi via `set_sales_kpi_target` RPC, `kpi_definition_id` per baris dikonfirmasi identik dengan milik Waluyo (apples-to-apples), semua `result_outcome: created`. | **PASS — SELESAI (backfill NOO + target Salma lengkap)** |
-| 2026-08-15 | **Fraud-guard "Daftar Toko": satukan jalur Web & Telegram + foto/GPS opsional** (`supabase/migrations/20261004000001_gate_store_photo_gps_web.sql`, `lib/customer-pic/*`, `components/customer-pic/add-store-form.tsx`) | Temuan: tombol "Tambah Pelanggan" di Web selama ini `.insert()` langsung ke `customers` -- TANPA deteksi duplikat toko, TANPA PIC, TANPA GPS -- padahal RPC lengkap (`create_store_with_pic`, deteksi duplikat, dipakai Telegram) sudah ada tapi tidak pernah disambungkan ke UI manapun (`createStoreAction` dead code). Perbaikan: form Web sekarang pakai RPC yang sama (source `ADMIN_DASHBOARD`, sudah didukung sejak awal). Tambahan murni ADDITIVE (2 param baru DEFAULT NULL di akhir signature, pola identik penambahan email sebelumnya) -- PIC nama+telepon TETAP wajib (keputusan Pak Waluyo, tidak diubah), foto depan toko/foto PIC/GPS SEMUA opsional (toko CASH tidak diribetkan). Infrastruktur upload foto (bucket Storage `store-photos`, RLS tenant-scoped) dibangun baru -- sebelumnya tidak ada di manapun di sistem. Diverifikasi lokal: skenario CASH tanpa foto/GPS PASS, deteksi duplikat PASS (toko sama persis ditolak dengan pesan jelas), regresi jalur Telegram PASS (dipanggil persis gaya lama tanpa param foto, hasil identik `created`, kolom foto default NULL). Build+lint+90 test existing PASS. Hosted: migration `20261004000001` di-apply via `supabase db push --linked` (Local=Remote terkonfirmasi), regresi jalur Telegram diulang langsung ke hosted DB (param gaya lama, hasil `created`, kolom foto NULL) PASS, deploy Vercel commit `5155b5f` confirmed Ready ("Compiled successfully"). Sisa data uji coba throwaway (lokal "Toko Cash Cepat UAT", hosted "Hosted Regression hosted-regr-*") dibiarkan -- terblokir trigger immutable `customer_pic_history`, tidak mengganggu tenant nyata. Susulan (pertanyaan Founder): dites eksplisit end-to-end lokal apakah toko baru lewat form ini ikut mengkredit KPI NOO -- toko dibuat via `create_store_with_pic` (RPC persis dipakai form) -> NOO events = 0 (buka toko saja belum kredit, sesuai definisi Pak Waluyo "buka DAN order"), lalu order pertama toko itu di-confirm -> NOO ter-CREDITED tepat 1x dengan order_id/salesperson_id yang benar. Trigger `credit_noo_for_sales_order` hidup di tabel `sales_orders` (independen dari cara toko dibuat) sehingga otomatis berlaku utk toko dari jalur Web baru maupun Telegram tanpa perubahan tambahan -- 13 test regresi NOO existing tetap PASS (trigger tidak tersentuh migrasi ini). | **PASS — OFFICIALLY LOCKED (hosted)** |
-| 2026-08-14 | **Business Guard AI — slice #1: Sales Risk / Discount Anomaly Indicator** (`apps/web/src/lib/business-guard/`) | Vertical slice pertama modul Business Guard AI (sebelumnya 100% placeholder). Rule-based (bukan LLM, konsisten pola `churn-prediction.ts` & keputusan Pak Waluyo soal deteksi duplikat toko), baca `special_price_approval_requests`/`lines` (read-only, tidak ubah RPC/RLS D6-A/D6-B). 4 sinyal: volume pengajuan vs rata-rata sales lain, tingkat penolakan Owner, kedalaman diskon vs rata-rata, eskalasi 30 hari terakhir. Live di `/dashboard/risk`, akses tetap owner/manager/super_admin saja (guard existing tidak diubah). 9/9 unit test PASS, lint bersih, build PASS, diverifikasi manual di browser lokal dengan data real (1 sales, 1 pengajuan, dihitung benar). Push `a3cfe1e..1e75792` fast-forward, auto-deploy Vercel `aodp-waluyo-demo` commit `1e75792` confirmed Ready ("Compiled successfully"), tidak ada migration (murni fitur baca data existing). | **PASS — LIVE DI HOSTED** |
-| 2026-08-14 | KPI Target Waluyo dilengkapi (hosted, data) | Tenant real "PT Sumber Warna Alam Sudiada", periode Agustus 2026 (ACTIVE), sebelumnya cuma 2/5 KPI governed punya target (Call, Effective Call) — Order Count, Revenue, NOO kosong sehingga tile-nya tampil "Data belum cukup" di Dashboard Owner (bukan bug kode, murni data belum diisi). Diisi via RPC resmi `set_sales_kpi_target` (RPC sama yang dipakai UI KPI Setup, bukan tulis langsung ke tabel), actor=Owner asli: Order Count=15, Revenue=Rp100.000.000, NOO=3 toko. | **PASS** — 5/5 KPI governed sekarang punya target aktif |
-| 2026-08-14 | CTO Audit — status project & gap review | Audit menyeluruh state aktual (bukan cuma baca catatan lama): (1) dikonfirmasi WhatsApp AI & Business Guard AI belum diimplementasi sama sekali, masih placeholder "Segera Hadir"; (2) ditemukan WIP `forgot-password-form.tsx` (protected, belum di-commit) memanggil RPC `begin_self_recovery_password_change` yang migration-nya cuma ada di `supabase/migrations_archive/` — akan error runtime kalau di-deploy apa adanya, perlu keputusan Founder (lanjutkan/batalkan); (3) menemukan gap KPI Waluyo di atas lewat pengecekan langsung ke hosted, bukan cuma grep kode. | **AUDIT SELESAI, temuan didokumentasikan** |
-| 2026-08-14 | Governance — Role Split diubah (`CLAUDE.md`) | Keputusan Founder: Claude Code menggantikan ChatGPT sebagai CTO+PM (selain tetap Senior Programmer). Claude Code memutuskan sendiri hal teknis/arsitektur (didokumentasikan, bukan diminta approval per keputusan); arah produk/bisnis tetap diajukan ke Founder dulu. | **BERLAKU** |
-| 2026-08-14 | **Phase 3 Final Hosted Closeout** (`docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`) | Audit menyeluruh seluruh gate wajib Phase 3 + deploy migration D6-A ke hosted (`supabase db push`) + 5 skenario UAT hosted (browser + RPC boundary sesi nyata) membuktikan enforcement harga khusus aktif live di hosted, bukan cuma lokal. 3 catatan residual UAT + residual gate-level lain diputuskan satu per satu — seluruhnya ACCEPTED LIMITATION, tidak ada BLOCKING. | **PHASE 3: 100% OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** |
-| 2026-08-13 | Phase 3 — Hosted Deploy & UAT Ulang Enforcement Harga Khusus | Terapkan migration `20261003000001` (D6-A) ke Supabase hosted `AODP-Waluyo-Demo` (sebelumnya belum diterapkan — blocker P0 nyata). 5 skenario UAT di tenant fixture terisolasi: harga normal PASS, harga khusus tanpa approval DITOLAK fail-closed, proposal via UI D6-B PASS, otorisasi/tenant isolation PASS (level UI dan RPC), approve/reject via RPC existing (bukan UI baru) PASS. | **PASS** — blocker P0 tertutup, dibuktikan hidup di hosted |
-| 2026-08-13 | Closeout Gate 3E-D6-B (`60e2d9e` + `78b7e76`, push fast-forward ke `origin/main`) | Audit ulang commit (scope/security/authority boundary/test 22/22/lint) + audit stacked commit `78b7e76` (TRACKER.md, documentation-only, tidak overclaim status) → push `ff74a2e..78b7e76` fast-forward, `HEAD == origin/main`, ahead/behind 0/0, protected WIP byte-identical. | **OFFICIALLY LOCKED** |
-| 2026-08-13 | Gate 3E-D6-B (`60e2d9e`) | UI Sales "Ajukan Harga Khusus" di `/dashboard/orders/[id]`, memanggil RPC existing `submit_special_price_proposal_atomic` (session-scoped client, auth.uid()-only). Verifikasi browser end-to-end: submit → status `pending_owner_approval`, badge & panel status tampil benar, tombol hilang saat PENDING, Owner tidak melihat tombol approve/reject. | PASS (local) — closeout/lock lihat baris di atas |
-| 2026-08-12 | Gate 3E-D6-A (`ff74a2e`) | `confirm_sales_order_atomic` sekarang selalu re-evaluasi harga item saat ini vs master price/kebijakan diskon sebelum izinkan `confirmed`, menutup kasus "tidak pernah mengajukan proposal" dan "approval partial-coverage". RLS `sales_orders` menutup direct-write ke `confirmed`. | **PASS** (menutup P0 #1) |
-| 2026-08-12 | Audit closeout Phase 3 (`b8051e8`) | Full audit read-only + 1 skenario UAT lokal live-reproduce. Ditemukan 2 gap P0 (lihat Backlog), 8 gap P1/P2. `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md`. | **BLOCKED** |
-| 2026-08-12 | Gate Owner BI-E (`b1b396e`) | Hapus dead code `pctOa` dari kontributor FlowSales dashboard. | PASS |
-| 2026-08-11/12 | Gate Owner BI-A/B/C (`03113fa`, `cb6e3af`, `ba8959f`) | Governed REVENUE + rolling window; konsolidasi 5 KPI governed di Owner BI; drilldown Sales Performance per-salesperson. | PASS |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Risk Alert List — gabungan Sales Risk + Collection Risk** (`60e8352`) | Menutup placeholder terakhir "Segera Hadir" yang mudah — murni gabungan + sort severity dari 2 report existing, tanpa logic scoring baru. Diverifikasi browser: urutan & label benar. | **PASS — hosted (push `8432a43`)** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Sales Risk (discount anomaly) ikut dikontribusikan ke Executive Intelligence** (`45d6901`) | Murni wiring `generateDiscountAnomalyReport` existing ke `businessGuardContributor` — health "Kewajaran Diskon Sales" + insight/action per tier. Diverifikasi browser dengan data nyata. | **PASS — hosted** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Business Guard — Collection Risk (piutang berisiko macet), 4 milestone** (`ada1a1e`, `bec747a`, `59f4326`, `c2646c6`) | Modul baru: scoring rule-based aging piutang (31-60/61-90/>90 hari, +20/+40/+60) + broken promise (+15/janji, cap 30) + dispute (+10), tier sama Sales Risk (60/35/15). `generateCollectionRiskReport` (read-only) + contributor Executive Intelligence + kartu di `/dashboard/risk`. Diverifikasi end-to-end nyata: 1 invoice asli via `issue_invoice_atomic` + 1 broken promise, dikonfirmasi browser. | **PASS — hosted** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **PR kelengkapan data toko kredit (foto/GPS) di Executive Intelligence + Daily Brief** (`64690df`) | "Kredit" diturunkan dari `sales_orders.payment_terms_days` (bukan kolom customer) — toko CASH tidak diribetkan, hanya toko kredit kena PR. `lib/customers/data-completeness.ts` dipakai Executive Intelligence + Morning Brief (proaktif & Telegram on-demand) + filter `?data_gap=photo\|gps` di halaman Pelanggan. Diverifikasi browser + DB penuh dengan toggle kredit/cash. | **PASS — hosted** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Gate P4.08 — picu event automation saat harga khusus diajukan (bagian tanpa kredensial provider)** (`1410584`, migration `20261011000001`) | Provider WA dipilih Bablast (WABA resmi), tapi API key/template belum siap — dibangun bagian yang tidak butuh kredensial: `automation_rules`/`n8n_webhooks`/`processAutomationEvent()` (bukan `automation_outbox`, butuh n8n credential yang tidak tersedia dari server action user). `submitSpecialPriceProposalAction` memicu event fire-and-forget. Diverifikasi: pipeline lengkap via rule uji sementara, `automation_logs` mencatat sukses. | **PASS — hosted. Kirim WA nyata DITUNDA menunggu kredensial Bablast (lihat Ditunda).** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Owner Approval Inbox — halaman terpusat persetujuan harga khusus** (`b6fe1d9`) | `/dashboard/orders/approvals`, murni UI baru di atas RPC existing LOCKED (`submit_special_price_proposal_atomic`/`decide_special_price_proposal_atomic`), tanpa RPC/migration baru. Bug ditemukan & diperbaiki saat verifikasi browser: RPC terima verb `APPROVE`/`REJECT`, bukan `APPROVED`/`REJECTED`. Diverifikasi end-to-end dua arah (approve & reject). | **PASS — hosted** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Push 19 commit + TEMUAN KRITIS: 6 migration belum pernah diterapkan ke hosted** (`0bb7e52`) | `git push` kode dan `supabase db push` migration ternyata 2 langkah terpisah yang tidak pernah dijalankan bersamaan — 6 migration (P4.01/P4.02/P4.04-07) sempat tidak live di hosted tanpa terdeteksi. Ditutup: `supabase db push` dijalankan, Local==Remote dikonfirmasi. Pelajaran dicatat permanen di Status Ringkas. | **SELESAI — origin/main + hosted DB sinkron penuh** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Lengkapi kontrak kanonis `logAuditEvent` di 22 titik pemanggilan** (`a449622`) | Helper bersama `logAuditEvent()` tidak pernah mengisi kolom kanonis Gate 1D-A sejak awal dibuat. Fix: `module` wajib (compile-time net), default `event_category`/`source`/`outcome` masuk akal. Update `ACTIVITY_AUDIT_COVERAGE_MATRIX.md`: Laporan Sales/Produk/Platform/Auth → `covered`; Pelanggan/Pengguna/Import Data → `partial`. | **PASS — hosted** |
+| 2026-08-18 | `[REQUEST FOUNDER]` **Koreksi dokumentasi: Collection TERNYATA sudah `covered` di Activity & Audit Log** (`69ec025`) | Matrix salah tercatat `missing` — RPC Gate 2C sudah menulis audit_logs kanonis sejak dibuat, dokumen saja yang stale (migration landed setelah matrix terakhir update). Murni koreksi dokumen, tidak ada kode baru. | **PASS — koreksi dokumentasi** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.06 — Klaim Pembayaran sales/driver + review Owner/Finance** (`e310001`, migration `20261010000001`) | AODP = "ERP AI yang jagain owner" — sales all-in tidak punya jalur resmi lapor uang diterima. `submit_payment_claim_atomic` (permission baru `payment.claim`) tidak sentuh ledger; `approve_payment_claim_atomic` delegasi penuh ke `record_verified_payment_atomic` (LOCKED); guardrail kolom terkunci sejak submit. Keputusan Founder: bukti sisi klaim opsional dulu, wajib di titik approve. UI: `/dashboard/payment-claims` + `/dashboard/finance/payment-claims`. Diverifikasi end-to-end browser penuh. | **PASS — hosted** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.05 — NOO reversal saat order pembuka toko dibatalkan** (`8199a6a`, migration `20261009000001`) | Menutup Backlog #6b — kredit NOO sebelumnya bisa "diakali" (confirm lalu batal, kredit tetap nempel). Trigger reversal baru + unique index rescope `customer_id`→`order_id`. Bug ditemukan saat verifikasi: `idempotency_key` asal customer-scoped, collide lintas order — diperbaiki jadi order-scoped. | **PASS — hosted** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Sales all-in bisa di-assign sebagai driver order sendiri, TANPA role driver baru** (`24afd47`) | Role `driver` untuk user existing ternyata tidak bisa lewat jalur resmi manapun (allowlist form + RLS). Founder pilih pendekatan lebih sederhana: dropdown "Assign driver" diperluas include role `sales` (`create_delivery_atomic` tidak pernah mensyaratkan role driver). Tidak menyentuh RBAC/security sama sekali. | **PASS — hosted** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Gate P4.07 — batasi override status kirim/terkirim ke owner/manager/admin/super_admin** (`d3bace3`, migration `20261008000001`) | `update_sales_order_status_atomic` transisi ke `delivering`/`delivered` sekarang hanya diizinkan role tertentu. Diverifikasi psql + browser sebagai `sales@aodp.test`: blocked dengan pesan error jelas. | **PASS — hosted** |
+| 2026-08-17 | `[TEMUAN]` **Gate P4.04 — audit visibility untuk override status pengiriman via tombol generik** (`0152422`, migration `20261007000001`) | Tombol status generik tidak pernah cek tabel `deliveries` sebelum izinkan `delivering`/`delivered` — ternyata sengaja ada sebagai "override manusia valid" (bukan bug). Fix murni observability: `audit_logs.new_data` merekam `delivery_verified`/`manual_override`. Bonus fix: regresi `gate-2i2-workspace-containment.test.ts` di `origin/main` dari refactor sebelumnya, diperbaiki. | **PASS — hosted** |
+| 2026-08-17 | `[TEMUAN]` **Koreksi: Gate P4.01/P4.02/P4.03 Fase A + document engine print/batch TERNYATA sudah live hosted** | `vercel inspect` konfirmasi commit-commit itu sudah live — tracker saja yang belum diupdate retroaktif. Pelajaran: `vercel ls`/`vercel inspect` harus jadi sumber kebenaran, bukan asumsi dari tracker lama. | **DIKONFIRMASI LIVE** |
+| 2026-08-17 | `[TEMUAN]` **Commit 4 dokumen readiness Gate 3D-B3-F5 & 3E-D0** (`8ec2eb0`) | Menutup Backlog #7 — runbook cleanup, execution SQL, hosted inventory, pre-cleanup snapshot di-commit (dicek tidak ada secret). | **DITUTUP — hosted** |
+| 2026-08-17 | `[TEMUAN]` **Fix bug: ikon amplop/telepon di header cetak pecah ke baris terpisah** (`components/document-engine/print.css`) | Root cause: Tailwind preflight `svg{display:block}` global membuat ikon jadi block-level. Fix `.doc-engine-contact-icon{display:inline-block}`. Diverifikasi via DOM measurement (`getBoundingClientRect`), bukan tebakan visual. | **PASS — hosted** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Identitas company lokal diganti ke data tenant asli PT Sumber Warna Alam Sudiada + logo asli** (data-only) | Header cetak diisi data company asli (nama ALL CAPS setelah 1 koreksi casing, alamat, kontak, logo). Header komponen sendiri tidak diubah — sudah cocok sejak awal, gap murni data seed placeholder. | **PASS — lokal** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Tombol "Cetak Sekarang" di halaman print invoice (single & batch)** | `PrintNowButton` (`window.print()`, `print:hidden`) di kedua halaman print. Pengaturan printer dot-matrix sendiri di luar jangkauan web app (level OS/driver). | **PASS — lokal** |
+| 2026-08-17 | `[REQUEST FOUNDER]` **Cetak Invoice Batch — pilih banyak invoice, cetak sekaligus 1 lembar fisik continuous form** (`lib/finance/print-snapshot.ts`, `invoice-selection-table.tsx`, `print-batch/page.tsx`) | Founder konfirmasi pola cetak nyata batch, bukan satu-satu — 2 invoice pendek berbagi 1 lembar (hemat kertas). `buildPrintSheets()` Document Engine sudah support multi-dokumen sejak awal, tidak disentuh. UI baru: checkbox multi-select + `print-batch?ids=`. Diverifikasi browser: 2 invoice di 2 panel, urutan & angka benar. | **PASS — lokal** |
+| 2026-08-16 | `[TEMUAN]` **Sambungkan halaman print invoice ke `PhysicalPrintSheet.tsx`** (2 panel/lembar, continuous form 3 ply) | Founder konfirmasi printer memang continuous form 3 ply — layout A4 penuh sebelumnya salah untuk kertas roll. Ganti render ke `buildPrintSheets()` + `PhysicalPrintSheet`, komponen Document Engine sendiri (LOCKED) tidak diubah. | **PASS — lokal** |
+| 2026-08-16 | `[TEMUAN]` **Audit (role-play lokal Tahap 3-6): 3 gap "all-in sales" + laporan status Proof Payment & Collection Intelligence** | (1) FIXED: role `driver` ditambahkan ke `TELEGRAM_PAIRING_ELIGIBLE_ROLES` (sebelumnya tombol pairing Telegram tidak pernah muncul untuk driver). (2)(3) DICATAT untuk keputusan Founder: dropdown Assign driver terlalu ketat (kemudian ditutup 2026-08-17 lihat baris di atas); `payment.record` scope sempit by design. Laporan status murni (tanpa kode baru): Proof Payment cuma 2 text field (belum ada upload foto); Collection Intelligence sudah jalan tapi Business Guard Collection Risk masih kosong (kemudian dibangun 2026-08-18). | **PASS (fix #1) + 2 temuan dicatat** |
+| 2026-08-16 | `[TEMUAN]` **Fix bug: mengunci periode KPI mematikan seluruh Dashboard Owner + rewire ranking Laporan Sales ke target governed asli** | Bug signifikan: klik "Kunci Periode" (LOCKED) membuat seluruh tile governed + Business Health Score salah tampil "Bisnis Sehat" padahal seharusnya "Perlu Tindakan Segera" — root cause query `.eq(status,"ACTIVE")` seharusnya `.in(status,["ACTIVE","LOCKED"])`. Ranking Laporan Sales dirombak pakai sumber sama dengan Dashboard Owner (tidak lagi dari snapshot `sales_reports` yang bisa understate). | **PASS — bug signifikan tertutup** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **KPI Setup: "Hari Kerja" otomatis + fix layout alasan target yang nyasar** | Field "Hari kerja" dihapus dari UI (tidak dipakai perhitungan manapun, dihitung otomatis background). Bug layout: blok alasan+tombol Call/EC salah taruh di bawah section NOO — dipindah ke lokasi benar. | **PASS — lokal** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **Data operasional lokal: import 142 produk + 291 pelanggan SWAS, 3 Wilayah Penjualan, KPI Setup 3 sales** (data-only) | Import via jalur resmi Universal Data Onboarding. 3 Wilayah Penjualan dibuat + di-assign, 292 pelanggan dibagi rata ke 3 sales. Periode KPI Agustus 2026 + 5 target diisi via RPC resmi. | **PASS — lokal, data-only** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **Gate P4.03 — Redesain Laporan Sales Fase A: ringkasan KPI harian otomatis, hapus double-entry** | Form `reports/new` tidak lagi minta sales ketik ulang angka KPI — dihitung dari ledger governed + `sales_order_items`, server tidak pernah percaya angka client. Tidak ada migration DB (kolom lama tetap ada, diisi otomatis). Regresi ditemukan & diperbaiki: label "OA Bulan Ini (Self-Report — Legacy)" tetap wajib dipertahankan (data campur lama/baru). Sisa scope Fase B (voice note) di "Berikutnya". | **PASS — lokal, browser + test suite penuh** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **Gate P4.02 — payment_terms_days: sambungkan input "Termin Pembayaran" ke form order** (migration `20261006000001`) | Kolom `payment_terms_days` sudah ada sejak lama + Document Engine sudah lengkap membacanya — gap sempit murni tidak ada UI/parameter untuk mengisinya. Fix additive: parameter baru di RPC create/update + field baru di form. Diverifikasi end-to-end: order dengan Termin 14 hari → invoice cetak "Tempo: ... (14 Hari)" benar. | **PASS — hosted** |
+| 2026-08-16 | `[TEMUAN]` **Audit template invoice: logo tenant + "Pengirim" salah tampil "Owner"** (`scripts/seed-dev.ts`, data-only) | Gap murni data-seed (logo_url NULL, delivery driver seed pakai akun Owner sebagai stand-in). Fix: 4 user seed baru ditambahkan (`driver`/`salma`/`waluyo`/`admin`@aodp.test). Bonus fix: 2 bug pra-existing di `seed-dev.ts` yang bikin script gagal total. | **PASS — lokal, dev-tooling** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **Push 13 commit ke `origin/main` + deploy hosted** (`f13d594..429f63f`) | Fix bug 500 order creation, Gate P4.01, role-aware "Sales yang Menangani", fix search pelanggan, halaman Lihat/Cetak Invoice, hapus sidebar "Collection". Vercel Ready dikonfirmasi. | **PASS — deploy Ready** |
+| 2026-08-16 | `[REQUEST FOUNDER]` **`docs/product/AODP_ORDER_TO_CASH_WORKFLOW.md` baru — peta order-to-cash per tahap + status PASS/gap** | 9 tahap dipetakan dari audit langsung ke kode (3 Explore agent paralel). 5 gap nyata teridentifikasi & di-rollup (Owner Approval Inbox, Dispatch Planner readiness, Business Guard Collection Risk, REVENUE credit note, NOO reversal — sebagian besar sudah ditutup sejak). | **SELESAI** |
+| 2026-08-15 | `[REQUEST FOUNDER]` **Restrukturisasi TRACKER.md + `docs/development/WORKFLOW.md` baru** | Founder menilai pengerjaan "lompat-lompat". Ditambah section prospektif (Sedang Dikerjakan/Berikutnya/Ditunda), tagging asal kerja, dokumentasi branch production. | **SELESAI** |
+| 2026-08-15 | `[REQUEST FOUNDER]` **Dashboard Owner: badge insight/tindakan jadi clickable + Aksi Cepat diganti sesuai scope owner** (`7fc7875`) | Aksi Cepat sebelumnya semua tugas data-entry sales/admin (bertentangan prinsip Owner First) — diganti Risk Alert/Kelola Pengguna/Laporan Sales/Pengaturan. Sempat salah push ke branch demo (cuma Preview deployment) — dikoreksi push ke `main`. | **PASS — hosted** |
+| 2026-08-15 | **KPI Salesman UI: kartu achievement berwarna penuh + clickable** (`kpi-achievement-view.tsx`) | Background+border kartu ikut warna pacing status. Order Count/Revenue/NOO jadi link filter ke halaman terkait. Call/EC hanya link saat sales lihat achievement sendiri. | **PASS — hosted** |
+| 2026-08-15 | **Data backfill hosted: 5 kredit NOO Salma yang hilang akibat timing deploy trigger** (data-only) | Trigger NOO di-deploy setelah 5 order pertama Salma confirmed — tidak retroaktif. Backfill disetujui Founder, pre-flight check per baris (tidak mungkin dobel-kredit). Susulan: target KPI Salma disamakan dengan Waluyo. | **PASS — selesai** |
+| 2026-08-15 | **Fraud-guard "Daftar Toko": satukan jalur Web & Telegram + foto/GPS opsional** (migration `20261004000001`) | Tombol "Tambah Pelanggan" Web sebelumnya `.insert()` langsung tanpa deteksi duplikat/PIC/GPS — diganti pakai RPC lengkap `create_store_with_pic` yang sama dengan Telegram. PIC wajib, foto/GPS opsional (toko CASH tidak diribetkan). Diverifikasi lokal+hosted, regresi Telegram PASS. | **PASS — OFFICIALLY LOCKED (hosted)** |
+| 2026-08-14 | **Business Guard AI — slice #1: Sales Risk / Discount Anomaly Indicator** | Vertical slice pertama (sebelumnya 100% placeholder). Rule-based, 4 sinyal (volume, rejection rate, kedalaman diskon, eskalasi). Live di `/dashboard/risk`. | **PASS — LIVE DI HOSTED** |
+| 2026-08-14 | KPI Target Waluyo dilengkapi (hosted, data) | 5/5 KPI governed diisi target via RPC resmi (sebelumnya cuma 2/5). | **PASS** |
+| 2026-08-14 | CTO Audit — status project & gap review | Audit menyeluruh: WhatsApp AI & Business Guard AI placeholder, WIP forgot-password RPC gap ditemukan, gap KPI Waluyo ditemukan. | **AUDIT SELESAI** |
+| 2026-08-14 | Governance — Role Split diubah (`CLAUDE.md`) | Claude Code menggantikan ChatGPT sebagai CTO+PM. | **BERLAKU** |
+| 2026-08-14 | **Phase 3 Final Hosted Closeout** | Audit menyeluruh + deploy migration D6-A ke hosted + 5 skenario UAT hosted membuktikan enforcement harga khusus live. Seluruh residual — accepted limitation, tidak blocking. | **PHASE 3: 100% OFFICIALLY LOCKED** |
+| 2026-08-13 | Phase 3 — Hosted Deploy & UAT Ulang Enforcement Harga Khusus | Migration D6-A diterapkan ke hosted (blocker P0 nyata). 5 skenario UAT PASS semua. | **PASS** — blocker P0 tertutup |
+| 2026-08-13 | Closeout Gate 3E-D6-B (`60e2d9e` + `78b7e76`) | Audit ulang + push fast-forward, HEAD==origin/main. | **OFFICIALLY LOCKED** |
+| 2026-08-13 | Gate 3E-D6-B (`60e2d9e`) | UI Sales "Ajukan Harga Khusus", memanggil RPC existing session-scoped. | PASS (local) |
+| 2026-08-12 | Gate 3E-D6-A (`ff74a2e`) | `confirm_sales_order_atomic` selalu re-evaluasi harga vs master price sebelum izinkan `confirmed` — menutup P0 #1. | **PASS** |
+| 2026-08-12 | Audit closeout Phase 3 (`b8051e8`) | Full audit read-only + 1 skenario UAT. 2 gap P0, 8 gap P1/P2 ditemukan. | **BLOCKED** |
+| 2026-08-12 | Gate Owner BI-E (`b1b396e`) | Hapus dead code `pctOa`. | PASS |
+| 2026-08-11/12 | Gate Owner BI-A/B/C (`03113fa`, `cb6e3af`, `ba8959f`) | Governed REVENUE + rolling window; konsolidasi 5 KPI governed; drilldown Sales Performance per-salesperson. | PASS |
 | 2026-08-10 | Gate 3E-D5-C (`c06f12c`) | Wiring KPI Foundation ke UI Owner (KPI Setup). | PASS |
-| s.d. 2026-08-10 | Gate 3A → 3E-D5-B-H-R1 (35 gate) | Lihat ringkasan lengkap di tabel scorecard `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md` §4 — mencakup role/permission matrix, onboarding/provisioning, password recovery, boundary mutasi order/item, special-price approval schema+RPC (3E-D4-C1–C7), governed NOO, Kunjungan Sales web. | Beragam (mayoritas PASS, 4 PARTIAL selain P0 di atas) |
+| s.d. 2026-08-10 | Gate 3A → 3E-D5-B-H-R1 (35 gate) | Lihat scorecard `docs/product/readiness/AODP_PHASE_3_CLOSEOUT_AUDIT.md` §4 — role/permission matrix, onboarding/provisioning, password recovery, boundary mutasi order/item, special-price approval schema+RPC, governed NOO, Kunjungan Sales web. | Beragam (mayoritas PASS, 4 PARTIAL selain P0) |
 
 **Sebelum Gate 3A** (Phase 0–2, baseline fork s.d. awal Phase 3): fork dari
 FlowSalesAI Beta v1.0 RC, Product Constitution v1.0/v1.1, Executive
@@ -666,8 +302,7 @@ owner-control (audit log, coverage area, salesman activation), Finance
 Operations Workspace lengkap (invoice, collection, credit, return,
 cancellation — Gate 2I.x), Sales KPI foundation, n8n automation, Business
 Document Engine, Telegram salesman enrollment, distributor onboarding &
-import. Tidak direkonstruksi ulang di sini — lihat `git log` (commit sebelum
-`50b8cab`) untuk detail per-commit bila diperlukan.
+import. Lihat `git log` (commit sebelum `50b8cab`) untuk detail.
 
 ---
 
