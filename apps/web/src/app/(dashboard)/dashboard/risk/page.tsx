@@ -11,13 +11,6 @@ export const metadata = { title: "Risk Alert — AODP" };
 
 const FEATURE_CARDS = [
   {
-    icon: <ShieldAlert className="h-6 w-6 text-red-500" />,
-    title: "Risk Alert List",
-    description: "Daftar alert dengan severity, kategori, entitas terkait, dan rekomendasi tindakan untuk owner.",
-    badge: "Segera Hadir",
-    color: "red",
-  },
-  {
     icon: <UserX className="h-6 w-6 text-purple-500" />,
     title: "Behavior Change",
     description: "Alert saat perilaku customer berubah mencurigakan — PIC order berganti, pola order menurun drastis.",
@@ -58,6 +51,15 @@ function formatPercent(n: number) {
   return `${n.toFixed(1)}%`;
 }
 
+const SEVERITY_ORDER: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+
+interface UnifiedRiskAlert {
+  category: "Sales Risk" | "Collection Risk";
+  riskLevel: DiscountRiskLevel;
+  entityName: string;
+  recommendation: string;
+}
+
 export default async function RiskPage() {
   const user = await getAuthUser();
 
@@ -75,6 +77,25 @@ export default async function RiskPage() {
   const flagged = discountAnomalyReport.filter((r) => r.risk_level !== "NONE");
   const collectionFlagged = collectionRiskReport.filter((r) => r.risk_level !== "NONE");
 
+  // Risk Alert List -- gabungan Sales Risk + Collection Risk, murni penggabungan
+  // + pengurutan dari kedua report yang sudah dihitung di atas, TIDAK ada logic
+  // scoring baru sama sekali. Hanya entitas yang benar-benar butuh perhatian
+  // (risk_level != NONE) yang masuk daftar -- ini "alert", bukan rekap penuh.
+  const unifiedAlerts: UnifiedRiskAlert[] = [
+    ...flagged.map((r) => ({
+      category: "Sales Risk" as const,
+      riskLevel: r.risk_level,
+      entityName: r.sales_name,
+      recommendation: r.recommendation,
+    })),
+    ...collectionFlagged.map((r) => ({
+      category: "Collection Risk" as const,
+      riskLevel: r.risk_level,
+      entityName: r.customer_name,
+      recommendation: r.recommendation,
+    })),
+  ].sort((a, b) => SEVERITY_ORDER[a.riskLevel]! - SEVERITY_ORDER[b.riskLevel]!);
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <PageHeader
@@ -89,6 +110,34 @@ export default async function RiskPage() {
         <p className="mt-0.5 text-xs text-amber-700">
           Alert risiko hanya dapat dilihat owner dan manager — tidak dapat dihapus oleh sales.
         </p>
+      </div>
+
+      {/* Risk Alert List -- gabungan Sales Risk + Collection Risk */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+          <ShieldAlert className="h-4 w-4 text-red-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Risk Alert List</h2>
+          <span className="ml-auto text-xs text-gray-400">{unifiedAlerts.length} perlu perhatian</span>
+        </div>
+
+        {unifiedAlerts.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Tidak ada alert -- semua sales dan customer dalam kondisi wajar.</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {unifiedAlerts.map((a, i) => (
+              <div key={`${a.category}-${a.entityName}-${i}`} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RISK_BADGE[a.riskLevel]}`}>
+                  {RISK_LABEL[a.riskLevel]}
+                </span>
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  {a.category}
+                </span>
+                <span className="text-sm font-medium text-gray-900">{a.entityName}</span>
+                <span className="flex-1 min-w-[200px] text-xs text-gray-500">{a.recommendation}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Discount Anomaly / Sales Risk Indicator -- fitur aktif pertama */}
