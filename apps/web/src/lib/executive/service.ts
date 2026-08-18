@@ -1,8 +1,8 @@
 import { flowsalesContributor } from "./contributors/flowsales";
 import { customerHealthContributor } from "./contributors/customer-health";
+import { businessGuardContributor } from "./contributors/business-guard";
 import {
   collectionContributor,
-  businessGuardContributor,
   whatsappContributor,
   warehouseContributor,
 } from "./contributors/pending";
