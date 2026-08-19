@@ -9,6 +9,9 @@ import {
   Zap, CheckCircle2, XCircle, Clock, SkipForward,
   Webhook, Play, Settings,
 } from "lucide-react";
+import { TRIGGER_LABELS } from "@/lib/automation/trigger-labels";
+import { canManageWebhooks } from "@/lib/automation/webhook-validation";
+import { AddWebhookForm } from "@/components/automation/add-webhook-form";
 
 export const metadata = { title: "Automation — AODP" };
 
@@ -42,21 +45,6 @@ interface N8nWebhook {
   call_count: number;
   last_called_at: string | null;
 }
-
-const TRIGGER_LABELS: Record<string, string> = {
-  customer_dormant: "Reseller Dormant",
-  churn_risk: "Churn Risk",
-  repeat_order_due: "Repeat Order Due",
-  large_order: "Order Besar",
-  new_order: "Order Baru",
-  low_stock: "Stok Rendah",
-  payment_overdue: "Pembayaran Jatuh Tempo",
-  new_customer: "Reseller Baru",
-  scheduled_daily: "Jadwal Harian",
-  scheduled_weekly: "Jadwal Mingguan",
-  manual: "Manual",
-  special_price_proposal_submitted: "Pengajuan Harga Khusus",
-};
 
 const STATUS_STYLES: Record<string, { label: string; icon: React.ReactNode; cls: string }> = {
   success: { label: "Berhasil", icon: <CheckCircle2 className="h-3.5 w-3.5" />, cls: "bg-green-100 text-green-700" },
@@ -349,6 +337,7 @@ export default async function AutomationPage() {
       </ChartCard>
 
       {/* n8n Webhooks */}
+      <AddWebhookForm canManage={canManageWebhooks(user)} />
       <ChartCard
         title="n8n Webhooks Terdaftar"
         description="URL webhook yang digunakan untuk mengirim event ke n8n"
@@ -358,7 +347,7 @@ export default async function AutomationPage() {
           <EmptyState
             icon={<Webhook className="h-8 w-8 text-gray-300" />}
             title="Belum ada webhook terdaftar"
-            description="Daftarkan URL webhook n8n di Pengaturan > Automation untuk mulai integrasi"
+            description="Daftarkan URL webhook n8n di atas untuk mulai integrasi"
           />
         ) : (
           <DataTable<N8nWebhook>
