@@ -1,11 +1,7 @@
 import { flowsalesContributor } from "./contributors/flowsales";
 import { customerHealthContributor } from "./contributors/customer-health";
 import { businessGuardContributor } from "./contributors/business-guard";
-import {
-  collectionContributor,
-  whatsappContributor,
-  warehouseContributor,
-} from "./contributors/pending";
+import { whatsappContributor, warehouseContributor } from "./contributors/pending";
 import { buildExecutiveBriefing } from "./briefing";
 import type {
   ExecutiveContributor,
@@ -19,12 +15,18 @@ import type {
 // Mendaftarkan contributor per modul, menggabungkan kontribusinya menjadi
 // satu ExecutiveOverview: health score, KPI, insight, action, dan briefing.
 // Modul baru cukup ditambahkan ke CONTRIBUTORS — halaman tidak berubah.
+//
+// Catatan: placeholder "collection" (pendingContributor) SENGAJA dihapus
+// dari daftar ini (2026-08-19) -- Collection Intelligence sudah lama
+// dibangun (bagian Finance Operations Workspace) dan Collection Risk sudah
+// live via businessGuardContributor, jadi placeholder "menunggu modul"-nya
+// jadi keliru/basi, bukan mencerminkan kenyataan. Data collection tetap
+// masuk ke Executive Intelligence lewat chip "Business Guard".
 // =============================================================================
 
 const CONTRIBUTORS: ExecutiveContributor[] = [
   flowsalesContributor,
   customerHealthContributor,
-  collectionContributor,
   businessGuardContributor,
   whatsappContributor,
   warehouseContributor,

@@ -25,6 +25,5 @@ function pendingContributor(module: ModuleKey, moduleLabel: string): ExecutiveCo
   };
 }
 
-export const collectionContributor = pendingContributor("collection", "Collection");
 export const whatsappContributor = pendingContributor("whatsapp", "WhatsApp AI");
 export const warehouseContributor = pendingContributor("warehouse", "Warehouse");
