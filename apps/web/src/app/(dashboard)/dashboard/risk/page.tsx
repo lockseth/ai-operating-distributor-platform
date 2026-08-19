@@ -152,9 +152,11 @@ export default async function RiskPage() {
 
         {discountAnomalyReport.length === 0 ? (
           <p className="px-5 py-6 text-sm text-gray-500">Belum ada sales aktif untuk dianalisis.</p>
+        ) : flagged.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Semua sales dalam kondisi wajar -- tidak ada yang perlu perhatian.</p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {discountAnomalyReport.map((r) => (
+            {flagged.map((r) => (
               <div key={r.sales_id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -178,9 +180,7 @@ export default async function RiskPage() {
                   </ul>
                 )}
 
-                {r.risk_level !== "NONE" && (
-                  <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
-                )}
+                <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
               </div>
             ))}
           </div>
@@ -199,9 +199,11 @@ export default async function RiskPage() {
 
         {collectionRiskReport.length === 0 ? (
           <p className="px-5 py-6 text-sm text-gray-500">Tidak ada piutang outstanding untuk dianalisis.</p>
+        ) : collectionFlagged.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Semua piutang dalam kondisi wajar -- tidak ada yang perlu perhatian.</p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {collectionRiskReport.map((r) => (
+            {collectionFlagged.map((r) => (
               <div key={r.customer_id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -225,9 +227,7 @@ export default async function RiskPage() {
                   </ul>
                 )}
 
-                {r.risk_level !== "NONE" && (
-                  <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
-                )}
+                <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
               </div>
             ))}
           </div>
@@ -246,9 +246,11 @@ export default async function RiskPage() {
 
         {behaviorChangeReport.length === 0 ? (
           <p className="px-5 py-6 text-sm text-gray-500">Belum ada customer aktif untuk dianalisis.</p>
+        ) : behaviorFlagged.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Semua customer dalam pola wajar -- tidak ada yang perlu perhatian.</p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {behaviorChangeReport.map((r) => (
+            {behaviorFlagged.map((r) => (
               <div key={r.customer_id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -271,9 +273,7 @@ export default async function RiskPage() {
                   </ul>
                 )}
 
-                {r.risk_level !== "NONE" && (
-                  <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
-                )}
+                <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
               </div>
             ))}
           </div>
@@ -292,9 +292,11 @@ export default async function RiskPage() {
 
         {transactionRiskReport.length === 0 ? (
           <p className="px-5 py-6 text-sm text-gray-500">Tidak ada order confirmed dalam 30 hari terakhir untuk dianalisis.</p>
+        ) : transactionFlagged.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Semua order dalam pola wajar -- tidak ada yang perlu perhatian.</p>
         ) : (
           <div className="divide-y divide-gray-50">
-            {transactionRiskReport.map((r) => (
+            {transactionFlagged.map((r) => (
               <div key={r.order_id} className="px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -316,9 +318,7 @@ export default async function RiskPage() {
                   </ul>
                 )}
 
-                {r.risk_level !== "NONE" && (
-                  <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
-                )}
+                <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
               </div>
             ))}
           </div>
