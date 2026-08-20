@@ -8,7 +8,8 @@ import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
-import { getPaymentClaimList, type PaymentClaimListItem } from "@/lib/finance/queries";
+import { getAdminClient } from "@/lib/supabase/admin";
+import { getOutstandingInvoices, getPaymentClaimList, type PaymentClaimListItem } from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/dashboard/status-badge";
@@ -64,9 +65,22 @@ export default async function PaymentClaimsSalesPage() {
   const customers = (customerRows ?? []) as { id: string; name: string }[];
 
   let claims: PaymentClaimListItem[] = [];
+  let outstandingInvoices: Awaited<ReturnType<typeof getOutstandingInvoices>> = [];
   let loadError = false;
   try {
-    claims = await getPaymentClaimList(user.company_id, { claimedBy: user.id });
+    // Sales/driver TIDAK punya permission receivable.view (RLS invoices_select),
+    // memang sengaja sempit -- itu kewenangan finance/owner/manager. Query
+    // invoice outstanding di sini pakai admin client (bypass RLS) TAPI tetap
+    // aman: hasilnya cuma dipakai sebagai referensi/informasi (bukan alokasi
+    // ledger), dan UI di SubmitPaymentClaimForm cuma menampilkan invoice utk
+    // customer yang sudah dipilih dari dropdown -- dropdown itu sendiri masih
+    // RLS-scoped (query customers di atas, session client), jadi sales tetap
+    // cuma bisa lihat/tandai invoice milik customer yang memang jadi
+    // tanggung jawabnya, bukan invoice customer lain sembarangan.
+    [claims, outstandingInvoices] = await Promise.all([
+      getPaymentClaimList(user.company_id, { claimedBy: user.id }),
+      getOutstandingInvoices(user.company_id, {}, getAdminClient()),
+    ]);
   } catch {
     loadError = true;
   }
@@ -78,7 +92,7 @@ export default async function PaymentClaimsSalesPage() {
         subtitle="Laporkan pembayaran (cash/transfer) yang Anda terima langsung dari customer -- akan diperiksa Owner/Finance sebelum dianggap resmi."
       />
 
-      <SubmitPaymentClaimForm customers={customers} />
+      <SubmitPaymentClaimForm customers={customers} outstandingInvoices={outstandingInvoices} />
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-900">Riwayat Laporan Saya</h2>

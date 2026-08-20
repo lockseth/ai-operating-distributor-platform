@@ -518,6 +518,8 @@ export interface SubmitPaymentClaimInput {
   note?: string | null;
   proofs?: PaymentProofInput[];
   idempotencyKey?: string;
+  /** Invoice yang menurut sales/driver terkait pembayaran ini -- opsional, murni referensi (lihat migration 20261012000001). */
+  claimedInvoiceIds?: string[];
 }
 
 export async function submitPaymentClaimAction(input: SubmitPaymentClaimInput) {
@@ -539,6 +541,7 @@ export async function submitPaymentClaimAction(input: SubmitPaymentClaimInput) {
       metadata: p.metadata ?? {},
     })),
     p_idempotency_key: input.idempotencyKey ?? null,
+    p_claimed_invoice_ids: input.claimedInvoiceIds && input.claimedInvoiceIds.length > 0 ? input.claimedInvoiceIds : null,
   });
   if (error) throw new Error(mapFinanceRpcError(error.message));
 

@@ -902,6 +902,8 @@ export interface OutstandingInvoiceOption {
   customerName: string;
   outstandingBalance: number;
   hasOpenPromise: boolean;
+  /** ISO date (YYYY-MM-DD) atau null kalau invoice tidak punya jatuh tempo tercatat. */
+  dueDate: string | null;
 }
 
 export async function getOutstandingInvoices(
@@ -929,7 +931,7 @@ export async function getOutstandingInvoices(
 
   let query = supabase
     .from("invoices")
-    .select("id, invoice_number, customer_id, customers(name)")
+    .select("id, invoice_number, customer_id, due_date, customers(name)")
     .eq("company_id", companyId)
     .in("id", ids)
     .order("due_date", { ascending: true });
@@ -942,6 +944,7 @@ export async function getOutstandingInvoices(
     id: string;
     invoice_number: string;
     customer_id: string;
+    due_date: string | null;
     customers: { name: string } | null;
   }>;
 
@@ -957,6 +960,7 @@ export async function getOutstandingInvoices(
     customerName: row.customers?.name ?? "-",
     outstandingBalance: balanceMap.get(row.id) ?? 0,
     hasOpenPromise: promiseMap.get(row.id) === "open",
+    dueDate: row.due_date,
   }));
 }
 
@@ -1307,6 +1311,8 @@ export interface PaymentClaimListItem {
   rejectionReason: string | null;
   approvedPaymentReceiptId: string | null;
   proofCount: number;
+  /** Invoice yang ditandai sales sendiri saat submit -- referensi/informasi, bukan alokasi ledger. Null/kosong = tidak ditandai ("titip uang"). */
+  claimedInvoiceIds: string[];
 }
 
 export async function getPaymentClaimList(
@@ -1319,7 +1325,7 @@ export async function getPaymentClaimList(
   let query = supabase
     .from("payment_claims")
     .select(
-      "id, customer_id, method, amount, transfer_reference, note, claimed_by, claimed_at, status, reviewed_by, reviewed_at, rejection_reason, approved_payment_receipt_id, customers(name), payment_claim_proofs(id)"
+      "id, customer_id, method, amount, transfer_reference, note, claimed_by, claimed_at, status, reviewed_by, reviewed_at, rejection_reason, approved_payment_receipt_id, claimed_invoice_ids, customers(name), payment_claim_proofs(id)"
     )
     .eq("company_id", companyId)
     .order("claimed_at", { ascending: false });
@@ -1343,6 +1349,7 @@ export async function getPaymentClaimList(
     reviewed_at: string | null;
     rejection_reason: string | null;
     approved_payment_receipt_id: string | null;
+    claimed_invoice_ids: string[] | null;
     customers: { name: string } | null;
     payment_claim_proofs: { id: string }[] | null;
   }>;
@@ -1371,6 +1378,7 @@ export async function getPaymentClaimList(
     rejectionReason: row.rejection_reason,
     approvedPaymentReceiptId: row.approved_payment_receipt_id,
     proofCount: row.payment_claim_proofs?.length ?? 0,
+    claimedInvoiceIds: row.claimed_invoice_ids ?? [],
   }));
 }
 

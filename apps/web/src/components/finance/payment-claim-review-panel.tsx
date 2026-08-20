@@ -6,6 +6,15 @@
 // RecordPaymentPanel) + alokasi invoice -- nominal/metode/customer TERKUNCI
 // dari klaim asal (tidak bisa diubah di sini, lihat approve_payment_claim_
 // atomic). Reject mewajibkan alasan, ledger tidak tersentuh sama sekali.
+//
+// Extension 2026-08-19 (migration 20261012000001, insight Pak Waluyo):
+// checkbox alokasi di-PRE-FILL otomatis saat dialog approve dibuka -- kalau
+// sales menandai invoice tertentu (claim.claimedInvoiceIds), pre-fill FIFO
+// di antara invoice yang ditandai itu; kalau sales tidak menandai apa pun
+// ("titip uang"), pre-fill FIFO di antara SEMUA invoice outstanding
+// customer. Ini MURNI starting point -- Finance tetap bisa
+// centang/uncentang/ubah nominal sebelum konfirmasi, tidak ada yang
+// auto-commit ke ledger dari pre-fill ini.
 // =============================================================================
 
 import { useMemo, useState, useTransition } from "react";
@@ -13,6 +22,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import type { OutstandingInvoiceOption, PaymentClaimListItem } from "@/lib/finance/queries";
 import { approvePaymentClaimAction, rejectPaymentClaimAction } from "@/lib/finance/actions";
+import { autoAllocateFifo } from "@/lib/finance/allocation";
 
 interface ProofRow {
   proofType: string;
@@ -49,7 +59,20 @@ export function PaymentClaimReviewPanel({ claim, outstandingInvoices }: PaymentC
   function openApprove() {
     setError(null);
     setProofs([{ proofType: claim.method === "cash" ? "cash_count_verified" : "bank_statement", objectReference: "" }]);
-    setAllocations({});
+
+    // Pre-fill FIFO: kalau sales menandai invoice tertentu, alokasikan di
+    // antara yang ditandai itu saja; kalau tidak menandai apa pun ("titip
+    // uang"), alokasikan di antara SEMUA invoice outstanding customer.
+    const candidateInvoices =
+      claim.claimedInvoiceIds.length > 0
+        ? customerInvoices.filter((i) => claim.claimedInvoiceIds.includes(i.id))
+        : customerInvoices;
+    const fifoResult = autoAllocateFifo(
+      claim.amount,
+      candidateInvoices.map((i) => ({ id: i.id, outstandingBalance: i.outstandingBalance, dueDate: i.dueDate }))
+    );
+    setAllocations(Object.fromEntries(Object.entries(fifoResult).map(([id, amt]) => [id, String(amt)])));
+
     setMode("approve");
   }
 
@@ -215,7 +238,12 @@ export function PaymentClaimReviewPanel({ claim, outstandingInvoices }: PaymentC
           </div>
 
           <div>
-            <p className="text-xs font-medium text-gray-600">Alokasi Invoice</p>
+            <p className="text-xs font-medium text-gray-600">
+              Alokasi Invoice{" "}
+              <span className="font-normal text-gray-400">
+                (pre-fill otomatis{claim.claimedInvoiceIds.length > 0 ? " dari tandaan sales" : " -- FIFO, tagihan tertua dulu"}, boleh dikoreksi)
+              </span>
+            </p>
             {customerInvoices.length === 0 ? (
               <p className="mt-1 text-xs text-gray-400">Customer ini tidak memiliki invoice outstanding.</p>
             ) : (
@@ -227,7 +255,12 @@ export function PaymentClaimReviewPanel({ claim, outstandingInvoices }: PaymentC
                       checked={inv.id in allocations}
                       onChange={(e) => toggleInvoice(inv.id, e.target.checked)}
                     />
-                    <span className="flex-1 font-mono">{inv.invoiceNumber}</span>
+                    <span className="flex-1 font-mono">
+                      {inv.invoiceNumber}
+                      {claim.claimedInvoiceIds.includes(inv.id) && (
+                        <span className="ml-1.5 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-600">ditandai sales</span>
+                      )}
+                    </span>
                     <span className="text-gray-400">{formatRupiah(inv.outstandingBalance)}</span>
                     <input
                       type="number"

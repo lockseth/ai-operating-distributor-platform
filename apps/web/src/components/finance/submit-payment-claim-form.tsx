@@ -8,11 +8,20 @@
 // migration 20261010000001) -- proof_type/object_reference TEKS bebas,
 // bukan upload file (belum ada storage-upload primitive di design system,
 // pola sama RecordPaymentPanel Gate 2D).
+//
+// Extension 2026-08-19 (migration 20261012000001, insight Pak Waluyo):
+// invoice picker OPSIONAL -- sales bisa menandai invoice mana yang dia
+// maksud, murni referensi/informasi (TIDAK mengunci alokasi ledger, itu
+// tetap wewenang Owner/Finance saat approve). Kosong = "titip uang" tanpa
+// invoice spesifik, di layar approval nanti di-pre-fill pakai FIFO
+// (lib/finance/allocation.ts).
 // =============================================================================
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { submitPaymentClaimAction } from "@/lib/finance/actions";
+import { formatRupiah } from "@/lib/document-engine/monetary";
+import type { OutstandingInvoiceOption } from "@/lib/finance/queries";
 
 interface CustomerOption {
   id: string;
@@ -26,9 +35,15 @@ interface ProofRow {
 
 interface SubmitPaymentClaimFormProps {
   customers: CustomerOption[];
+  outstandingInvoices: OutstandingInvoiceOption[];
 }
 
-export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProps) {
+function formatDueDate(iso: string | null): string {
+  if (!iso) return "tanpa jatuh tempo";
+  return new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+export function SubmitPaymentClaimForm({ customers, outstandingInvoices }: SubmitPaymentClaimFormProps) {
   const router = useRouter();
   const [customerId, setCustomerId] = useState("");
   const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
@@ -36,11 +51,26 @@ export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProp
   const [transferReference, setTransferReference] = useState("");
   const [note, setNote] = useState("");
   const [proofs, setProofs] = useState<ProofRow[]>([]);
+  const [claimedInvoiceIds, setClaimedInvoiceIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const amountNumber = Number(amount) || 0;
+
+  const customerInvoices = useMemo(
+    () => outstandingInvoices.filter((i) => i.customerId === customerId),
+    [outstandingInvoices, customerId]
+  );
+
+  function selectCustomer(id: string) {
+    setCustomerId(id);
+    setClaimedInvoiceIds([]);
+  }
+
+  function toggleInvoice(invoiceId: string, checked: boolean) {
+    setClaimedInvoiceIds((prev) => (checked ? [...prev, invoiceId] : prev.filter((id) => id !== invoiceId)));
+  }
 
   function reset() {
     setCustomerId("");
@@ -49,6 +79,7 @@ export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProp
     setTransferReference("");
     setNote("");
     setProofs([]);
+    setClaimedInvoiceIds([]);
   }
 
   function submit() {
@@ -74,6 +105,7 @@ export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProp
           note: note.trim() || null,
           proofs: filledProofs,
           idempotencyKey: crypto.randomUUID(),
+          claimedInvoiceIds,
         });
         reset();
         setSuccess(true);
@@ -103,7 +135,7 @@ export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProp
           Customer
           <select
             value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
+            onChange={(e) => selectCustomer(e.target.value)}
             className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
           >
             <option value="">Pilih customer…</option>
@@ -114,6 +146,32 @@ export function SubmitPaymentClaimForm({ customers }: SubmitPaymentClaimFormProp
             ))}
           </select>
         </label>
+
+        {customerId && (
+          <div>
+            <p className="text-xs font-medium text-gray-600">
+              Untuk Tagihan Mana? <span className="font-normal text-gray-400">(opsional -- kosongkan kalau titip uang tanpa invoice spesifik)</span>
+            </p>
+            {customerInvoices.length === 0 ? (
+              <p className="mt-1 text-xs text-gray-400">Customer ini tidak punya invoice outstanding.</p>
+            ) : (
+              <div className="mt-1 space-y-1.5 rounded-lg border border-gray-100 bg-gray-50 p-2.5">
+                {customerInvoices.map((inv) => (
+                  <label key={inv.id} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={claimedInvoiceIds.includes(inv.id)}
+                      onChange={(e) => toggleInvoice(inv.id, e.target.checked)}
+                    />
+                    <span className="flex-1 font-mono">{inv.invoiceNumber}</span>
+                    <span className="text-gray-500">{formatRupiah(inv.outstandingBalance)}</span>
+                    <span className="text-gray-400">{formatDueDate(inv.dueDate)}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-xs font-medium text-gray-600">
