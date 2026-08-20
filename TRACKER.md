@@ -62,9 +62,9 @@ penuh karena masih operasional.
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-19 |
+| Tanggal update terakhir | 2026-08-20 |
 | Branch | `main` |
-| HEAD | `8432a43` — **sinkron penuh dengan `origin/main`** (0 ahead/behind). Mencakup seluruh gate s.d. Risk Alert List gabungan (Business Guard Collection Risk 4 milestone, Sales Risk → Executive Intelligence, PR data toko kredit, Gate P4.08, Owner Approval Inbox, dst.). Vercel production **Ready**, health-check bersih. |
+| HEAD | `b15c636` — **sinkron penuh dengan `origin/main`** (0 ahead/behind), push & deploy dikonfirmasi 2026-08-20. Mencakup seluruh gate s.d. fondasi chatbot bisnis Owner (Business Guard OFFICIALLY PASS 4/4 slice, Gate P4.06 extension invoice picker+FIFO, menu Tambah Webhook, fix chip Collection basi, Risk Alert filter Aman, chatbot Owner Milestone 1-3). Vercel production **Ready**, health-check bersih. |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. |
 | Status Phase 3 | **100% OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. |
 | Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP**. Keputusan teknis/arsitektur diputuskan langsung (didokumentasikan di sini/commit message); arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
@@ -188,18 +188,19 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
       belum ada padanannya.
    Catatan: satu bagian transkrip tidak jelas ("LFD bekolnya") — perlu
    klarifikasi ulang ke Pak Waluyo langsung sebelum dieksekusi.
-2. `[REQUEST FOUNDER]` **Fondasi data untuk chatbot bisnis Owner —
-   DISETUJUI arahnya (2026-08-16), EKSEKUSI SENGAJA DITUNDA** ("kerjakan
-   kalau waktunya tiba"). Audit kesiapan: "Produk paling laku"/"Toko
-   paling banyak order" — data mentah sudah lengkap, tinggal digeneralisir
-   jadi agregat rentang tanggal bebas. Governed KPI + Business Guard
-   discount anomaly — sudah ada, tinggal disurfacing. "Tagihan mana yang
-   bakal macet" — **sekarang SUDAH ADA** (Business Guard Collection Risk,
-   dibangun 2026-08-18), sebelumnya ini satu-satunya kategori kosong.
-   Rekomendasi CTO (belum dieksekusi): bangun satu lapisan agregat
-   terstruktur dulu sebelum chatbot-nya sendiri. Chatbot wajib lewat
-   `packages/ai` (CLAUDE.md #3), bukan panggil vendor AI langsung.
-3. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
+3. `[REQUEST FOUNDER]` **Chatbot bisnis Owner — Milestone 1-3 SELESAI
+   (2026-08-20), Milestone 4 menunggu API key.** Dipecah 4 milestone
+   (lihat Log Milestone 2026-08-20): M1 Context Builder, M2 Chat UI
+   (`/dashboard/owner-chat`, "Tanya AODP"), M3 wiring `packages/ai`
+   (dipakai pertama kali secara runtime, multi-turn ditambahkan) — semua
+   sudah PASS, diverifikasi browser nyata (server ambil data asli dari
+   DB, balas jujur "belum aktif" karena belum ada key, bukan jawaban
+   karangan). **M4 tinggal**: Founder pilih provider (OpenAI atau
+   Anthropic) + siapkan API key → didaftarkan sebagai environment
+   variable `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` di Vercel (belum ada
+   sama sekali saat ini, lihat baris Vercel Env Vars di Ditunda) → tidak
+   perlu kode baru lagi setelah itu.
+4. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
    data multi-tenant — DISETUJUI arahnya (2026-08-18), EKSEKUSI/DESAIN
    TEKNIS DISERAHKAN PENUH ke CTO, belum dimulai.** Muncul dari diskusi
    follow-up demo SURABRADJA (lihat juga memory
@@ -222,7 +223,8 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
 |---|---|---|---|
 | WIP `forgot-password-form.tsx` memanggil RPC yang migration-nya cuma ada di `migrations_archive/` — akan gagal runtime bila dideploy apa adanya | `[TEMUAN]` | 2026-08-14 | Protected WIP milik Founder, belum diperbaiki karena statusnya. Detail: Backlog #14 |
 | Halaman drill-down Call/Effective Call lintas-salesman untuk Owner/Manager | `[TEMUAN]` | 2026-08-15 | Detail: Backlog #7 |
-| Notifikasi WhatsApp realtime ke Owner (Owner Approval Inbox) belum benar-benar kirim — provider Bablast dipilih Founder tapi API key/endpoint/template WA belum disetujui Meta | `[REQUEST FOUNDER]` | 2026-08-18, **dikoreksi 2026-08-19** | Sisi AODP (trigger event + payload pesan + link) sudah selesai & teruji (Gate P4.08). **KOREKSI (2026-08-19, audit arsitektur lengkap — lihat Backlog #9)**: klaim "tinggal daftarkan `n8n_webhooks`, tidak perlu kode baru" **TERNYATA TIDAK LENGKAP**. Yang ditunggu dari Founder tetap sama (API key + endpoint Bablast + template disetujui Meta), TAPI begitu itu didapat masih ada 2 pekerjaan KODE tambahan sebelum WA beneran terkirim: (1) workflow n8n yang ada (`n8n/flowsales-*.json`) masih template dengan URL placeholder, belum tersambung ke Bablast sama sekali; (2) tidak ada UI untuk mendaftarkan `n8n_webhooks` — cuma bisa insert manual lewat SQL. Detail lengkap 2 pipeline (event-triggered vs scheduled outbox) di Backlog #9. |
+| Notifikasi WhatsApp realtime ke Owner (Owner Approval Inbox) belum benar-benar kirim — provider Bablast dipilih Founder tapi API key/endpoint/template WA belum disetujui Meta | `[REQUEST FOUNDER]` | 2026-08-18, **dikoreksi 2026-08-19** | Sisi AODP (trigger event + payload pesan + link) sudah selesai & teruji (Gate P4.08). **KOREKSI (2026-08-19, audit arsitektur lengkap — lihat Backlog #9)**: klaim "tinggal daftarkan `n8n_webhooks`, tidak perlu kode baru" **TERNYATA TIDAK LENGKAP**. Yang ditunggu dari Founder tetap sama (API key + endpoint Bablast + template disetujui Meta), TAPI begitu itu didapat masih ada 2 pekerjaan KODE tambahan sebelum WA beneran terkirim: (1) workflow n8n yang ada (`n8n/flowsales-*.json`) masih template dengan URL placeholder, belum tersambung ke Bablast sama sekali; (2) tidak ada UI untuk mendaftarkan `n8n_webhooks` — cuma bisa insert manual lewat SQL. Detail lengkap 2 pipeline (event-triggered vs scheduled outbox) di Backlog #9. **Konfirmasi 2026-08-20**: CTO sudah cek — Bablast TIDAK menimbulkan lock-in arsitektur (jalur kirim generic HTTP Request node, provider gampang diganti kapan saja), aman dipakai. |
+| **Vercel Environment Variables: SEMUA 8 variable cuma di-scope ke Production, TIDAK ADA untuk Preview/Development** — ditemukan saat review 2026-08-20 | `[TEMUAN]` | 2026-08-20 | Dicek langsung di dashboard Vercel dengan filter "All Environments" — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_APP_NAME`, `NEXT_PUBLIC_APP_URL` — semuanya cuma tercentang Production. Implikasi: Preview deployment (push ke branch selain `main`, atau PR) kemungkinan besar gagal total connect ke Supabase/Telegram karena variable-nya tidak ada di sana sama sekali. Belum diketahui ini disengaja (Preview memang tidak pernah dipakai serius) atau perlu ditambah scope-nya — perlu keputusan Founder, CTO tidak mengubah apa pun di Vercel tanpa izin eksplisit. Sekalian dicatat: belum ada `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` sama sekali (dibutuhkan utk Milestone 4 chatbot, item Berikutnya #3). Minor/bukan risiko: `NEXT_PUBLIC_APP_NAME`/`NEXT_PUBLIC_APP_URL` ditandai "Sensitive" padahal bukan data rahasia — tidak berbahaya, cuma tidak perlu. |
 | **Lock toko yang punya tagihan tertunggak** (blokir order baru sampai lunas) + alur pengajuan buka-lock oleh sales dengan approval Owner (notifikasi real-time) — insight Pak Waluyo | `[REQUEST FOUNDER]` | 2026-08-19 | Scope besar & masih ambigu di beberapa titik, sengaja BELUM dieksekusi, perlu klarifikasi CTO dulu: (a) ambang "tertunggak" — overdue berapa hari, atau setiap ada outstanding sedikit pun? (b) "locked" itu blokir SEMUA order baru atau cuma order kredit (cash tetap boleh)? (c) kalimat "pengajuan open locking pun hanya jika toko melakukan order dibayar lunas" ambigu — apakah maksudnya sales HANYA BOLEH ajukan buka-lock kalau sudah ada order baru yang lunas duluan (bukti), atau unlock terjadi OTOMATIS begitu ada order lunas (bukan pengajuan manual)? (d) "notifikasi real-time" ke Owner — jalur ini sama dengan Owner Approval Inbox (Gate P4.08 pattern) yang WA-nya masih terhambat Bablast (baris di atas) — perlu diputuskan pakai in-app inbox dulu (sudah ada pola-nya) sambil nunggu WA, atau tunggu WA dulu. Ini juga menyentuh alur create/confirm order (gate LOCKED lain) — perlu direncanakan hati-hati, bukan sekadar tambahan kecil. |
 
 ---
