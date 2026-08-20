@@ -9,9 +9,23 @@
 // Core Interfaces
 // ---------------------------------------------------------------------------
 
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export interface CompletionRequest {
   prompt: string;
   systemPrompt?: string;
+  /**
+   * Riwayat percakapan multi-turn (opsional). Kalau diisi (non-kosong),
+   * dipakai SEBAGAI GANTI `prompt` tunggal -- messages jadi conversation
+   * history lengkap termasuk pesan user terakhir yang mau dijawab. Kalau
+   * kosong/tidak diisi, `prompt` dipakai sebagai satu-satunya user message
+   * (perilaku lama, backward compatible -- pemanggil existing tidak perlu
+   * ubah kode).
+   */
+  messages?: ConversationMessage[];
   maxTokens?: number;
   temperature?: number;
   model?: string;

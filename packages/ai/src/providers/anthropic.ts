@@ -21,11 +21,16 @@ export class AnthropicProvider implements AIProvider {
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    const conversationMessages =
+      request.messages && request.messages.length > 0
+        ? request.messages.map((m) => ({ role: m.role, content: m.content }))
+        : [{ role: "user", content: request.prompt }];
+
     const body: Record<string, unknown> = {
       model: request.model ?? this.defaultModel,
       max_tokens: request.maxTokens ?? 500,
       temperature: request.temperature ?? 0.3,
-      messages: [{ role: "user", content: request.prompt }],
+      messages: conversationMessages,
     };
 
     if (request.systemPrompt) {

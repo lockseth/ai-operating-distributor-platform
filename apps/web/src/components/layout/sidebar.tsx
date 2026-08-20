@@ -189,6 +189,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Klaim Pembayaran", href: "/dashboard/payment-claims", icon: <IconCashClaim />, permission: "payment.claim" },
       { label: "Risk Alert",    href: "/dashboard/risk",       icon: <IconShield />,     roles: ["super_admin", "owner", "manager"] },
       { label: "AI Insights",   href: "/dashboard/ai",         icon: <IconAI />,         permission: "ai.view" },
+      { label: "Tanya AODP",    href: "/dashboard/owner-chat", icon: <IconChat />,       roles: ["super_admin", "owner", "manager"] },
     ],
   },
   {

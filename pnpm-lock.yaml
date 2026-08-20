@@ -26,6 +26,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@flowsales/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@flowsales/database':
         specifier: workspace:*
         version: link:../../packages/database

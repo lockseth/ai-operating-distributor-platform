@@ -26,7 +26,11 @@ export class OpenAIProvider implements AIProvider {
     if (request.systemPrompt) {
       messages.push({ role: "system", content: request.systemPrompt });
     }
-    messages.push({ role: "user", content: request.prompt });
+    if (request.messages && request.messages.length > 0) {
+      messages.push(...request.messages.map((m) => ({ role: m.role, content: m.content })));
+    } else {
+      messages.push({ role: "user", content: request.prompt });
+    }
 
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",

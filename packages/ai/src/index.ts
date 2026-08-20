@@ -3,6 +3,7 @@ export type {
   AIProviderName,
   CompletionRequest,
   CompletionResponse,
+  ConversationMessage,
   EmbeddingRequest,
   EmbeddingResponse,
 } from "./provider";
