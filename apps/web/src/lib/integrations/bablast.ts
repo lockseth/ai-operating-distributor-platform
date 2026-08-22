@@ -23,6 +23,18 @@ export function normalizeIndonesianPhone(raw: string): string | null {
   return digits;
 }
 
+/**
+ * Satu sumber kebenaran gate dry-run: HANYA true kalau `BABLAST_DRY_RUN`
+ * eksplisit `"false"` DAN `BABLAST_API_KEY` tersedia. Dipakai dispatch route
+ * (laporan terjadwal) DAN automation engine (`call_bablast` action,
+ * notifikasi real-time) supaya kedua jalur kirim WA nyata tunduk pada gate
+ * yang SAMA persis -- tidak boleh ada jalur kode yang duplikasi logic ini
+ * dengan risiko drift (mis. lupa cek API key di satu tempat).
+ */
+export function isBablastLiveSendEnabled(): boolean {
+  return process.env.BABLAST_DRY_RUN === "false" && Boolean(process.env.BABLAST_API_KEY);
+}
+
 function getApiKey(): string {
   const key = process.env.BABLAST_API_KEY;
   if (!key) throw new Error("BABLAST_API_KEY belum diset di environment");

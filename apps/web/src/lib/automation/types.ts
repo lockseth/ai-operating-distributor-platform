@@ -14,11 +14,13 @@ export type AutomationTriggerType =
   | "scheduled_daily"
   | "scheduled_weekly"
   | "manual"
-  | "special_price_proposal_submitted";
+  | "special_price_proposal_submitted"
+  | "store_unlock_requested";
 
 export type AutomationActionType =
   | "log"
   | "call_n8n"
+  | "call_bablast"
   | "generate_ai_summary"
   | "mark_customer_flag";
 

@@ -13,6 +13,42 @@ import type {
   RuleExecutionResult,
 } from "./types";
 import { callN8nWebhook } from "./n8n-client";
+import { isBablastLiveSendEnabled, normalizeIndonesianPhone, sendBablastMessage } from "@/lib/integrations/bablast";
+import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directory";
+import { resolveWhatsAppTarget } from "@/lib/n8n-automation/dispatch-target";
+
+/**
+ * Susun teks notifikasi WA per trigger_type -- switch eksplisit di kode,
+ * BUKAN templating generic, karena cuma sedikit trigger type yang benar-benar
+ * memicu `call_bablast` (jangan over-engineer untuk fleksibilitas yang belum
+ * dibutuhkan).
+ */
+function buildBablastNotificationText(event: AutomationEvent): string {
+  const data = event.data;
+  const str = (key: string): string => (typeof data[key] === "string" && data[key] ? (data[key] as string) : "-");
+
+  switch (event.trigger_type) {
+    case "special_price_proposal_submitted":
+      return [
+        "Pengajuan Harga Khusus baru",
+        `Order: ${str("order_number")}`,
+        `Toko: ${str("customer_name")}`,
+        `Diajukan oleh: ${str("requested_by_email")}`,
+        `Alasan: ${str("reason")}`,
+        `Tinjau: ${str("approval_link")}`,
+      ].join("\n");
+    case "store_unlock_requested":
+      return [
+        "Pengajuan Buka Kunci Toko baru",
+        `Toko: ${str("customer_name")}`,
+        `Diajukan oleh: ${str("requested_by_email")}`,
+        `Alasan: ${str("reason")}`,
+        `Tinjau: ${str("review_link")}`,
+      ].join("\n");
+    default:
+      return `Event automation: ${event.trigger_type}`;
+  }
+}
 
 // Fetch active rules for a given trigger type + company
 async function fetchMatchingRules(
@@ -57,7 +93,9 @@ function evaluateConditions(
 }
 
 // Execute a single action
-async function executeAction(
+// (exported HANYA supaya call_bablast bisa diuji unit test terisolasi tanpa
+// harus mock seluruh pipeline processAutomationEvent -- lihat engine.test.ts)
+export async function executeAction(
   action: AutomationAction,
   event: AutomationEvent,
   rule: AutomationRule
@@ -128,6 +166,43 @@ async function executeAction(
           message: results.join(", "),
           duration_ms: Date.now() - start,
         };
+      }
+
+      case "call_bablast": {
+        const directory = new SupabaseSalesmanDirectory(getAdminClient());
+        const owner = await directory.findActiveOwnerRecipient(event.company_id);
+        const normalizedPhone = owner?.phone ? normalizeIndonesianPhone(owner.phone) : null;
+        if (!normalizedPhone) {
+          return {
+            type: "call_bablast",
+            status: "skipped",
+            message: "Owner belum punya nomor WhatsApp valid -- notifikasi tidak terkirim.",
+            duration_ms: Date.now() - start,
+          };
+        }
+
+        if (!isBablastLiveSendEnabled()) {
+          return {
+            type: "call_bablast",
+            status: "skipped",
+            message: "BABLAST_DRY_RUN aktif atau API key belum diset -- notifikasi tidak dikirim nyata.",
+            duration_ms: Date.now() - start,
+          };
+        }
+
+        try {
+          const text = buildBablastNotificationText(event);
+          const target = resolveWhatsAppTarget(normalizedPhone);
+          await sendBablastMessage(target, text);
+          return { type: "call_bablast", status: "success", duration_ms: Date.now() - start };
+        } catch (err) {
+          return {
+            type: "call_bablast",
+            status: "failed",
+            error: err instanceof Error ? err.message : "Gagal mengirim WhatsApp",
+            duration_ms: Date.now() - start,
+          };
+        }
       }
 
       case "generate_ai_summary": {

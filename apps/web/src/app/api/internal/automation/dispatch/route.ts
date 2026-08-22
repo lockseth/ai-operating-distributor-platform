@@ -31,7 +31,7 @@ import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-
 import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential, sanitizeAutomationError } from "@/lib/n8n-automation/service";
 import { HttpTelegramSender, RecordingTelegramSender, type TelegramSender } from "@/lib/telegram/client";
-import { sendBablastMessage } from "@/lib/integrations/bablast";
+import { isBablastLiveSendEnabled, sendBablastMessage } from "@/lib/integrations/bablast";
 import { resolveTelegramTarget, resolveWhatsAppTarget } from "@/lib/n8n-automation/dispatch-target";
 
 const RATE_LIMIT = 60;
@@ -62,10 +62,7 @@ class RecordingWhatsAppSender implements WhatsAppSender {
 }
 
 function resolveWhatsAppSender(): WhatsAppSender {
-  const dryRun = process.env.BABLAST_DRY_RUN !== "false";
-  const apiKey = process.env.BABLAST_API_KEY;
-  if (!dryRun && apiKey) return new BablastWhatsAppSender();
-  return new RecordingWhatsAppSender();
+  return isBablastLiveSendEnabled() ? new BablastWhatsAppSender() : new RecordingWhatsAppSender();
 }
 
 const PHONE_LIKE_PATTERN = /^\+?[0-9]{8,15}$/;
