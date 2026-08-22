@@ -187,9 +187,24 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    sudah ingatkan risikonya (identitas campur, risiko ban akumulasi kalau
    nanti salah satu naik ke production dengan customer nyata), Founder
    putuskan tetap gpp untuk tahap testing ini, **wajib dipisah sebelum
-   salah satu project go-live**. Sisa satu-satunya langkah manual:
-   pairing nomor lewat kartu "Koneksi WhatsApp" — belum pernah dicoba
-   nyata sampai baris ini ditulis.
+   salah satu project go-live**. **UPDATE — pairing SELESAI, nomor
+   `6285287539900` terkonfirmasi Terhubung.** Sempat ada bug: kartu
+   "Mulai Pairing" tidak menampilkan apa-apa (bukan error, cuma UI salah
+   baca respons) karena kontrak nyata API Bablast beda dari dugaan awal
+   (`getBablastConnectorStatus`/`initiateBablastPairing` di
+   `lib/integrations/bablast.ts` cuma cek field flat `connected`/
+   `pairing_code`, padahal respons asli membungkus semua di
+   `data.isConnected`/`data.sessionData`). Ditemukan & diperbaiki langsung
+   di browser hosted nyata (Founder sudah login, saya test langsung):
+   respons asli `GET /connector/status` → `{success:true, data:
+   {isConnected:true, sessionData:{phoneNumber:"6285287539900:4", ...}}}`,
+   respons `POST /connector/pairing` saat sudah terhubung →
+   `{success:true, message:"sender sudah terpairing", data:{}}`. Fix
+   parsing + tambah pesan "sudah terhubung sebelumnya" untuk kasus itu.
+   Diverifikasi ulang di browser hosted: badge hijau "Terhubung
+   (6285287539900)" tampil benar. **Bablast sekarang siap kirim nyata**
+   sepenuhnya — tinggal menunggu jadwal cron berikutnya atau trigger
+   manual untuk tes kirim pertama.
    **Temuan UX (2026-08-22, belum dieksekusi, Founder pilih tunda dulu)**:
    halaman `/dashboard/automation` mencampur kartu WA Pairing (simpel,
    pas untuk Owner) dengan form "Tambah Webhook" n8n lama (istilah teknis
