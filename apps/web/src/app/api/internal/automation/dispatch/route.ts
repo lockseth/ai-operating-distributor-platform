@@ -12,6 +12,17 @@
 // mengizinkan pengiriman nyata lewat Bablast. Sengaja dipisah dari
 // AUTOMATION_DRY_RUN (provider beda, kesiapan beda) supaya mengaktifkan satu
 // channel tidak diam-diam mengaktifkan channel lain.
+//
+// TEST OVERRIDE (insiden 2026-08-22): trigger manual/tes SEBELUMNYA bisa
+// mengirim WA nyata ke nomor client asli (recipient_reference selalu dari
+// data produksi, tidak pernah dibedakan "ini tes" vs "ini beneran") --
+// terjadi ke nomor Owner tenant tanpa pemberitahuan dulu, berisiko dikira
+// spam/disadap oleh client. Sekarang kalau BABLAST_TEST_OVERRIDE_PHONE /
+// TELEGRAM_TEST_OVERRIDE_CHAT_ID diset, SEMUA pengiriman channel itu --
+// termasuk saat BABLAST_DRY_RUN=false -- dialihkan ke nomor/chat id itu,
+// bukan recipient_reference asli. Ini pagar keras: bukan sekadar "ingat-
+// ingat manual", benar-benar tidak ada jalur kode yang bisa tembus ke
+// client asli selama override ini aktif.
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -21,6 +32,7 @@ import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential, sanitizeAutomationError } from "@/lib/n8n-automation/service";
 import { HttpTelegramSender, RecordingTelegramSender, type TelegramSender } from "@/lib/telegram/client";
 import { sendBablastMessage } from "@/lib/integrations/bablast";
+import { resolveTelegramTarget, resolveWhatsAppTarget } from "@/lib/n8n-automation/dispatch-target";
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
@@ -100,17 +112,18 @@ export async function POST(request: Request) {
       try {
         let providerMessageId: string | null;
         if (job.channel === "telegram") {
-          const chatId = Number(job.recipientReference);
+          const chatId = resolveTelegramTarget(job.recipientReference);
           if (!Number.isFinite(chatId)) throw new Error("invalid recipient_reference for telegram channel");
           await telegramSender.sendMessage(chatId, text);
           providerMessageId = telegramSender instanceof RecordingTelegramSender ? "dry-run" : null;
         } else {
           // whatsapp: recipient_reference wajib nomor telepon tujuan sejak Gate P4.13
           // (sebelumnya "owner:<id>", sekarang nomor asli -- lihat route generator).
-          if (!PHONE_LIKE_PATTERN.test(job.recipientReference)) {
+          const targetPhone = resolveWhatsAppTarget(job.recipientReference);
+          if (!PHONE_LIKE_PATTERN.test(targetPhone)) {
             throw new Error("invalid recipient_reference for whatsapp channel (bukan format nomor telepon)");
           }
-          providerMessageId = await whatsappSender.sendMessage(job.recipientReference, text);
+          providerMessageId = await whatsappSender.sendMessage(targetPhone, text);
         }
 
         const completeResult = await repository.completeJob({
@@ -137,6 +150,10 @@ export async function POST(request: Request) {
       dry_run: {
         telegram: telegramSender instanceof RecordingTelegramSender,
         whatsapp: whatsappSender instanceof RecordingWhatsAppSender,
+      },
+      test_override_active: {
+        telegram: Boolean(process.env.TELEGRAM_TEST_OVERRIDE_CHAT_ID),
+        whatsapp: Boolean(process.env.BABLAST_TEST_OVERRIDE_PHONE),
       },
       claimed: claimResult.jobs.length,
       results,
