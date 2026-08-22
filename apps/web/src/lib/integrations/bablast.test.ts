@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { normalizeIndonesianPhone } from "./bablast";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { initiateBablastPairing, normalizeIndonesianPhone } from "./bablast";
 
 describe("normalizeIndonesianPhone", () => {
   it("nomor diawali 0 -> diganti jadi 62", () => {
@@ -34,5 +34,45 @@ describe("normalizeIndonesianPhone", () => {
 
   it("terlalu panjang -> null", () => {
     expect(normalizeIndonesianPhone("0877784040851234567890")).toBeNull();
+  });
+});
+
+describe("initiateBablastPairing -- parsing kontrak nyata /connector/pairing", () => {
+  const originalFetch = global.fetch;
+  const originalApiKey = process.env.BABLAST_API_KEY;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    process.env.BABLAST_API_KEY = originalApiKey;
+  });
+
+  function mockFetchOnce(body: unknown) {
+    process.env.BABLAST_API_KEY = "test-key";
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(body),
+    }) as unknown as typeof fetch;
+  }
+
+  it("data adalah STRING mentah (QR-mode nyata) -> masuk sebagai qrCode, bukan hilang jadi null", async () => {
+    mockFetchOnce({
+      success: true,
+      message: "QR Code generated successfully",
+      data: "https://wa.me/settings/linked_devices#2@abc123",
+    });
+
+    const result = await initiateBablastPairing();
+    expect(result.qrCode).toBe("https://wa.me/settings/linked_devices#2@abc123");
+    expect(result.pairingCode).toBeNull();
+    expect(result.alreadyConnected).toBe(false);
+  });
+
+  it("data kosong object + pesan 'sudah terpairing' -> alreadyConnected true", async () => {
+    mockFetchOnce({ success: true, message: "sender sudah terpairing", data: {} });
+
+    const result = await initiateBablastPairing();
+    expect(result.alreadyConnected).toBe(true);
+    expect(result.qrCode).toBeNull();
   });
 });

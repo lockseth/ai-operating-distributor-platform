@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Smartphone, Loader2, CheckCircle2, XCircle, RefreshCw } from "lucide-react";
+import QRCode from "qrcode";
 import { checkBablastStatusAction, startBablastPairingAction } from "@/lib/integrations/bablast-actions";
 
 interface BablastPairingCardProps {
@@ -15,9 +16,28 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
   const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [qrImageDataUrl, setQrImageDataUrl] = useState<string | null>(null);
   const [alreadyConnectedNote, setAlreadyConnectedNote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!qrCode) {
+      setQrImageDataUrl(null);
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(qrCode, { width: 240, margin: 1 })
+      .then((dataUrl) => {
+        if (!cancelled) setQrImageDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Gagal membuat gambar QR dari data pairing.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [qrCode]);
 
   if (!canManage) return null;
 
@@ -89,8 +109,14 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
           <p className="text-sm font-medium text-blue-900">Scan/masukkan kode ini di WhatsApp HP Anda:</p>
           {qrCode && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={qrCode} alt="QR pairing WhatsApp" className="h-40 w-40 rounded border border-blue-200 bg-white" />
+            qrImageDataUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={qrImageDataUrl} alt="QR pairing WhatsApp" className="h-40 w-40 rounded border border-blue-200 bg-white" />
+            ) : (
+              <div className="flex h-40 w-40 items-center justify-center rounded border border-blue-200 bg-white">
+                <Loader2 className="h-5 w-5 animate-spin text-blue-400" />
+              </div>
+            )
           )}
           {pairingCode && (
             <p className="font-mono text-lg font-bold tracking-widest text-blue-900">{pairingCode}</p>

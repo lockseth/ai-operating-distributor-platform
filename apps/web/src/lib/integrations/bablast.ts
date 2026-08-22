@@ -106,10 +106,21 @@ export interface BablastPairingResult {
   raw: Record<string, unknown>;
 }
 
-/** Mulai proses pairing nomor WhatsApp -- hasilnya kode/QR yang wajib di-scan pemilik nomor di HP-nya sendiri, AODP tidak bisa melakukan langkah scan itu. */
+/**
+ * Mulai proses pairing nomor WhatsApp -- hasilnya kode/QR yang wajib di-scan
+ * pemilik nomor di HP-nya sendiri, AODP tidak bisa melakukan langkah scan
+ * itu.
+ *
+ * Kontrak nyata `data` field ternyata BUKAN selalu object -- dikonfirmasi
+ * 2026-08-22, respons QR-mode: `{success, message, data: "https://wa.me/
+ * settings/linked_devices#2@...")}`, `data` di sini STRING mentah berisi
+ * linking-payload yang harus di-encode jadi gambar QR (persis konten yang
+ * dikodekan QR WhatsApp Web asli) -- bukan URL gambar siap pakai.
+ */
 export async function initiateBablastPairing(): Promise<BablastPairingResult> {
   const body = await bablastFetch("/connector/pairing", { method: "POST" });
-  const data = (body.data ?? {}) as Record<string, unknown>;
+  const rawData = body.data;
+  const data = typeof rawData === "object" && rawData !== null ? (rawData as Record<string, unknown>) : {};
   const pairingCode =
     (typeof data.pairing_code === "string" && data.pairing_code) ||
     (typeof data.code === "string" && data.code) ||
@@ -123,6 +134,7 @@ export async function initiateBablastPairing(): Promise<BablastPairingResult> {
     (typeof body.qr_code === "string" && body.qr_code) ||
     (typeof body.qr === "string" && body.qr) ||
     (typeof body.qrCode === "string" && body.qrCode) ||
+    (typeof rawData === "string" && rawData.length > 0 && rawData) ||
     null;
   const messageText = typeof body.message === "string" ? body.message.toLowerCase() : "";
   const alreadyConnected =
