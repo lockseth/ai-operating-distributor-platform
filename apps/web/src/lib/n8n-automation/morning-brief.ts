@@ -12,6 +12,7 @@ import type {
 } from "@/lib/sales-kpi/types";
 import type { SalesKpiRepository } from "@/lib/sales-kpi/repository";
 import type { CustomerDataGapCounts, CustomerDataGapRepository } from "@/lib/customers/data-completeness";
+import { formatRupiah } from "@/lib/document-engine/monetary";
 
 export interface MorningBriefContext {
   tenantName: string;
@@ -42,6 +43,12 @@ export interface MorningBriefContent {
 export function formatLine(target: number | null, actual: number, percentage: number | null): string {
   if (target === null) return `${actual} (Data belum cukup -- target belum ditetapkan)`;
   return `${actual}/${target} (${percentage ?? 0}%)`;
+}
+
+/** Sama seperti formatLine, tapi untuk metrik uang -- actual/target ditampilkan format Rupiah (mis. "Rp21.496.260/Rp100.000.000"), bukan angka mentah. */
+export function formatCurrencyLine(target: number | null, actual: number, percentage: number | null): string {
+  if (target === null) return `${formatRupiah(actual)} (Data belum cukup -- target belum ditetapkan)`;
+  return `${formatRupiah(actual)}/${formatRupiah(target)} (${percentage ?? 0}%)`;
 }
 
 /** PR data toko kredit -- ditambahkan di akhir brief, terlepas dari status periode KPI. */
@@ -94,14 +101,16 @@ export function buildMorningBrief(ctx: MorningBriefContext): MorningBriefContent
     `Order: ${formatLine(ctx.projection.orderCount.target, ctx.projection.orderCount.actual, ctx.projection.orderCount.achievementPercentage)}`,
   );
   lines.push(
-    `Revenue: ${formatLine(ctx.projection.revenue.target, Math.round(ctx.projection.revenue.actual), ctx.projection.revenue.achievementPercentage)}`,
+    `Revenue: ${formatCurrencyLine(ctx.projection.revenue.target, Math.round(ctx.projection.revenue.actual), ctx.projection.revenue.achievementPercentage)}`,
   );
 
   const ecRate =
     ctx.projection.call.actual > 0
       ? Math.round((ctx.projection.effectiveCall.actual / ctx.projection.call.actual) * 100)
       : null;
-  lines.push(`EC Rate: ${ecRate !== null ? `${ecRate}% (insight, bukan KPI)` : "Data belum cukup"}`);
+  lines.push(
+    `EC Rate: ${ecRate !== null ? `${ecRate}% dari ${ctx.projection.effectiveCall.actual}/${ctx.projection.call.actual} call (insight, bukan KPI)` : "Data belum cukup"}`,
+  );
 
   if (ctx.baseline && ctx.baseline.sufficiency === "INSUFFICIENT") {
     lines.push("");

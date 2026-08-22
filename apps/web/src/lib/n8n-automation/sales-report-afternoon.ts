@@ -9,7 +9,8 @@
 // =============================================================================
 
 import type { ActiveSalesKpiPeriod, SalesKpiAchievementProjection } from "@/lib/sales-kpi/types";
-import { formatLine } from "./morning-brief";
+import { formatCurrencyLine, formatLine } from "./morning-brief";
+import { formatRupiah } from "@/lib/document-engine/monetary";
 
 export interface SalesReportAfternoonTagihan {
   outstandingCount: number;
@@ -44,7 +45,7 @@ function ecToTransaksiText(p: SalesKpiAchievementProjection): string {
 function tagihanText(t: SalesReportAfternoonTagihan): string {
   if (t.outstandingCount === 0) return "Tagihan: tidak ada piutang outstanding";
   const overdueText = t.overdueCount > 0 ? `, ${t.overdueCount} lewat jatuh tempo` : "";
-  return `Tagihan: ${t.outstandingCount} invoice outstanding (${t.outstandingTotal})${overdueText}`;
+  return `Tagihan: ${t.outstandingCount} invoice outstanding (${formatRupiah(t.outstandingTotal)})${overdueText}`;
 }
 
 export function buildSalesReportAfternoon(ctx: SalesReportAfternoonContext): SalesReportAfternoonContent {
@@ -87,7 +88,7 @@ export function buildSalesReportAfternoon(ctx: SalesReportAfternoonContext): Sal
     lines.push(`${line.salesmanFullName}:`);
     lines.push(`  ${ecToTransaksiText(p)}`);
     lines.push(`  Transaksi ${formatLine(p.orderCount.target, p.orderCount.actual, p.orderCount.achievementPercentage)}`);
-    lines.push(`  Omzet ${formatLine(p.revenue.target, Math.round(p.revenue.actual), p.revenue.achievementPercentage)}`);
+    lines.push(`  Omzet ${formatCurrencyLine(p.revenue.target, Math.round(p.revenue.actual), p.revenue.achievementPercentage)}`);
     lines.push(`  ${tagihanText(line.tagihan)}`);
 
     structuredSalesmen.push({

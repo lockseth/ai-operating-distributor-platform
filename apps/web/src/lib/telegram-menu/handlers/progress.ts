@@ -43,6 +43,6 @@ export async function buildProgressMessage(
     `Periode: ${activePeriod.name}`,
     `Call: ${formatLine(call.target, call.actual, call.achievementPercentage)}`,
     `Effective Call: ${formatLine(effectiveCall.target, effectiveCall.actual, effectiveCall.achievementPercentage)}`,
-    `EC Rate: ${ecRate !== null ? `${ecRate}% (insight, bukan KPI)` : "Data belum cukup"}`,
+    `EC Rate: ${ecRate !== null ? `${ecRate}% dari ${effectiveCall.actual}/${call.actual} call (insight, bukan KPI)` : "Data belum cukup"}`,
   ].join("\n");
 }

@@ -49,7 +49,7 @@ describe("buildCollectionPlanMorning -- Rencana Penagihan Owner, n8n tidak mengh
       lines: [{ salesmanFullName: "Budi", entries: [overdueEntry(3)] }],
     });
     expect(content.text).toContain("Budi (1 toko):");
-    expect(content.text).toContain("Toko Sumber Rejeki -- AODPDEV-INV-20260818-000001 (2500000) -- overdue 3 hari");
+    expect(content.text).toContain("Toko Sumber Rejeki -- AODPDEV-INV-20260818-000001 (Rp2.500.000) -- overdue 3 hari");
     expect(content.structured.status).toBe("HAS_TARGETS");
   });
 
@@ -59,7 +59,7 @@ describe("buildCollectionPlanMorning -- Rencana Penagihan Owner, n8n tidak mengh
       businessDate: "2026-08-22",
       lines: [{ salesmanFullName: "Siti", entries: [brokenPromiseEntry(2, 1_000_000)] }],
     });
-    expect(content.text).toContain("janji bayar lewat 2 hari (1000000)");
+    expect(content.text).toContain("janji bayar lewat 2 hari (Rp1.000.000)");
   });
 
   it("invoice dengan kedua sinyal -> satu baris, kedua alasan tergabung", () => {
@@ -74,7 +74,7 @@ describe("buildCollectionPlanMorning -- Rencana Penagihan Owner, n8n tidak mengh
       businessDate: "2026-08-22",
       lines: [{ salesmanFullName: "Budi", entries: [combined] }],
     });
-    expect(content.text).toContain("overdue 5 hari, janji bayar lewat 1 hari (2500000)");
+    expect(content.text).toContain("overdue 5 hari, janji bayar lewat 1 hari (Rp2.500.000)");
     // satu baris entri, bukan dua baris terpisah untuk invoice yang sama
     expect(content.text.match(/AODPDEV-INV-20260818-000001/g)?.length).toBe(1);
   });

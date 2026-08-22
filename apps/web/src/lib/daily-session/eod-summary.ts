@@ -107,7 +107,7 @@ export async function composeEndOfDaySummary(
     "",
     `Call: ${formatLine(callTarget, callActual, callTarget !== null ? Math.round((callActual / callTarget) * 100) : null)}${callPacingNote}`,
     `Effective Call: ${formatLine(effectiveCallTarget, effectiveCallActual, effectiveCallTarget !== null ? Math.round((effectiveCallActual / effectiveCallTarget) * 100) : null)}`,
-    `EC Rate: ${ecRate !== null ? `${ecRate}% (insight, bukan KPI)` : "Data belum cukup"}`,
+    `EC Rate: ${ecRate !== null ? `${ecRate}% dari ${effectiveCallActual}/${callActual} call (insight, bukan KPI)` : "Data belum cukup"}`,
     `Order confirmed: ${ordersConfirmedToday}`,
     `Pengiriman selesai: ${deliveriesCompleted} | belum selesai: ${deliveriesPending}`,
     `Kunjungan belum selesai: ${unfinishedStores.length === 0 ? "tidak ada" : unfinishedStores.join(", ")}`,

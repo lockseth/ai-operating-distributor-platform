@@ -10,6 +10,8 @@
 // dihitung ulang.
 // =============================================================================
 
+import { formatRupiah } from "@/lib/document-engine/monetary";
+
 export interface CollectionPlanEntryLine {
   customerName: string;
   invoiceNumber: string;
@@ -40,7 +42,7 @@ export interface CollectionPlanMorningContent {
 function reasonText(e: CollectionPlanEntryLine): string {
   const parts: string[] = [];
   if (e.isOverdue) parts.push(`overdue ${e.daysOverdue} hari`);
-  if (e.hasOverduePromise) parts.push(`janji bayar lewat ${e.daysSincePromise} hari (${e.promisedAmount})`);
+  if (e.hasOverduePromise) parts.push(`janji bayar lewat ${e.daysSincePromise} hari (${formatRupiah(e.promisedAmount ?? 0)})`);
   return parts.join(", ");
 }
 
@@ -69,7 +71,7 @@ export function buildCollectionPlanMorning(ctx: CollectionPlanMorningContext): C
   for (const line of salesmenWithTargets) {
     lines.push(`${line.salesmanFullName} (${line.entries.length} toko):`);
     for (const e of line.entries) {
-      lines.push(`  ${e.customerName} -- ${e.invoiceNumber} (${e.outstandingBalance}) -- ${reasonText(e)}`);
+      lines.push(`  ${e.customerName} -- ${e.invoiceNumber} (${formatRupiah(e.outstandingBalance)}) -- ${reasonText(e)}`);
     }
     structuredSalesmen.push({ salesmanFullName: line.salesmanFullName, entries: line.entries });
   }

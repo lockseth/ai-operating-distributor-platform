@@ -68,8 +68,8 @@ describe("buildSalesReportAfternoon -- Laporan Sore Owner, n8n tidak menghitung 
     });
     expect(content.text).toContain("EC-to-Transaksi: 5 kunjungan -> 3 transaksi (60%)");
     expect(content.text).toContain("Transaksi 3/5 (60%)");
-    expect(content.text).toContain("Omzet 4500000/10000000 (45%)");
-    expect(content.text).toContain("Tagihan: 4 invoice outstanding (12000000), 1 lewat jatuh tempo");
+    expect(content.text).toContain("Omzet Rp4.500.000/Rp10.000.000 (45%)");
+    expect(content.text).toContain("Tagihan: 4 invoice outstanding (Rp12.000.000), 1 lewat jatuh tempo");
 
     const salesmen = content.structured.salesmen as Record<string, unknown>[];
     expect(salesmen[0].status).toBe("TARGET_SET");
