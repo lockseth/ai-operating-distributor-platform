@@ -1,10 +1,19 @@
 // =============================================================================
 // Internal Automation API -- generate Morning Brief. Membuat SATU outbox job
-// PENDING per salesman aktif+Telegram valid, idempotent per (salesperson,
-// business date Asia/Jakarta). Konten SELALU dari lib/sales-kpi/* (achievement
-// projection + calibration baseline) -- endpoint ini TIDAK menghitung Call/
-// EC/achievement sendiri, hanya memanggil service AODP lalu merangkai teks
-// lewat presenter (lib/n8n-automation/morning-brief.ts).
+// PENDING per salesman aktif+nomor telepon valid, idempotent per
+// (salesperson, business date Asia/Jakarta). Konten SELALU dari
+// lib/sales-kpi/* (achievement projection + calibration baseline) --
+// endpoint ini TIDAK menghitung Call/EC/achievement sendiri, hanya
+// memanggil service AODP lalu merangkai teks lewat presenter
+// (lib/n8n-automation/morning-brief.ts).
+//
+// Gate P4.15 (2026-08-22): channel dipindah dari Telegram ke WhatsApp --
+// alasan Founder: (1) awalnya Telegram dipilih karena provider WA lama
+// (Fonnte) mahal, sekarang sudah pakai Bablast yang lebih murah dan sudah
+// terhubung; (2) sales lebih familiar WhatsApp; (3) WhatsApp AODP TIDAK
+// dipakai sebagai chatbot customer, jadi tidak ada risiko campur channel.
+// Telegram Sales Order Entry (input order) TIDAK berubah -- itu sistem
+// terpisah, tidak disentuh sama sekali.
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -56,7 +65,7 @@ export async function POST(request: Request) {
     const customerDataGapRepository = new SupabaseCustomerDataGapRepository(admin);
 
     const directory = new SupabaseSalesmanDirectory(admin);
-    const recipients = await directory.listEligibleMorningBriefRecipients(credential.companyId);
+    const recipients = await directory.listEligibleWhatsAppRecipients(credential.companyId);
 
     let created = 0;
     let skipped = 0;
@@ -77,9 +86,9 @@ export async function POST(request: Request) {
         credentialId: credential.id,
         requiredScope: REQUIRED_SCOPE,
         eventType: "MORNING_BRIEF",
-        channel: "telegram",
+        channel: "whatsapp",
         recipientUserId: recipient.userId,
-        recipientReference: recipient.telegramChatId,
+        recipientReference: recipient.phone,
         payload: { text: content.text, ...content.structured },
         idempotencyKey: morningBriefIdempotencyKey(recipient.userId, businessDate),
       });
