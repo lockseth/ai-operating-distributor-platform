@@ -74,19 +74,26 @@ export async function sendBablastMessage(phone: string, message: string): Promis
 
 export interface BablastConnectorStatus {
   connected: boolean;
+  /** Nomor sender yang terhubung saat ini (kalau connected), tanpa suffix session (mis. ":4"). */
+  phoneNumber: string | null;
   raw: Record<string, unknown>;
 }
 
-/** Cek apakah nomor WhatsApp sender sudah ter-pairing/connected. */
+/**
+ * Cek apakah nomor WhatsApp sender sudah ter-pairing/connected.
+ * Kontrak nyata (dikonfirmasi 2026-08-22, respons langsung dari GET
+ * /connector/status): `{ success, message, data: { isConnected, status,
+ * sessionData: { isConnected, lastConnect, name, phoneNumber, platform } } }`
+ * -- BUKAN `{ connected, status }` flat seperti dugaan awal.
+ */
 export async function getBablastConnectorStatus(): Promise<BablastConnectorStatus> {
   const body = await bablastFetch("/connector/status", { method: "GET" });
-  const statusValue = typeof body.status === "string" ? body.status.toLowerCase() : null;
-  const connected =
-    body.connected === true ||
-    statusValue === "connected" ||
-    statusValue === "online" ||
-    statusValue === "paired";
-  return { connected, raw: body };
+  const data = (body.data ?? {}) as Record<string, unknown>;
+  const sessionData = (data.sessionData ?? {}) as Record<string, unknown>;
+  const connected = data.isConnected === true || sessionData.isConnected === true;
+  const rawPhone = typeof sessionData.phoneNumber === "string" ? sessionData.phoneNumber : null;
+  const phoneNumber = rawPhone ? rawPhone.split(":")[0] : null;
+  return { connected, phoneNumber, raw: body };
 }
 
 export interface BablastPairingResult {
@@ -94,20 +101,31 @@ export interface BablastPairingResult {
   pairingCode: string | null;
   /** URL/data QR code (kalau provider mengembalikan format ini). */
   qrCode: string | null;
+  /** true kalau Bablast bilang sender sudah terpairing sebelumnya -- tidak ada kode/QR baru untuk di-scan (dikonfirmasi nyata: `{success:true, message:"sender sudah terpairing", data:{}}`). */
+  alreadyConnected: boolean;
   raw: Record<string, unknown>;
 }
 
 /** Mulai proses pairing nomor WhatsApp -- hasilnya kode/QR yang wajib di-scan pemilik nomor di HP-nya sendiri, AODP tidak bisa melakukan langkah scan itu. */
 export async function initiateBablastPairing(): Promise<BablastPairingResult> {
   const body = await bablastFetch("/connector/pairing", { method: "POST" });
+  const data = (body.data ?? {}) as Record<string, unknown>;
   const pairingCode =
+    (typeof data.pairing_code === "string" && data.pairing_code) ||
+    (typeof data.code === "string" && data.code) ||
     (typeof body.pairing_code === "string" && body.pairing_code) ||
     (typeof body.code === "string" && body.code) ||
     null;
   const qrCode =
+    (typeof data.qr_code === "string" && data.qr_code) ||
+    (typeof data.qr === "string" && data.qr) ||
+    (typeof data.qrCode === "string" && data.qrCode) ||
     (typeof body.qr_code === "string" && body.qr_code) ||
     (typeof body.qr === "string" && body.qr) ||
     (typeof body.qrCode === "string" && body.qrCode) ||
     null;
-  return { pairingCode, qrCode, raw: body };
+  const messageText = typeof body.message === "string" ? body.message.toLowerCase() : "";
+  const alreadyConnected =
+    !pairingCode && !qrCode && (messageText.includes("sudah terpairing") || messageText.includes("already"));
+  return { pairingCode, qrCode, alreadyConnected, raw: body };
 }

@@ -12,8 +12,10 @@ type ConnectionState = "unknown" | "connected" | "not_connected";
 
 export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
   const [connectionState, setConnectionState] = useState<ConnectionState>("unknown");
+  const [connectedPhone, setConnectedPhone] = useState<string | null>(null);
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [qrCode, setQrCode] = useState<string | null>(null);
+  const [alreadyConnectedNote, setAlreadyConnectedNote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -28,11 +30,13 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
         return;
       }
       setConnectionState(result.data.connected ? "connected" : "not_connected");
+      setConnectedPhone(result.data.phoneNumber);
     });
   }
 
   function handleStartPairing() {
     setError(null);
+    setAlreadyConnectedNote(false);
     startTransition(async () => {
       const result = await startBablastPairingAction();
       if (!result.ok) {
@@ -41,6 +45,10 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
       }
       setPairingCode(result.data.pairingCode);
       setQrCode(result.data.qrCode);
+      if (result.data.alreadyConnected) {
+        setAlreadyConnectedNote(true);
+        setConnectionState("connected");
+      }
     });
   }
 
@@ -58,7 +66,7 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
         </div>
         {connectionState === "connected" && (
           <span className="flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-            <CheckCircle2 className="h-3.5 w-3.5" /> Terhubung
+            <CheckCircle2 className="h-3.5 w-3.5" /> Terhubung{connectedPhone ? ` (${connectedPhone})` : ""}
           </span>
         )}
         {connectionState === "not_connected" && (
@@ -69,6 +77,13 @@ export function BablastPairingCard({ canManage }: BablastPairingCardProps) {
       </div>
 
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {alreadyConnectedNote && (
+        <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+          Nomor sudah terhubung sebelumnya — tidak perlu pairing ulang. Kalau mau ganti nomor, putuskan tautan
+          perangkat di WhatsApp HP lama-nya dulu, baru klik "Mulai Pairing" lagi.
+        </p>
+      )}
 
       {(pairingCode || qrCode) && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 space-y-2">
