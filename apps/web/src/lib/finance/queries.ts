@@ -1036,6 +1036,123 @@ export async function getOutstandingSummaryBySalesperson(
   return result;
 }
 
+function daysBetween(earlierIsoDate: string, laterIsoDate: string): number {
+  const a = new Date(`${earlierIsoDate}T00:00:00Z`).getTime();
+  const b = new Date(`${laterIsoDate}T00:00:00Z`).getTime();
+  return Math.round((b - a) / 86_400_000);
+}
+
+export interface CollectionPlanEntry {
+  customerId: string;
+  customerName: string;
+  invoiceNumber: string;
+  outstandingBalance: number;
+  isOverdue: boolean;
+  /** Hari sejak due_date, hanya terisi kalau isOverdue true. */
+  daysOverdue: number | null;
+  hasOverduePromise: boolean;
+  /** Hari sejak promised_date, hanya terisi kalau hasOverduePromise true. */
+  daysSincePromise: number | null;
+  promisedAmount: number | null;
+}
+
+/**
+ * Rencana penagihan hari ini per salesperson -- "toko yang mau ditagih"
+ * (Gate P4.11 Fase B varian PAGI, definisi dikonfirmasi Founder 2026-08-22):
+ * invoice outstanding yang (a) overdue H+1 (due_date < asOfDate, minimal
+ * 1 hari lewat jatuh tempo) DAN/ATAU (b) janji bayar H+1 (promises_to_pay
+ * status masih 'open' tapi promised_date < asOfDate -- janji sudah lewat
+ * minimal 1 hari, belum ditepati/belum diformalkan 'broken' lewat
+ * mark_promise_broken). Satu invoice dengan kedua sinyal tetap satu entri
+ * (flag ganda), bukan baris dobel.
+ */
+export async function getCollectionPlanBySalesperson(
+  companyId: string,
+  asOfDate: string,
+  client?: SupabaseClient
+): Promise<Map<string, CollectionPlanEntry[]>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: balanceRows, error: balErr } = await supabase
+    .from("invoice_receivable_balances")
+    .select("invoice_id, outstanding_balance")
+    .eq("company_id", companyId)
+    .in("financial_status", ["outstanding", "partially_paid"]);
+  if (balErr) throw new Error(`collection_plan balances: ${balErr.message}`);
+
+  const balanceMap = new Map(
+    ((balanceRows ?? []) as { invoice_id: string; outstanding_balance: number }[]).map((b) => [
+      b.invoice_id,
+      b.outstanding_balance,
+    ])
+  );
+  const ids = [...balanceMap.keys()];
+  const result = new Map<string, CollectionPlanEntry[]>();
+  if (ids.length === 0) return result;
+
+  const { data: invoiceRows, error: invErr } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, due_date, customer_id, customers(name), sales_order:sales_orders!sales_order_id(sales_id)")
+    .eq("company_id", companyId)
+    .in("id", ids);
+  if (invErr) throw new Error(`collection_plan invoices: ${invErr.message}`);
+
+  const { data: promiseRows, error: promErr } = await supabase
+    .from("promises_to_pay")
+    .select("invoice_id, promised_amount, promised_date")
+    .eq("company_id", companyId)
+    .eq("status", "open")
+    .lt("promised_date", asOfDate);
+  if (promErr) throw new Error(`collection_plan promises: ${promErr.message}`);
+
+  const promiseMap = new Map(
+    ((promiseRows ?? []) as { invoice_id: string; promised_amount: number; promised_date: string }[]).map((p) => [
+      p.invoice_id,
+      p,
+    ])
+  );
+
+  const rows = (invoiceRows ?? []) as unknown as Array<{
+    id: string;
+    invoice_number: string;
+    due_date: string | null;
+    customer_id: string;
+    customers: { name: string } | { name: string }[] | null;
+    sales_order: { sales_id: string | null } | { sales_id: string | null }[] | null;
+  }>;
+
+  for (const row of rows) {
+    const isOverdue = row.due_date !== null && row.due_date < asOfDate;
+    const promise = promiseMap.get(row.id);
+    const hasOverduePromise = promise !== undefined;
+    if (!isOverdue && !hasOverduePromise) continue;
+
+    const salesOrder = Array.isArray(row.sales_order) ? row.sales_order[0] : row.sales_order;
+    const salespersonId = salesOrder?.sales_id;
+    if (!salespersonId) continue;
+
+    const customer = Array.isArray(row.customers) ? row.customers[0] : row.customers;
+
+    const entry: CollectionPlanEntry = {
+      customerId: row.customer_id,
+      customerName: customer?.name ?? "-",
+      invoiceNumber: row.invoice_number,
+      outstandingBalance: balanceMap.get(row.id) ?? 0,
+      isOverdue,
+      daysOverdue: isOverdue ? daysBetween(row.due_date as string, asOfDate) : null,
+      hasOverduePromise,
+      daysSincePromise: promise ? daysBetween(promise.promised_date, asOfDate) : null,
+      promisedAmount: promise?.promised_amount ?? null,
+    };
+
+    const existing = result.get(salespersonId) ?? [];
+    existing.push(entry);
+    result.set(salespersonId, existing);
+  }
+
+  return result;
+}
+
 // =============================================================================
 // Gate 2I.2 -- Collection & Janji Bayar (kontrak §5.2). RPC canonical:
 // record_collection_activity, create_promise_to_pay, correct_promise_to_pay,

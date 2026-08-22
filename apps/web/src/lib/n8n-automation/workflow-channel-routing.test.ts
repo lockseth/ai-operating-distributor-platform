@@ -65,6 +65,7 @@ function telegramSendNodes(wf: N8nWorkflow): N8nNode[] {
 // ditambahkan ke n8n/ tanpa memperbarui daftar ini, test GAGAL -- mencegah
 // exclusion diam-diam dari audit channel-routing.
 const EXPECTED_WORKFLOW_FILES = [
+  "aodp-collection-plan-morning.json",
   "aodp-dead-letter-monitor.json",
   "aodp-health-check.json",
   "aodp-kpi-daily-summary.json",

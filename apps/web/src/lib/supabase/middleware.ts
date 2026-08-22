@@ -31,6 +31,7 @@ export async function updateSession(request: NextRequest) {
     "/api/internal/automation/morning-brief",
     "/api/internal/automation/kpi-daily-summary",
     "/api/internal/automation/sales-report-afternoon",
+    "/api/internal/automation/collection-plan-morning",
     "/api/internal/automation/dispatch",
     "/api/internal/automation/heartbeat",
   ];

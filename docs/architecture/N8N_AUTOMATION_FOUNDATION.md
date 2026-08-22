@@ -43,7 +43,8 @@ untuk daftar workflow JSON.
   `automation.replay`, `automation.health`,
   `automation.morning_brief.generate`, `automation.kpi_summary.generate`,
   `automation.sales_report_afternoon.generate` (Gate P4.11, migration
-  `20261013000001`).
+  `20261013000001`), `automation.collection_plan.generate` (Gate P4.12,
+  migration `20261014000001`).
 
 ## Internal API (`/api/internal/automation/*`)
 
@@ -57,6 +58,7 @@ untuk daftar workflow JSON.
 | `POST /morning-brief` | Generate job Morning Brief per salesman aktif+Telegram valid |
 | `POST /kpi-daily-summary` | Generate job KPI Daily Summary Owner -- projection pagi (WhatsApp dry-run) |
 | `POST /sales-report-afternoon` | Generate job Laporan Sales Sore Owner -- hasil kerja hari itu: EC-to-transaksi, Omzet, Tagihan (WhatsApp dry-run) |
+| `POST /collection-plan-morning` | Generate job Rencana Penagihan Owner -- toko yang mau ditagih hari itu: overdue H+1 dan/atau janji bayar H+1 (WhatsApp dry-run) |
 | `POST /dispatch` | Claim + kirim (via `TelegramSender`) + complete/fail dalam satu panggilan atomik per job |
 
 Semua endpoint menolak request tanpa `Authorization: Bearer` valid (401)

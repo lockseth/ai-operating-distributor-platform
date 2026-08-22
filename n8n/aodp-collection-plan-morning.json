@@ -1,0 +1,94 @@
+{
+  "name": "AODP — Collection Plan Morning (07:30 Asia/Jakarta, hari kerja, Owner preview)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 7 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "a0d0-collectionplan-0001",
+      "name": "Setiap Hari Kerja 07:30 WIB",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.AODP_APP_URL }}/api/internal/automation/collection-plan-morning",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "a0d0-collectionplan-0002",
+      "name": "Generate Rencana Penagihan (presenter AODP)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_CREDENTIAL_ID",
+          "name": "AODP Automation Credential (scope: automation.collection_plan.generate)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "WhatsApp production TIDAK diimplementasikan pada phase ini. Job COLLECTION_PLAN_MORNING selalu channel 'whatsapp' tapi endpoint /dispatch AODP selalu memperlakukannya sebagai dry-run/structured preview -- lihat automation_outbox.payload untuk isi laporan yang dapat diaudit. Node ini sengaja TIDAK memanggil provider WhatsApp apa pun.\n\nKonten: \"toko yang mau ditagih\" hari itu -- overdue H+1 (invoice lewat jatuh tempo minimal 1 hari) dan/atau janji bayar H+1 (janji bayar 'open' yang sudah lewat tanggal janji minimal 1 hari). Definisi dikonfirmasi Founder 2026-08-22. RENCANA hari itu, bukan hasil kerja -- beda dari aodp-sales-report-afternoon.json (16:30, hasil kerja hari itu).",
+        "height": 260,
+        "width": 340
+      },
+      "id": "a0d0-collectionplan-0003",
+      "name": "Catatan: WhatsApp Dry-Run Only",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [480, 520]
+    }
+  ],
+  "connections": {
+    "Setiap Hari Kerja 07:30 WIB": {
+      "main": [
+        [
+          {
+            "node": "Generate Rencana Penagihan (presenter AODP)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Asia/Jakarta"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "aodp" },
+    { "name": "automation-foundation" },
+    { "name": "collection-plan-morning" }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-08-22T00:00:00.000Z",
+  "versionId": "aodp-collection-plan-morning-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "aodp-n8n-automation-foundation"
+  },
+  "id": "aodp-collection-plan-morning",
+  "active": false
+}
