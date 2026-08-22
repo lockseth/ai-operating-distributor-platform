@@ -12,6 +12,7 @@ import {
 import { TRIGGER_LABELS } from "@/lib/automation/trigger-labels";
 import { canManageWebhooks } from "@/lib/automation/webhook-validation";
 import { AddWebhookForm } from "@/components/automation/add-webhook-form";
+import { BablastPairingCard } from "@/components/automation/bablast-pairing-card";
 
 export const metadata = { title: "Automation — AODP" };
 
@@ -335,6 +336,9 @@ export default async function AutomationPage() {
           />
         )}
       </ChartCard>
+
+      {/* Bablast WhatsApp Pairing */}
+      <BablastPairingCard canManage={canManageWebhooks(user)} />
 
       {/* n8n Webhooks */}
       <AddWebhookForm canManage={canManageWebhooks(user)} />

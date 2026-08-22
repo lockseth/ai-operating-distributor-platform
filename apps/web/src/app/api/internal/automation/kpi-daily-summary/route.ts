@@ -1,8 +1,9 @@
 // =============================================================================
-// Internal Automation API -- generate KPI Daily Summary untuk Owner. WhatsApp
-// production TIDAK diimplementasikan phase ini -- job selalu channel
-// 'whatsapp' tapi dispatch selalu dry-run (lihat /dispatch route), hasil
-// hanya structured preview yang bisa diaudit di automation_outbox.payload.
+// Internal Automation API -- generate KPI Daily Summary untuk Owner. Channel
+// 'whatsapp', dikirim nyata lewat Bablast begitu BABLAST_DRY_RUN=false DAN
+// BABLAST_API_KEY tersedia (Gate P4.13) -- sebelum itu tetap dry-run/
+// structured preview yang bisa diaudit di automation_outbox.payload (lihat
+// /dispatch route).
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -14,6 +15,7 @@ import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directo
 import { buildKpiDailySummary, kpiDailySummaryIdempotencyKey } from "@/lib/n8n-automation/kpi-daily-summary";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
+import { normalizeIndonesianPhone } from "@/lib/integrations/bablast";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -49,23 +51,20 @@ export async function POST(request: Request) {
       .maybeSingle();
     const tenantName = (companyRow as { name: string } | null)?.name ?? "AODP";
 
-    const { data: ownerRoleRows } = await admin
-      .from("user_roles")
-      .select("user:users!user_id(id, full_name, is_active), role:roles!role_id(name)")
-      .eq("company_id", credential.companyId);
-    const owner = ((ownerRoleRows ?? []) as unknown as {
-      user: { id: string; full_name: string; is_active: boolean } | null;
-      role: { name: string } | null;
-    }[]).find((r) => r.role?.name === "owner" && r.user?.is_active === true)?.user;
+    const directory = new SupabaseSalesmanDirectory(admin);
+    const owner = await directory.findActiveOwnerRecipient(credential.companyId);
 
     if (!owner) {
       return NextResponse.json({ error: "No active owner found for tenant" }, { status: 422 });
+    }
+    const ownerPhone = owner.phone ? normalizeIndonesianPhone(owner.phone) : null;
+    if (!ownerPhone) {
+      return NextResponse.json({ error: "Owner belum mengisi nomor telepon valid -- laporan tidak punya tujuan kirim" }, { status: 422 });
     }
 
     const salesKpiRepository = new SupabaseSalesKpiRepository(admin);
     const activePeriod = await salesKpiRepository.findActivePeriod(credential.companyId);
 
-    const directory = new SupabaseSalesmanDirectory(admin);
     const recipients = await directory.listEligibleMorningBriefRecipients(credential.companyId);
 
     const lines = [];
@@ -92,8 +91,8 @@ export async function POST(request: Request) {
       requiredScope: REQUIRED_SCOPE,
       eventType: "KPI_DAILY_SUMMARY",
       channel: "whatsapp",
-      recipientUserId: owner.id,
-      recipientReference: `owner:${owner.id}`,
+      recipientUserId: owner.userId,
+      recipientReference: ownerPhone,
       payload: { text: content.text, ...content.structured },
       idempotencyKey: kpiDailySummaryIdempotencyKey(credential.companyId, businessDate),
     });

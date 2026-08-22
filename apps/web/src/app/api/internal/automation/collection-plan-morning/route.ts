@@ -2,10 +2,10 @@
 // Internal Automation API -- generate Rencana Penagihan Pagi untuk Owner.
 // Fase B redesain Laporan Sales varian PAGI (Gate P4.12): "toko yang mau
 // ditagih" hari itu -- overdue H+1 dan/atau janji bayar H+1 (definisi
-// Founder 2026-08-22). WhatsApp production TIDAK diimplementasikan phase
-// ini -- job selalu channel 'whatsapp' tapi dispatch selalu dry-run (lihat
-// /dispatch route), hasil hanya structured preview yang bisa diaudit di
-// automation_outbox.payload.
+// Founder 2026-08-22). Channel 'whatsapp', dikirim nyata lewat Bablast
+// begitu BABLAST_DRY_RUN=false DAN BABLAST_API_KEY tersedia (Gate P4.13) --
+// sebelum itu tetap dry-run/structured preview yang bisa diaudit di
+// automation_outbox.payload (lihat /dispatch route).
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -20,6 +20,7 @@ import {
 } from "@/lib/n8n-automation/collection-plan-morning";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { getCollectionPlanBySalesperson } from "@/lib/finance/queries";
+import { normalizeIndonesianPhone } from "@/lib/integrations/bablast";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -55,20 +56,17 @@ export async function POST(request: Request) {
       .maybeSingle();
     const tenantName = (companyRow as { name: string } | null)?.name ?? "AODP";
 
-    const { data: ownerRoleRows } = await admin
-      .from("user_roles")
-      .select("user:users!user_id(id, full_name, is_active), role:roles!role_id(name)")
-      .eq("company_id", credential.companyId);
-    const owner = ((ownerRoleRows ?? []) as unknown as {
-      user: { id: string; full_name: string; is_active: boolean } | null;
-      role: { name: string } | null;
-    }[]).find((r) => r.role?.name === "owner" && r.user?.is_active === true)?.user;
+    const directory = new SupabaseSalesmanDirectory(admin);
+    const owner = await directory.findActiveOwnerRecipient(credential.companyId);
 
     if (!owner) {
       return NextResponse.json({ error: "No active owner found for tenant" }, { status: 422 });
     }
+    const ownerPhone = owner.phone ? normalizeIndonesianPhone(owner.phone) : null;
+    if (!ownerPhone) {
+      return NextResponse.json({ error: "Owner belum mengisi nomor telepon valid -- laporan tidak punya tujuan kirim" }, { status: 422 });
+    }
 
-    const directory = new SupabaseSalesmanDirectory(admin);
     const recipients = await directory.listEligibleMorningBriefRecipients(credential.companyId);
 
     const planBySalesperson = await getCollectionPlanBySalesperson(credential.companyId, businessDate, admin);
@@ -86,8 +84,8 @@ export async function POST(request: Request) {
       requiredScope: REQUIRED_SCOPE,
       eventType: "COLLECTION_PLAN_MORNING",
       channel: "whatsapp",
-      recipientUserId: owner.id,
-      recipientReference: `owner:${owner.id}`,
+      recipientUserId: owner.userId,
+      recipientReference: ownerPhone,
       payload: { text: content.text, ...content.structured },
       idempotencyKey: collectionPlanMorningIdempotencyKey(credential.companyId, businessDate),
     });

@@ -19,10 +19,19 @@ export interface EligibleMorningBriefRecipient {
   coverageAreas: string[];
 }
 
+export interface ActiveOwnerRecipient {
+  userId: string;
+  fullName: string;
+  /** null kalau owner belum mengisi nomor telepon saat signup (field opsional) -- pemanggil wajib menangani ini, bukan asumsikan selalu ada. */
+  phone: string | null;
+}
+
 export interface SalesmanDirectory {
   listEligibleMorningBriefRecipients(
     companyId: string,
   ): Promise<EligibleMorningBriefRecipient[]>;
+  /** Owner aktif pertama tenant -- penerima seluruh Executive WhatsApp Report (Gate P4.11/P4.12/P4.13). */
+  findActiveOwnerRecipient(companyId: string): Promise<ActiveOwnerRecipient | null>;
 }
 
 export class SupabaseSalesmanDirectory implements SalesmanDirectory {
@@ -85,6 +94,21 @@ export class SupabaseSalesmanDirectory implements SalesmanDirectory {
         coverageAreas: areasByUser.get(s.id) ?? [],
       }));
   }
+
+  async findActiveOwnerRecipient(companyId: string): Promise<ActiveOwnerRecipient | null> {
+    const { data: roleRows } = await this.client
+      .from("user_roles")
+      .select("user:users!user_id(id, full_name, is_active, phone), role:roles!role_id(name)")
+      .eq("company_id", companyId);
+
+    const owner = ((roleRows ?? []) as unknown as {
+      user: { id: string; full_name: string; is_active: boolean; phone: string | null } | null;
+      role: { name: string } | null;
+    }[]).find((r) => r.role?.name === "owner" && r.user?.is_active === true)?.user;
+
+    if (!owner) return null;
+    return { userId: owner.id, fullName: owner.full_name, phone: owner.phone };
+  }
 }
 
 interface SeedSalesman {
@@ -97,8 +121,33 @@ interface SeedSalesman {
   coverageAreas: string[];
 }
 
+interface SeedOwner {
+  userId: string;
+  companyId: string;
+  fullName: string;
+  isActive: boolean;
+  phone: string | null;
+}
+
 export class InMemorySalesmanDirectory implements SalesmanDirectory {
   private readonly salesmen: SeedSalesman[] = [];
+  private readonly owners: SeedOwner[] = [];
+
+  seedOwner(input: { userId: string; companyId: string; fullName: string; isActive?: boolean; phone?: string | null }): void {
+    this.owners.push({
+      userId: input.userId,
+      companyId: input.companyId,
+      fullName: input.fullName,
+      isActive: input.isActive ?? true,
+      phone: input.phone ?? null,
+    });
+  }
+
+  async findActiveOwnerRecipient(companyId: string): Promise<ActiveOwnerRecipient | null> {
+    const owner = this.owners.find((o) => o.companyId === companyId && o.isActive);
+    if (!owner) return null;
+    return { userId: owner.userId, fullName: owner.fullName, phone: owner.phone };
+  }
 
   seedSalesman(input: {
     userId: string;

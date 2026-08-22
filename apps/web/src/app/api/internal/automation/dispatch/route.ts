@@ -5,9 +5,13 @@
 // client.ts) -- TIDAK menduplikasi logic pengiriman Telegram existing.
 //
 // AUTOMATION_DRY_RUN default TRUE (aman) -- hanya "false" eksplisit yang
-// mengizinkan HttpTelegramSender (kirim nyata). WhatsApp (KPI_DAILY_SUMMARY)
-// SELALU dry-run terlepas dari env ini -- WhatsApp production sengaja tidak
-// diimplementasikan phase ini (structured preview/delivery-attempt saja).
+// mengizinkan HttpTelegramSender (kirim nyata).
+//
+// WhatsApp (Gate P4.13) memakai saklar TERPISAH, BABLAST_DRY_RUN, default
+// TRUE juga -- hanya "false" eksplisit DAN BABLAST_API_KEY tersedia yang
+// mengizinkan pengiriman nyata lewat Bablast. Sengaja dipisah dari
+// AUTOMATION_DRY_RUN (provider beda, kesiapan beda) supaya mengaktifkan satu
+// channel tidak diam-diam mengaktifkan channel lain.
 // =============================================================================
 
 import { NextResponse } from "next/server";
@@ -16,6 +20,7 @@ import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-
 import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential, sanitizeAutomationError } from "@/lib/n8n-automation/service";
 import { HttpTelegramSender, RecordingTelegramSender, type TelegramSender } from "@/lib/telegram/client";
+import { sendBablastMessage } from "@/lib/integrations/bablast";
 
 const RATE_LIMIT = 60;
 const RATE_WINDOW_MS = 60_000;
@@ -26,6 +31,32 @@ function resolveTelegramSender(): TelegramSender {
   if (!dryRun && botToken) return new HttpTelegramSender(botToken);
   return new RecordingTelegramSender();
 }
+
+interface WhatsAppSender {
+  sendMessage(phone: string, text: string): Promise<string | null>;
+}
+
+class BablastWhatsAppSender implements WhatsAppSender {
+  async sendMessage(phone: string, text: string): Promise<string | null> {
+    const result = await sendBablastMessage(phone, text);
+    return result.providerMessageId;
+  }
+}
+
+class RecordingWhatsAppSender implements WhatsAppSender {
+  async sendMessage(): Promise<string | null> {
+    return "dry-run";
+  }
+}
+
+function resolveWhatsAppSender(): WhatsAppSender {
+  const dryRun = process.env.BABLAST_DRY_RUN !== "false";
+  const apiKey = process.env.BABLAST_API_KEY;
+  if (!dryRun && apiKey) return new BablastWhatsAppSender();
+  return new RecordingWhatsAppSender();
+}
+
+const PHONE_LIKE_PATTERN = /^\+?[0-9]{8,15}$/;
 
 export async function POST(request: Request) {
   try {
@@ -60,26 +91,33 @@ export async function POST(request: Request) {
     }
 
     const telegramSender = resolveTelegramSender();
+    const whatsappSender = resolveWhatsAppSender();
     const results: Record<string, unknown>[] = [];
 
     for (const job of claimResult.jobs) {
       const text = typeof job.payload.text === "string" ? job.payload.text : JSON.stringify(job.payload);
 
       try {
+        let providerMessageId: string | null;
         if (job.channel === "telegram") {
           const chatId = Number(job.recipientReference);
           if (!Number.isFinite(chatId)) throw new Error("invalid recipient_reference for telegram channel");
           await telegramSender.sendMessage(chatId, text);
+          providerMessageId = telegramSender instanceof RecordingTelegramSender ? "dry-run" : null;
         } else {
-          // whatsapp: SELALU dry-run, tidak ada pengiriman nyata (lihat header file).
-          void text;
+          // whatsapp: recipient_reference wajib nomor telepon tujuan sejak Gate P4.13
+          // (sebelumnya "owner:<id>", sekarang nomor asli -- lihat route generator).
+          if (!PHONE_LIKE_PATTERN.test(job.recipientReference)) {
+            throw new Error("invalid recipient_reference for whatsapp channel (bukan format nomor telepon)");
+          }
+          providerMessageId = await whatsappSender.sendMessage(job.recipientReference, text);
         }
 
         const completeResult = await repository.completeJob({
           companyId: credential.companyId,
           credentialId: credential.id,
           jobId: job.jobId,
-          providerMessageId: telegramSender instanceof RecordingTelegramSender ? "dry-run" : null,
+          providerMessageId,
         });
         results.push({ job_id: job.jobId, outcome: completeResult.outcome });
       } catch (sendErr) {
@@ -96,7 +134,10 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      dry_run: telegramSender instanceof RecordingTelegramSender,
+      dry_run: {
+        telegram: telegramSender instanceof RecordingTelegramSender,
+        whatsapp: whatsappSender instanceof RecordingWhatsAppSender,
+      },
       claimed: claimResult.jobs.length,
       results,
     });
