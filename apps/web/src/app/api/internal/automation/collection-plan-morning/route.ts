@@ -15,7 +15,9 @@ import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential } from "@/lib/n8n-automation/service";
 import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directory";
 import {
+  buildCollectionPlanForSalesman,
   buildCollectionPlanMorning,
+  collectionPlanForSalesmanIdempotencyKey,
   collectionPlanMorningIdempotencyKey,
 } from "@/lib/n8n-automation/collection-plan-morning";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
@@ -90,11 +92,41 @@ export async function POST(request: Request) {
       idempotencyKey: collectionPlanMorningIdempotencyKey(credential.companyId, businessDate),
     });
 
+    // Founder minta 2026-08-22: sales juga harus tahu toko mana yang perlu
+    // DIA sendiri tagih, bukan cuma Owner yang dapat rekap semua sales.
+    // Recipient WhatsApp per-sales (nomor telepon, bukan Telegram chat id) --
+    // pola sama dengan Morning Brief (Gate P4.15). Selalu kirim walau 0 toko
+    // (konsisten Morning Brief) supaya sales tahu laporannya jalan normal.
+    const whatsappRecipients = await directory.listEligibleWhatsAppRecipients(credential.companyId);
+    const salesmanResults: Record<string, unknown>[] = [];
+    for (const recipient of whatsappRecipients) {
+      const entries = planBySalesperson.get(recipient.userId) ?? [];
+      const salesmanContent = buildCollectionPlanForSalesman({
+        tenantName,
+        salesmanFullName: recipient.fullName,
+        businessDate,
+        entries,
+      });
+      const salesmanEnqueue = await repository.enqueueJob({
+        companyId: credential.companyId,
+        credentialId: credential.id,
+        requiredScope: REQUIRED_SCOPE,
+        eventType: "COLLECTION_PLAN_MORNING",
+        channel: "whatsapp",
+        recipientUserId: recipient.userId,
+        recipientReference: recipient.phone,
+        payload: { text: salesmanContent.text, ...salesmanContent.structured },
+        idempotencyKey: collectionPlanForSalesmanIdempotencyKey(recipient.userId, businessDate),
+      });
+      salesmanResults.push({ salesman: recipient.fullName, outcome: salesmanEnqueue.outcome });
+    }
+
     return NextResponse.json({
       business_date: businessDate,
       salesmen_included: lines.length,
       outcome: enqueueResult.outcome,
       job_id: "jobId" in enqueueResult ? enqueueResult.jobId : null,
+      salesman_results: salesmanResults,
     });
   } catch (err) {
     console.error("[Internal Automation /collection-plan-morning]", err);

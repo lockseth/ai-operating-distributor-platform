@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCollectionPlanForSalesman,
   buildCollectionPlanMorning,
+  collectionPlanForSalesmanIdempotencyKey,
   collectionPlanMorningIdempotencyKey,
   type CollectionPlanEntryLine,
 } from "./collection-plan-morning";
@@ -97,6 +99,44 @@ describe("collectionPlanMorningIdempotencyKey", () => {
   it("satu company + satu business date -> key unik", () => {
     expect(collectionPlanMorningIdempotencyKey("waluyo", "2026-08-22")).toBe(
       "collection_plan_morning:waluyo:2026-08-22"
+    );
+  });
+});
+
+describe("buildCollectionPlanForSalesman -- versi personal per-sales (Founder 2026-08-22)", () => {
+  it("sales tidak punya toko yang perlu ditagih -> pesan eksplisit, bukan diam-diam kosong", () => {
+    const content = buildCollectionPlanForSalesman({
+      tenantName: "Waluyo Distributor",
+      salesmanFullName: "Budi",
+      businessDate: "2026-08-22",
+      entries: [],
+    });
+    expect(content.text).toContain("Selamat pagi, Budi");
+    expect(content.text).toContain("Tidak ada toko yang perlu Anda tagih hari ini.");
+    expect(content.structured.status).toBe("NO_TARGETS");
+  });
+
+  it("sales punya toko yang perlu ditagih -> tampil daftar toko miliknya sendiri", () => {
+    const content = buildCollectionPlanForSalesman({
+      tenantName: "Waluyo Distributor",
+      salesmanFullName: "Siti",
+      businessDate: "2026-08-22",
+      entries: [overdueEntry(3)],
+    });
+    expect(content.text).toContain("Selamat pagi, Siti");
+    expect(content.text).toContain("1 toko perlu ditagih hari ini:");
+    expect(content.text).toContain("Toko Sumber Rejeki -- AODPDEV-INV-20260818-000001 (Rp2.500.000) -- overdue 3 hari");
+    expect(content.structured.status).toBe("HAS_TARGETS");
+  });
+});
+
+describe("collectionPlanForSalesmanIdempotencyKey", () => {
+  it("satu salesperson + satu business date -> key unik, beda namespace dari key Owner", () => {
+    expect(collectionPlanForSalesmanIdempotencyKey("user-1", "2026-08-22")).toBe(
+      "collection_plan_morning_salesman:user-1:2026-08-22"
+    );
+    expect(collectionPlanForSalesmanIdempotencyKey("user-1", "2026-08-22")).not.toBe(
+      collectionPlanMorningIdempotencyKey("user-1", "2026-08-22"),
     );
   });
 });

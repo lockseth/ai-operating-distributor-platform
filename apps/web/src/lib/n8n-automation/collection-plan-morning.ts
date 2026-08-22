@@ -90,3 +90,58 @@ export function buildCollectionPlanMorning(ctx: CollectionPlanMorningContext): C
 export function collectionPlanMorningIdempotencyKey(companyId: string, businessDate: string): string {
   return `collection_plan_morning:${companyId}:${businessDate}`;
 }
+
+export interface CollectionPlanForSalesmanContext {
+  tenantName: string;
+  salesmanFullName: string;
+  businessDate: string;
+  entries: CollectionPlanEntryLine[];
+}
+
+/**
+ * Versi personal Rencana Penagihan untuk SATU sales -- Founder minta
+ * 2026-08-22 supaya sales juga tahu toko mana yang perlu DIA sendiri
+ * tagih (sebelumnya cuma Owner yang dapat rekap semua sales jadi satu
+ * pesan, lihat buildCollectionPlanMorning di atas -- TETAP dipertahankan
+ * apa adanya, ini TAMBAHAN bukan pengganti).
+ */
+export function buildCollectionPlanForSalesman(ctx: CollectionPlanForSalesmanContext): CollectionPlanMorningContent {
+  const lines: string[] = [];
+  lines.push(`Selamat pagi, ${ctx.salesmanFullName}`);
+  lines.push(`${ctx.tenantName} -- Rencana Penagihan Anda ${ctx.businessDate}`);
+  lines.push("");
+
+  if (ctx.entries.length === 0) {
+    lines.push("Tidak ada toko yang perlu Anda tagih hari ini.");
+    return {
+      text: lines.join("\n"),
+      structured: {
+        tenantName: ctx.tenantName,
+        salesmanFullName: ctx.salesmanFullName,
+        businessDate: ctx.businessDate,
+        status: "NO_TARGETS",
+        entries: [],
+      },
+    };
+  }
+
+  lines.push(`${ctx.entries.length} toko perlu ditagih hari ini:`);
+  for (const e of ctx.entries) {
+    lines.push(`  ${e.customerName} -- ${e.invoiceNumber} (${formatRupiah(e.outstandingBalance)}) -- ${reasonText(e)}`);
+  }
+
+  return {
+    text: lines.join("\n"),
+    structured: {
+      tenantName: ctx.tenantName,
+      salesmanFullName: ctx.salesmanFullName,
+      businessDate: ctx.businessDate,
+      status: "HAS_TARGETS",
+      entries: ctx.entries,
+    },
+  };
+}
+
+export function collectionPlanForSalesmanIdempotencyKey(salespersonId: string, businessDate: string): string {
+  return `collection_plan_morning_salesman:${salespersonId}:${businessDate}`;
+}
