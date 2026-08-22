@@ -72,6 +72,22 @@ describe("updateSession -- /api/health exact-match exemption (Gate 3E-C-C2-B4-R2
     expect(res.headers.get("location")).toBe(`${ORIGIN}/login`);
   });
 
+  it("Vercel Cron routes (Gate P4.14) -- anonymous GET lolos tanpa redirect, autentikasi CRON_SECRET terpisah di route handler-nya sendiri", async () => {
+    const { updateSession } = await import("./middleware");
+    const res = await updateSession(new NextRequest(`${ORIGIN}/api/cron/morning-brief`));
+
+    expect(getUser).not.toHaveBeenCalled();
+    expect(res.status).not.toBe(307);
+  });
+
+  it("/api/cron/unknown-report (tidak terdaftar) TIDAK ikut ter-exempt -- daftar eksplisit, bukan prefix /api/cron", async () => {
+    const { updateSession } = await import("./middleware");
+    const res = await updateSession(new NextRequest(`${ORIGIN}/api/cron/unknown-report`));
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(`${ORIGIN}/login`);
+  });
+
   it("halaman dashboard terproteksi -- anonymous tetap di-redirect ke /login, exemption tidak melemahkan gating lain", async () => {
     const { updateSession } = await import("./middleware");
     const res = await updateSession(new NextRequest(`${ORIGIN}/dashboard`));

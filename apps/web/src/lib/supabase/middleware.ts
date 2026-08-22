@@ -35,6 +35,16 @@ export async function updateSession(request: NextRequest) {
     "/api/internal/automation/dispatch",
     "/api/internal/automation/heartbeat",
   ];
+  // Vercel Cron triggers (Gate P4.14, menggantikan n8n sebagai penjadwal) --
+  // diautentikasi via CRON_SECRET (lib/n8n-automation/cron.ts), bukan
+  // Supabase session -- Vercel memanggil endpoint ini tanpa cookie sama
+  // sekali. Daftar eksplisit, alasan sama persis dengan dua daftar di atas.
+  const AUDITED_CRON_ROUTES = [
+    "/api/cron/morning-brief",
+    "/api/cron/kpi-daily-summary",
+    "/api/cron/sales-report-afternoon",
+    "/api/cron/collection-plan-morning",
+  ];
   // /api/health -- Gate 3E-C-C2-B4-R2-H1: public infra liveness probe (lihat
   // komentar di app/api/health/route.ts) SENGAJA TIDAK terautentikasi supaya
   // load balancer/orchestrator/uptime monitor bisa memeriksa "aplikasi
@@ -54,6 +64,7 @@ export async function updateSession(request: NextRequest) {
   if (
     AUDITED_WEBHOOK_ROUTES.includes(pathname) ||
     AUDITED_INTERNAL_AUTOMATION_ROUTES.includes(pathname) ||
+    AUDITED_CRON_ROUTES.includes(pathname) ||
     pathname === PUBLIC_HEALTH_ROUTE
   ) {
     return NextResponse.next({ request });

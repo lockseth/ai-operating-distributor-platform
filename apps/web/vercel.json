@@ -1,0 +1,21 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/morning-brief",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/collection-plan-morning",
+      "schedule": "30 7 * * 1-5"
+    },
+    {
+      "path": "/api/cron/kpi-daily-summary",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/sales-report-afternoon",
+      "schedule": "30 16 * * 1-5"
+    }
+  ]
+}
