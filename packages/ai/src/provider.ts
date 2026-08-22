@@ -60,7 +60,7 @@ export interface EmbeddingResponse {
 // Provider Registry
 // ---------------------------------------------------------------------------
 
-export type AIProviderName = "openai" | "anthropic" | "gemini" | "openrouter";
+export type AIProviderName = "openai" | "anthropic" | "gemini" | "openrouter" | "deepseek";
 
 export interface AIProvider {
   name: AIProviderName;
@@ -95,7 +95,7 @@ export function getProvider(name: AIProviderName): AIProvider {
 }
 
 export function getFirstAvailableProvider(
-  preferred: AIProviderName[] = ["openai", "anthropic", "gemini", "openrouter"]
+  preferred: AIProviderName[] = ["openai", "anthropic", "deepseek", "gemini", "openrouter"]
 ): AIProvider {
   for (const name of preferred) {
     const provider = registry.get(name);

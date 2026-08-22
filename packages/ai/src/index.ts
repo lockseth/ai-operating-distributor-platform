@@ -16,6 +16,7 @@ export {
 
 export { OpenAIProvider }    from "./providers/openai";
 export { AnthropicProvider } from "./providers/anthropic";
+export { DeepSeekProvider }  from "./providers/deepseek";
 export { MockAIProvider }    from "./providers/mock";
 
 export type {

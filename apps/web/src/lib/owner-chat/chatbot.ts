@@ -3,11 +3,16 @@
 // SATU-SATUNYA titik di apps/web yang benar-benar memanggil packages/ai
 // (sebelumnya belum pernah dipakai sama sekali, lihat TRACKER Backlog #8).
 //
-// Registrasi provider dari env var OPENAI_API_KEY/ANTHROPIC_API_KEY --
-// KODE ini bisa ditulis & di-review tanpa API key, tapi TIDAK bisa
-// benar-benar dites tanpa salah satu key tersedia. Kalau belum ada key
-// sama sekali, askOwnerChatbot() mengembalikan error yang jelas ("belum
+// Registrasi provider dari env var DEEPSEEK_API_KEY/OPENAI_API_KEY/
+// ANTHROPIC_API_KEY -- KODE ini bisa ditulis & di-review tanpa API key, tapi
+// TIDAK bisa benar-benar dites tanpa salah satu key tersedia. Kalau belum ada
+// key sama sekali, askOwnerChatbot() mengembalikan error yang jelas ("belum
 // aktif"), TIDAK pernah pura-pura menjawab dengan data karangan.
+//
+// Provider Milestone 4 (2026-08-23): Founder pilih DeepSeek (kontrak API
+// kompatibel format OpenAI, harga jauh lebih murah, token sudah tersedia) --
+// jadi prioritas pertama. OpenAI/Anthropic tetap terdaftar sebagai fallback
+// kalau key-nya ada, TIDAK dihapus.
 // =============================================================================
 
 import {
@@ -16,6 +21,7 @@ import {
   complete,
   OpenAIProvider,
   AnthropicProvider,
+  DeepSeekProvider,
   type AIProviderName,
   type ConversationMessage,
 } from "@flowsales/ai";
@@ -28,6 +34,9 @@ let providersRegistered = false;
 function ensureProvidersRegistered(): void {
   if (providersRegistered) return;
   providersRegistered = true;
+
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+  if (deepseekKey) registerProvider(new DeepSeekProvider(deepseekKey));
 
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (anthropicKey) registerProvider(new AnthropicProvider(anthropicKey));
@@ -59,12 +68,12 @@ export async function askOwnerChatbot(
 
   let providerName: AIProviderName;
   try {
-    providerName = getFirstAvailableProvider(["anthropic", "openai"]).name;
+    providerName = getFirstAvailableProvider(["deepseek", "anthropic", "openai"]).name;
   } catch {
     return {
       ok: false,
       error:
-        "Chatbot AI belum aktif -- menunggu API key provider (OpenAI atau Anthropic) dikonfigurasi. " +
+        "Chatbot AI belum aktif -- menunggu API key provider (DeepSeek, OpenAI, atau Anthropic) dikonfigurasi. " +
         "Fondasi datanya sudah siap, tinggal sambungkan provider.",
     };
   }
