@@ -22,9 +22,27 @@ export function verifyCronSecret(request: Request): boolean {
   return request.headers.get("authorization") === `Bearer ${secret}`;
 }
 
+export interface GenerateAndDispatchStepResult {
+  ok: boolean;
+  status: number;
+  body: Record<string, unknown>;
+}
+
 export interface GenerateAndDispatchResult {
-  generate: Record<string, unknown>;
-  dispatch: Record<string, unknown>;
+  ok: boolean;
+  generate: GenerateAndDispatchStepResult;
+  dispatch: GenerateAndDispatchStepResult;
+}
+
+async function callInternalRoute(
+  origin: string,
+  path: string,
+  headers: Record<string, string>,
+  body: string,
+): Promise<GenerateAndDispatchStepResult> {
+  const res = await fetch(`${origin}${path}`, { method: "POST", headers, body });
+  const parsedBody = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: res.ok, status: res.status, body: parsedBody };
 }
 
 /**
@@ -32,6 +50,12 @@ export interface GenerateAndDispatchResult {
  * /dispatch (claim+kirim) dalam satu invocation cron -- dibutuhkan karena
  * Vercel Cron di plan Hobby dibatasi 1x/hari per cron, tidak bisa poll
  * dispatcher terpisah tiap menit seperti pola n8n lama.
+ *
+ * PENTING: status HTTP tiap panggilan internal WAJIB diperiksa eksplisit
+ * (res.ok) -- fetch() TIDAK melempar error untuk response 4xx/5xx, cuma
+ * untuk kegagalan jaringan. Tanpa pemeriksaan ini, generate/dispatch yang
+ * gagal (401/422/500) akan diam-diam dianggap sukses oleh route cron
+ * pemanggil (ditemukan saat verifikasi hosted pertama, Gate P4.14).
  */
 export async function generateAndDispatch(
   request: Request,
@@ -43,15 +67,13 @@ export async function generateAndDispatch(
   const origin = new URL(request.url).origin;
   const headers = { Authorization: `Bearer ${internalToken}`, "Content-Type": "application/json" };
 
-  const generateRes = await fetch(`${origin}${generatePath}`, { method: "POST", headers, body: "{}" });
-  const generate = await generateRes.json().catch(() => ({}));
-
-  const dispatchRes = await fetch(`${origin}/api/internal/automation/dispatch`, {
-    method: "POST",
+  const generate = await callInternalRoute(origin, generatePath, headers, "{}");
+  const dispatch = await callInternalRoute(
+    origin,
+    "/api/internal/automation/dispatch",
     headers,
-    body: JSON.stringify({ max_jobs: 5 }),
-  });
-  const dispatch = await dispatchRes.json().catch(() => ({}));
+    JSON.stringify({ max_jobs: 5 }),
+  );
 
-  return { generate, dispatch };
+  return { ok: generate.ok && dispatch.ok, generate, dispatch };
 }

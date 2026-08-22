@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 
   try {
     const result = await generateAndDispatch(request, "/api/internal/automation/sales-report-afternoon");
-    return NextResponse.json(result);
+    return NextResponse.json(result, { status: result.ok ? 200 : 502 });
   } catch (err) {
     console.error("[Cron /sales-report-afternoon]", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });

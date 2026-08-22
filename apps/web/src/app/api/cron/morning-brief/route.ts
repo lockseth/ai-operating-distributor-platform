@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   try {
     const result = await generateAndDispatch(request, "/api/internal/automation/morning-brief");
-    return NextResponse.json(result);
+    return NextResponse.json(result, { status: result.ok ? 200 : 502 });
   } catch (err) {
     console.error("[Cron /morning-brief]", err);
     return NextResponse.json({ error: "Internal error" }, { status: 500 });
