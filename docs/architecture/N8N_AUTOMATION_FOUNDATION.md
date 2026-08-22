@@ -41,7 +41,9 @@ untuk daftar workflow JSON.
   SELALU dari credential (tidak pernah dari body request). Scope baru:
   `automation.claim`, `automation.complete`, `automation.fail`,
   `automation.replay`, `automation.health`,
-  `automation.morning_brief.generate`, `automation.kpi_summary.generate`.
+  `automation.morning_brief.generate`, `automation.kpi_summary.generate`,
+  `automation.sales_report_afternoon.generate` (Gate P4.11, migration
+  `20261013000001`).
 
 ## Internal API (`/api/internal/automation/*`)
 
@@ -53,7 +55,8 @@ untuk daftar workflow JSON.
 | `POST /replay` | Controlled replay (credential atau, lewat server action dashboard, actor manusia) |
 | `GET /health` | Snapshot backlog/dead-letter/n8n-polling, tanpa secret |
 | `POST /morning-brief` | Generate job Morning Brief per salesman aktif+Telegram valid |
-| `POST /kpi-daily-summary` | Generate job KPI Daily Summary Owner (WhatsApp dry-run) |
+| `POST /kpi-daily-summary` | Generate job KPI Daily Summary Owner -- projection pagi (WhatsApp dry-run) |
+| `POST /sales-report-afternoon` | Generate job Laporan Sales Sore Owner -- hasil kerja hari itu: EC-to-transaksi, Omzet, Tagihan (WhatsApp dry-run) |
 | `POST /dispatch` | Claim + kirim (via `TelegramSender`) + complete/fail dalam satu panggilan atomik per job |
 
 Semua endpoint menolak request tanpa `Authorization: Bearer` valid (401)

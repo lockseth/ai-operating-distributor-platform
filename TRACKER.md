@@ -62,10 +62,10 @@ penuh karena masih operasional.
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-20 |
+| Tanggal update terakhir | 2026-08-22 |
 | Branch | `main` |
-| HEAD | `b15c636` — **sinkron penuh dengan `origin/main`** (0 ahead/behind), push & deploy dikonfirmasi 2026-08-20. Mencakup seluruh gate s.d. fondasi chatbot bisnis Owner (Business Guard OFFICIALLY PASS 4/4 slice, Gate P4.06 extension invoice picker+FIFO, menu Tambah Webhook, fix chip Collection basi, Risk Alert filter Aman, chatbot Owner Milestone 1-3). Vercel production **Ready**, health-check bersih. |
-| Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. |
+| HEAD | `b15c636` — **sinkron penuh dengan `origin/main`** (0 ahead/behind), push & deploy dikonfirmasi 2026-08-20. Mencakup seluruh gate s.d. fondasi chatbot bisnis Owner (Business Guard OFFICIALLY PASS 4/4 slice, Gate P4.06 extension invoice picker+FIFO, menu Tambah Webhook, fix chip Collection basi, Risk Alert filter Aman, chatbot Owner Milestone 1-3). Vercel production **Ready**, health-check bersih. **Belum termasuk**: Gate P4.11 (2026-08-22, Laporan Sales Sore) — masih di working tree lokal, belum di-commit/push. |
+| Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. **TEMUAN 2026-08-22**: `npx supabase migration list` menunjukkan migration `20261012000001` (Gate P4.06 extension, invoice picker+FIFO) **Remote masih kosong** — kode sudah live hosted (via `git push` biasa) tapi migration-nya sendiri kemungkinan belum di-`db push`. Perlu dicek & diselesaikan Founder/CTO sebelum fitur itu diklaim live hosted sepenuhnya. |
 | Status Phase 3 | **100% OFFICIALLY LOCKED (PASS WITH ACCEPTED LIMITATIONS)** — `docs/product/readiness/AODP_PHASE_3_FINAL_HOSTED_CLOSEOUT.md`. |
 | Governance | Sejak 2026-08-14: **Claude Code = CTO + Senior Programmer AODP**. Keputusan teknis/arsitektur diputuskan langsung (didokumentasikan di sini/commit message); arah produk/bisnis tetap diajukan ke Founder dulu. Detail: `CLAUDE.md` §Role Split. |
 | Data Operasional (tenant Waluyo, hosted) | KPI Setup lengkap — 5/5 KPI governed punya target aktif periode Agustus 2026 (Call 15, Effective Call 15, Order Count 15, Revenue Rp100jt, NOO 3 toko). |
@@ -159,36 +159,35 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
 
 ### Berikutnya (urutan prioritas, atas = duluan)
 
-1. `[TEMUAN]` **Verifikasi browser susulan — pre-fill FIFO/tandaan-sales di dialog approval Klaim Pembayaran** (Gate P4.06 extension, migration `20261012000001`). Sisi sales sudah terverifikasi penuh (browser+DB), tapi dialog "Setujui" di sisi Owner/Finance (`payment-claim-review-panel.tsx`, fungsi `openApprove`) belum pernah benar-benar diklik & dilihat di browser nyata — Browser pane tidak ter-render sepanjang sesi 2026-08-19 (`document.hidden=true` persisten). Logic-nya sudah code-review + `autoAllocateFifo` 11 test PASS, tapi wiring `onClick` → `setMode("approve")` belum dibuktikan langsung. Cukup buka `/dashboard/finance/payment-claims`, klik Setujui pada klaim yang sales-nya menandai invoice, cek checkbox ter-centang otomatis + badge "ditandai sales" muncul.
-2. `[REQUEST FOUNDER]` **Redesain Laporan Sales — Fase A SELESAI (2026-08-16,
-   Gate P4.03), Fase B (voice note) masih menunggu.** Fase A: form
-   `dashboard/reports/new` tidak lagi minta sales ketik ulang angka KPI —
-   semua otomatis dari governed KPI ledger + `sales_order_items`. Sales
-   cuma isi `area`/`remaining_working_days`/`notes`.
+1. `[REQUEST FOUNDER]` **Redesain Laporan Sales — Fase A SELESAI (2026-08-16,
+   Gate P4.03). Fase B: jadwal+konten sore SELESAI (2026-08-22, Gate P4.11,
+   lokal saja). Sisa: varian PAGI.** Fase A: form `dashboard/reports/new`
+   tidak lagi minta sales ketik ulang angka KPI — semua otomatis dari
+   governed KPI ledger + `sales_order_items`. Sales cuma isi
+   `area`/`remaining_working_days`/`notes`.
 
-   **Sisa scope (Fase B, dari voice note Pak Waluyo ke Mas Hendro,
-   2026-08-16) — BELUM dikerjakan, masih menunggu keputusan Founder**:
-   1. **Jadwal kirim otomatis ~16.00-17.00** setiap hari kerja sales
-      (kemungkinan terkait fitur "Executive WhatsApp Report" di
-      `AODP_PRODUCT_CONSTITUTION.md` §13, belum pernah dibangun — scope
-      lebih besar dari sekadar redesain form). **Update 2026-08-19**: ini
-      lewat jalur `automation_outbox` (bukan `n8n_webhooks` langsung
-      seperti Gate P4.08) — dan jalur itu **sengaja di-hardcode dry-run
-      untuk channel WhatsApp** di `route.ts` internal-nya (lihat Backlog
-      #9). Artinya begitu kredensial Bablast siap sekalipun, item ini
-      TETAP butuh 1 perubahan kode lagi (hapus hardcode dry-run) sebelum
-      bisa benar-benar kirim — bukan sekadar tunggu poin 3 (WhatsApp AI)
-      selesai seperti asumsi sebelumnya.
-   2. **Konten spesifik**: EC/kunjungan toko → EC-to-transaksi (bukan
-      cuma kunjungan) → Tagihan (status collection/penagihan) → Omzet
-      (nominal + % target). Perlu dipetakan ke KPI code existing +
-      dicek apakah "Tagihan" sudah governed atau perlu sumber terpisah.
-   3. **Varian laporan PAGI terpisah** — bukan hasil kerja, tapi RENCANA
-      hari itu (toko mana yang mau ditagih). Konsep forward-looking baru,
-      belum ada padanannya.
-   Catatan: satu bagian transkrip tidak jelas ("LFD bekolnya") — perlu
-   klarifikasi ulang ke Pak Waluyo langsung sebelum dieksekusi.
-3. `[REQUEST FOUNDER]` **Chatbot bisnis Owner — Milestone 1-3 SELESAI
+   **Fase B — status per sub-item (voice note Pak Waluyo ke Mas Hendro,
+   2026-08-16, klarifikasi susulan Founder 2026-08-22)**:
+   1. ~~Jadwal kirim otomatis~~ — **DITUTUP**, jam **16:30 WIB** hari kerja
+      (dikonfirmasi Founder), Gate P4.11. Catatan yang masih berlaku:
+      kontennya sudah jadi (structured preview di `automation_outbox`),
+      tapi pengiriman WhatsApp NYATA tetap tertahan 2 hal terpisah —
+      hardcode dry-run channel `whatsapp` di `/api/internal/automation/
+      dispatch` (Backlog #9 item 3) DAN keputusan Bablast yang masih
+      "Ditunda" di bawah. Ini bukan regresi baru, sudah dikenal sejak
+      awal (lihat Backlog #9).
+   2. ~~Konten spesifik~~ — **DITUTUP**, Gate P4.11: EC-to-Transaksi
+      (`EFFECTIVE_CALL`→`ORDER_COUNT`), Omzet vs target (`REVENUE`),
+      Tagihan (piutang outstanding/overdue per sales, query baru
+      `getOutstandingSummaryBySalesperson`).
+   3. **Varian laporan PAGI terpisah — MASIH TERBUKA.** Bukan hasil kerja,
+      tapi RENCANA hari itu (toko mana yang mau ditagih). Konsep
+      forward-looking baru, belum ada padanannya, dan definisi "toko yang
+      mau ditagih" (due hari ini? overdue? janji bayar hari ini?) belum
+      diputuskan — perlu klarifikasi Founder sebelum dieksekusi.
+   ~~Catatan: "LFD bekolnya" tidak jelas~~ — **Founder konfirmasi 2026-08-22:
+   di-skip, dikeluarkan dari scope.**
+2. `[REQUEST FOUNDER]` **Chatbot bisnis Owner — Milestone 1-3 SELESAI
    (2026-08-20), Milestone 4 menunggu API key.** Dipecah 4 milestone
    (lihat Log Milestone 2026-08-20): M1 Context Builder, M2 Chat UI
    (`/dashboard/owner-chat`, "Tanya AODP"), M3 wiring `packages/ai`
@@ -200,7 +199,7 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    variable `OPENAI_API_KEY`/`ANTHROPIC_API_KEY` di Vercel (belum ada
    sama sekali saat ini, lihat baris Vercel Env Vars di Ditunda) → tidak
    perlu kode baru lagi setelah itu.
-4. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
+3. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
    data multi-tenant — DISETUJUI arahnya (2026-08-18), EKSEKUSI/DESAIN
    TEKNIS DISERAHKAN PENUH ke CTO, belum dimulai.** Muncul dari diskusi
    follow-up demo SURABRADJA (lihat juga memory
@@ -289,6 +288,8 @@ debugging/verifikasi panjang dihapus — lihat catatan di kepala dokumen).
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-08-22 | `[REQUEST FOUNDER]` **Gate P4.11 — Laporan Sales Fase B: Laporan Sales Sore Owner (16:30 WIB, hari kerja), migration `20261013000001`** | Founder konfirmasi 2 hal yang sebelumnya menahan Fase B: (1) jadwal jam **16:30** persis (bukan rentang 16.00-17.00), (2) bagian transkrip ambigu "LFD bekolnya" **di-skip, dikeluarkan dari scope**. Dibangun: event type baru `SALES_REPORT_AFTERNOON` di Automation Outbox (pola sama persis dengan `KPI_DAILY_SUMMARY` 08:00 yang sudah ada, channel selalu `whatsapp`, dispatch tetap SELALU dry-run -- keputusan itu channel-based bukan event-based, tidak berubah). Konten per sales: **EC-to-Transaksi** (kunjungan efektif → transaksi, bukan cuma jumlah kunjungan), **Transaksi**/**Omzet** vs target (reuse `SalesKpiAchievementProjection` yang sama dengan dashboard Owner), **Tagihan** (piutang outstanding + overdue, query baru `getOutstandingSummaryBySalesperson` di `lib/finance/queries.ts`, invoice dikaitkan ke sales lewat `invoices.sales_order_id -> sales_orders.sales_id`). File baru: `lib/n8n-automation/sales-report-afternoon.ts` (+6 test), route `/api/internal/automation/sales-report-afternoon`, workflow `n8n/aodp-sales-report-afternoon.json` (cron `30 16 * * 1-5`). **2 temuan saat implementasi**: (1) route baru diam-diam ke-redirect ke `/login` -- ternyata `lib/supabase/middleware.ts` punya allowlist eksplisit route mana yang boleh lewati auth session (sengaja tidak prefix-match, by design), route baru wajib didaftarkan manual -- ditambahkan; (2) `workflow-channel-routing.test.ts` (Gate 3A Domain 5, 78 test) punya daftar eksplisit file `.json` yang wajib diaudit -- workflow baru ditambahkan ke daftar, otomatis lolos seluruh cek struktur + channel-routing. Varian laporan **PAGI** (rencana toko yang mau ditagih hari itu) **BELUM dikerjakan** -- masih konsep baru tanpa padanan, disisakan di Berikutnya. Diverifikasi: 6 test builder + 620 test gabungan finance/n8n-automation PASS, `tsc` bersih (file yang disentuh), **end-to-end nyata lokal**: migration diterapkan (`supabase migration up --local`), credential uji dibuat, `curl` langsung ke endpoint dengan Bearer token → 200 OK → job `SALES_REPORT_AFTERNOON` masuk `automation_outbox` dengan payload benar (NO_ACTIVE_PERIOD graceful karena tidak ada periode KPI aktif di DB lokal saat ini -- bukan bug, sama seperti perilaku `KPI_DAILY_SUMMARY`), query Tagihan dikonfirmasi jalan bersih terhadap data nyata (1 invoice outstanding lokal, benar di-exclude karena `sales_id` order-nya NULL). Data uji dibersihkan sesudahnya. **BELUM di-push/deploy ke hosted** -- migration baru + kode baru masih lokal saja. | **PASS — lokal, test+E2E lokal terverifikasi. Belum push ke hosted. Varian PAGI masih terbuka.** |
+| 2026-08-22 | `[TEMUAN]` **Gate P4.06 extension — verifikasi browser susulan dialog approval Klaim Pembayaran** | Menutup gap terakhir dari entri 2026-08-19: sisi Owner/Finance (`payment-claim-review-panel.tsx`, dialog "Setujui") akhirnya diverifikasi browser nyata (sebelumnya cuma code-review + unit test karena Browser pane tidak ter-render sesi lalu). Login `owner@aodp.test` → `/dashboard/finance/payment-claims` → klik "Setujui" pada klaim Toko Sumber Rejeki (Rp2.500.000, dari Waluyo) → dikonfirmasi visual: checkbox invoice `AODPDEV-INV-20260818-000001` ter-centang otomatis, badge "ditandai sales" muncul, alokasi pre-fill penuh Rp2.500.000/Rp2.500.000. Dialog ditutup tanpa submit (data uji dipertahankan). Tidak ada kode/migration yang diubah, murni verifikasi. | **FULL PASS — browser terverifikasi. Gate P4.06 extension sekarang tertutup penuh (sisi sales + sisi approval Finance keduanya terverifikasi).** |
 | 2026-08-20 | `[REQUEST FOUNDER]` **Chatbot bisnis Owner — Milestone 1-3 (Context Builder, Chat UI, wiring packages/ai)** | Dipecah 4 milestone, dikerjakan 3 yang tidak butuh API key dulu (M4 = integrasi key nyata, menunggu Founder). **M1**: `lib/owner-chat/context-builder.ts` — `buildOwnerChatContext()` ubah `OwnerBusinessSnapshot` (sudah ada dari sesi sebelumnya) jadi narasi teks siap pakai sebagai context LLM (produk terlaris, toko omzet terbesar, status KPI, ringkasan risiko Business Guard), pure function + 8 test. **M2**: `/dashboard/owner-chat` ("Tanya AODP", nav baru) + `owner-chat-panel.tsx` — chat UI penuh (riwayat percakapan, input, kirim), akses owner/manager/super_admin. **M3**: `packages/ai` DIPAKAI PERTAMA KALINYA di `apps/web` (sebelumnya cuma type-only import, lihat Backlog #8) — tambah dukungan multi-turn (`ConversationMessage[]`, backward-compatible) ke `CompletionRequest`+kedua provider (OpenAI/Anthropic), `lib/owner-chat/chatbot.ts` (`askOwnerChatbot`) registrasi provider dari env var + fallback pesan jujur "belum aktif" kalau API key belum ada (BUKAN jawaban karangan). **Temuan**: `@flowsales/ai` ternyata tidak terdaftar sebagai dependency `apps/web/package.json` sama sekali (import lama cuma type-only, kebetulan tidak pernah butuh resolusi runtime) — ditambahkan + `pnpm install` ulang supaya symlink workspace benar sebelum runtime import pertama ini bisa jalan. Diverifikasi: 32 test PASS, `tsc` bersih, **browser end-to-end nyata** — kirim pertanyaan di `/dashboard/owner-chat`, server ambil data asli dari DB, balas pesan "Chatbot AI belum aktif -- menunggu API key" (bukti pipeline lengkap jalan tanpa key). | **PASS — lokal, test+browser terverifikasi. M4 menunggu API key dari Founder** |
 | 2026-08-19 | `[REQUEST FOUNDER]` **Gate P4.06 extension — invoice picker di Klaim Pembayaran + alokasi FIFO otomatis** (insight Pak Waluyo, migration `20261012000001`) | Sales bisa menandai invoice yang dimaksud saat submit klaim (opsional, kolom baru `claimed_invoice_ids`, murni referensi — TIDAK mengunci alokasi ledger, itu tetap wewenang Owner/Finance). Layar approval Finance sekarang pre-fill otomatis: pakai tandaan sales kalau ada, atau FIFO (tagihan tertua dulu) across semua invoice customer kalau sales "titip uang" tanpa menandai. File: `lib/finance/allocation.ts` (`autoAllocateFifo`, 11 test), `lib/finance/queries.ts`/`actions.ts` (+`dueDate`/`claimedInvoiceIds`), `submit-payment-claim-form.tsx`, `payment-claim-review-panel.tsx`. **3 temuan penting selama eksekusi**: (1) Postgres TIDAK menganggap parameter baru berdefault sebagai "replace" — `CREATE OR REPLACE FUNCTION` dengan parameter tambahan justru bikin overload baru di samping yang lama (function jadi ambigu); migration diperbaiki pakai `DROP FUNCTION` eksplisit dulu sebelum `CREATE` signature baru. (2) RLS gap ditemukan saat verifikasi browser: sales tidak punya permission `receivable.view`, jadi query invoice outstanding dari sisi klaim sales awalnya balik kosong (bukan error, cuma di-filter RLS diam-diam) — diperbaiki pakai admin client khusus di titik itu (bukan memperluas permission sales secara sistemik, tetap scoped lewat dropdown customer yang sudah RLS-aman). (3) Docker Desktop sempat mati di awal sesi ini, perlu di-start manual sebelum migration bisa diterapkan lokal. Diverifikasi: 464 test finance PASS (termasuk 12 integration test gate lama, tidak ada regresi), `tsc` bersih, **sisi sales diverifikasi penuh browser+DB nyata** (submit klaim dgn invoice ditandai → tersimpan benar di `payment_claims.claimed_invoice_ids`). **Sisi Owner/Finance (pre-fill dialog approval) TIDAK bisa diverifikasi visual browser** — Browser pane tidak ter-render di sesi ini (`document.hidden=true` persisten, keterbatasan tooling bukan kode) — jadi bagian itu cuma tervalidasi lewat code review + unit test `autoAllocateFifo`, BELUM dibuktikan langsung di UI. | **PARTIAL PASS — sisi sales terverifikasi penuh; sisi approval Finance perlu verifikasi browser susulan** |
 | 2026-08-19 | `[TEMUAN]` **Fix bug: chip "Collection · menunggu modul" basi di Executive Intelligence "Sumber Insight"** | Founder tanya kenapa Collection masih "menunggu modul" padahal Collection Intelligence (Finance) & Collection Risk (Business Guard) sudah lama live. Root cause: `lib/executive/contributors/pending.ts` punya placeholder permanen `collectionContributor` (`active: false` hardcode) yang tidak pernah dihapus waktu modulnya beneran dibangun — data collection sebenarnya SUDAH masuk Executive Intelligence lewat `businessGuardContributor`, placeholder ini murni sisa lama yang keliru. Fix: hapus `collectionContributor` dari `CONTRIBUTORS` (`lib/executive/service.ts`) + export tak terpakainya di `pending.ts`. Tidak sentuh RPC/migration, murni bug dokumentasi transparansi. Diverifikasi: test suite `lib/executive` 15/15 PASS, `tsc` bersih, browser — chip "Collection" hilang, sisa 5 chip (3 aktif, 2 menunggu modul beneran: WhatsApp AI, Warehouse). | **PASS — lokal, test+browser terverifikasi** |

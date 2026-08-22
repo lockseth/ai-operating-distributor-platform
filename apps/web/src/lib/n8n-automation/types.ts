@@ -12,7 +12,7 @@
 // dihitung ulang di sini atau di n8n. Outbox murni antrian pengiriman.
 // =============================================================================
 
-export type AutomationEventType = "MORNING_BRIEF" | "KPI_DAILY_SUMMARY";
+export type AutomationEventType = "MORNING_BRIEF" | "KPI_DAILY_SUMMARY" | "SALES_REPORT_AFTERNOON";
 export type AutomationChannel = "telegram" | "whatsapp";
 export type AutomationJobStatus =
   | "PENDING"

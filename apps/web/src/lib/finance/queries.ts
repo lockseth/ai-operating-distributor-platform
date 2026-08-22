@@ -965,6 +965,78 @@ export async function getOutstandingInvoices(
 }
 
 // =============================================================================
+// Gate P4.11 -- Laporan Sales Fase B (Laporan Sore Owner ~16:30 WIB): ringkasan
+// piutang ("Tagihan") per salesperson, dari invoice_receivable_balances yang
+// sama dengan getOutstandingInvoices di atas -- BUKAN sumber kedua. Invoice
+// dikaitkan ke salesperson lewat invoices.sales_order_id -> sales_orders.sales_id
+// (invoice tidak punya kolom salesperson langsung).
+// =============================================================================
+
+export interface SalespersonOutstandingSummary {
+  outstandingCount: number;
+  outstandingTotal: number;
+  overdueCount: number;
+}
+
+/**
+ * Ringkasan piutang outstanding per salesperson, dihitung ulang dari
+ * invoice_receivable_balances (sama seperti getOutstandingInvoices) --
+ * overdue = due_date < asOfDate (business_date laporan, bukan NOW() server
+ * supaya konsisten dengan konten laporan lain yang di-scope ke satu tanggal).
+ */
+export async function getOutstandingSummaryBySalesperson(
+  companyId: string,
+  asOfDate: string,
+  client?: SupabaseClient
+): Promise<Map<string, SalespersonOutstandingSummary>> {
+  const supabase = client ?? (await createClient());
+
+  const { data: balanceRows, error: balErr } = await supabase
+    .from("invoice_receivable_balances")
+    .select("invoice_id, outstanding_balance")
+    .eq("company_id", companyId)
+    .in("financial_status", ["outstanding", "partially_paid"]);
+  if (balErr) throw new Error(`outstanding_summary_by_salesperson balances: ${balErr.message}`);
+
+  const balanceMap = new Map(
+    ((balanceRows ?? []) as { invoice_id: string; outstanding_balance: number }[]).map((b) => [
+      b.invoice_id,
+      b.outstanding_balance,
+    ])
+  );
+  const ids = [...balanceMap.keys()];
+  const result = new Map<string, SalespersonOutstandingSummary>();
+  if (ids.length === 0) return result;
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .select("id, due_date, sales_order:sales_orders!sales_order_id(sales_id)")
+    .eq("company_id", companyId)
+    .in("id", ids);
+  if (error) throw new Error(`outstanding_summary_by_salesperson invoices: ${error.message}`);
+
+  const rows = (data ?? []) as unknown as Array<{
+    id: string;
+    due_date: string | null;
+    sales_order: { sales_id: string | null } | { sales_id: string | null }[] | null;
+  }>;
+
+  for (const row of rows) {
+    const salesOrder = Array.isArray(row.sales_order) ? row.sales_order[0] : row.sales_order;
+    const salespersonId = salesOrder?.sales_id;
+    if (!salespersonId) continue;
+
+    const existing = result.get(salespersonId) ?? { outstandingCount: 0, outstandingTotal: 0, overdueCount: 0 };
+    existing.outstandingCount += 1;
+    existing.outstandingTotal += balanceMap.get(row.id) ?? 0;
+    if (row.due_date !== null && row.due_date < asOfDate) existing.overdueCount += 1;
+    result.set(salespersonId, existing);
+  }
+
+  return result;
+}
+
+// =============================================================================
 // Gate 2I.2 -- Collection & Janji Bayar (kontrak §5.2). RPC canonical:
 // record_collection_activity, create_promise_to_pay, correct_promise_to_pay,
 // cancel_promise_to_pay, mark_promise_broken (migration 20260828000001).

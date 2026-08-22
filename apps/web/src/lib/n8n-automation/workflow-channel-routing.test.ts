@@ -71,6 +71,7 @@ const EXPECTED_WORKFLOW_FILES = [
   "aodp-morning-brief.json",
   "aodp-outbox-dispatcher.json",
   "aodp-retry-handler.json",
+  "aodp-sales-report-afternoon.json",
   "flowsales-churn-risk-alert.json",
   "flowsales-daily-owner-summary.json",
   "flowsales-large-order-alert.json",

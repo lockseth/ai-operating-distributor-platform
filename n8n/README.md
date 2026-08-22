@@ -9,14 +9,16 @@ menarik (poll/claim) job dari **automation outbox** AODP lewat internal API
 `Bearer` token, bukan menerima push webhook. Supabase tetap source of truth
 -- n8n hanya orchestration/scheduling/delivery/retry, TIDAK PERNAH menghitung
 Call/EC/EC Rate/achievement/target sendiri (semua angka datang dari
-`lib/sales-kpi/*` via endpoint `/api/internal/automation/morning-brief` dan
-`/api/internal/automation/kpi-daily-summary`).
+`lib/sales-kpi/*` via endpoint `/api/internal/automation/morning-brief`,
+`/api/internal/automation/kpi-daily-summary`, dan
+`/api/internal/automation/sales-report-afternoon`).
 
 | File | Trigger | Tujuan |
 |------|---------|--------|
 | `aodp-outbox-dispatcher.json` | Cron tiap 1 menit | Claim + kirim + complete/fail job PENDING/RETRY |
 | `aodp-morning-brief.json` | Cron 07:00 Asia/Jakarta | Generate + kirim Morning Brief salesman (Telegram) |
-| `aodp-kpi-daily-summary.json` | Cron 08:00 Asia/Jakarta | Generate KPI Daily Summary Owner (structured preview, WhatsApp dry-run) |
+| `aodp-kpi-daily-summary.json` | Cron 08:00 Asia/Jakarta | Generate KPI Daily Summary Owner -- projection pagi vs target periode (structured preview, WhatsApp dry-run) |
+| `aodp-sales-report-afternoon.json` | Cron 16:30 Asia/Jakarta, hari kerja (Sen-Jum) | Generate Laporan Sales Sore Owner -- hasil kerja HARI ITU: EC-to-transaksi, Omzet, Tagihan per sales (structured preview, WhatsApp dry-run). Gate P4.11, Fase B redesain Laporan Sales |
 | `aodp-retry-handler.json` | Cron tiap 5 menit | Cek `/health`, proses retry backlog jika ada |
 | `aodp-dead-letter-monitor.json` | Cron tiap 30 menit | Flag dead-letter untuk review manual (tidak auto-escalate) |
 | `aodp-health-check.json` | Cron tiap 5 menit | POST `/heartbeat` (bukti reachability n8n langsung), lalu cek `/health`, flag jika status bukan `healthy` |
@@ -31,12 +33,12 @@ tetap lewat `n8n_inbound_credentials` (service-role only, lihat migration
 `20260715000001_webhook_security_hardening.sql`), dengan `scope` diisi
 subset dari: `automation.claim`, `automation.complete`, `automation.fail`,
 `automation.replay`, `automation.health`, `automation.morning_brief.generate`,
-`automation.kpi_summary.generate`.
+`automation.kpi_summary.generate`, `automation.sales_report_afternoon.generate`.
 
 Semua workflow **inactive by default** setelah import (`"active": false`) --
 aktifkan manual setelah kredensial dikonfigurasi dan `AODP_APP_URL` diset di
 environment n8n. Timezone workflow di-set `Asia/Jakarta` (`settings.timezone`
-+ cron expression `0 7 * * *`/`0 8 * * *` WIB).
++ cron expression `0 7 * * *`/`0 8 * * *`/`30 16 * * 1-5` WIB).
 
 Detail arsitektur lengkap: `docs/architecture/N8N_AUTOMATION_FOUNDATION.md`.
 
