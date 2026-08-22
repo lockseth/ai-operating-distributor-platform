@@ -14,6 +14,20 @@
 // INTERNAL_AUTOMATION_TOKEN) -- tidak ada jalur baru yang melewati scope
 // check yang sudah ada, cron cuma pemanggil baru dengan token yang sama
 // polanya seperti n8n.
+//
+// PENTING -- jadwal di vercel.json SELALU UTC (dikonfirmasi resmi dokumentasi
+// Vercel, JSON tidak bisa comment jadi dicatat di sini): AODP beroperasi di
+// WIB (UTC+7), jadi tiap jadwal WIB dikurangi 7 jam sebelum ditulis di
+// vercel.json. Bug nyata ditemukan 2026-08-22 -- jadwal awal ditulis apa
+// adanya (mis. "0 7 * * *" untuk niat 07:00 WIB) tanpa konversi, akibatnya
+// Morning Brief/KPI Daily Summary sempat benar-benar terkirim jam 14:00-an/
+// 15:00-an WIB (siang), bukan pagi. Pemetaan yang benar (WIB -> UTC):
+//   Morning Brief            07:00 WIB -> 00:00 UTC -> "0 0 * * *"
+//   Rencana Penagihan Pagi   07:30 WIB -> 00:30 UTC -> "30 0 * * 1-5"
+//   KPI Daily Summary        08:00 WIB -> 01:00 UTC -> "0 1 * * *"
+//   Laporan Sales Sore       16:30 WIB -> 09:30 UTC -> "30 9 * * 1-5"
+// Kalau nanti nambah/ubah jadwal, WAJIB dikonversi ke UTC dulu, jangan tulis
+// jam WIB apa adanya.
 // =============================================================================
 
 export function verifyCronSecret(request: Request): boolean {

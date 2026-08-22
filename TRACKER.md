@@ -203,8 +203,20 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    parsing + tambah pesan "sudah terhubung sebelumnya" untuk kasus itu.
    Diverifikasi ulang di browser hosted: badge hijau "Terhubung
    (6285287539900)" tampil benar. **Bablast sekarang siap kirim nyata**
-   sepenuhnya — tinggal menunggu jadwal cron berikutnya atau trigger
-   manual untuk tes kirim pertama.
+   sepenuhnya. **Tes kirim nyata pertama SUKSES** (trigger manual
+   `collection-plan-morning`) — status `SENT`, `last_error` null.
+   **Bug penting susulan ditemukan dari data tes ini**: 2 job lama di
+   outbox (`MORNING_BRIEF`, `KPI_DAILY_SUMMARY`) ternyata terkirim jam
+   14:10/15:25 WIB, bukan 07:00/08:00 seperti niatnya -- **jadwal
+   `vercel.json` Gate P4.14 ditulis pakai jam WIB apa adanya, padahal
+   Vercel Cron SELALU UTC** (dikonfirmasi resmi `search_vercel_documentation`
+   MCP: "runs daily at 09:00 UTC"). Semua 4 jadwal telat 7 jam dari
+   niatnya sejak Gate P4.14 di-deploy. **Fix langsung**: `vercel.json`
+   dikonversi ke UTC (Morning Brief 07:00 WIB→`0 0 * * *`, Rencana
+   Penagihan 07:30 WIB→`30 0 * * 1-5`, KPI Daily Summary 08:00 WIB→
+   `0 1 * * *`, Laporan Sore 16:30 WIB→`30 9 * * 1-5`), plus catatan
+   permanen di header `lib/n8n-automation/cron.ts` supaya perubahan
+   jadwal berikutnya tidak lupa konversi lagi.
    **Temuan UX (2026-08-22, belum dieksekusi, Founder pilih tunda dulu)**:
    halaman `/dashboard/automation` mencampur kartu WA Pairing (simpel,
    pas untuk Owner) dengan form "Tambah Webhook" n8n lama (istilah teknis
