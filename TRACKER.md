@@ -180,11 +180,28 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    16:00-16:59, bukan tepat 16:30. Diverifikasi end-to-end lokal (curl ke
    ke-4 endpoint cron → generate+dispatch+complete semua sukses, token
    salah ditolak 401), migration TIDAK ada (murni kode+data credential).
-   **Sisa yang murni menunggu Founder**: (a) pairing nomor `+6285185905859`
-   di production lewat kartu "Koneksi WhatsApp" — belum pernah dicoba
-   nyata; (b) set `BABLAST_DRY_RUN=false` di Vercel setelah yakin siap
-   (sengaja tidak otomatis nyala saat deploy, tidak ada kode lagi yang
-   perlu ditulis setelah kedua langkah ini).
+   **Update 2026-08-22 (lanjutan)**: Founder sudah set `BABLAST_DRY_RUN=false`
+   + redeploy — pengiriman WA sekarang **nyata**, bukan dry-run lagi.
+   **Keputusan sementara**: nomor yang di-pairing untuk tes **digabung
+   dengan nomor ASOS** (project lain, masih sama-sama fase testing) — CTO
+   sudah ingatkan risikonya (identitas campur, risiko ban akumulasi kalau
+   nanti salah satu naik ke production dengan customer nyata), Founder
+   putuskan tetap gpp untuk tahap testing ini, **wajib dipisah sebelum
+   salah satu project go-live**. Sisa satu-satunya langkah manual:
+   pairing nomor lewat kartu "Koneksi WhatsApp" — belum pernah dicoba
+   nyata sampai baris ini ditulis.
+   **Temuan UX (2026-08-22, belum dieksekusi, Founder pilih tunda dulu)**:
+   halaman `/dashboard/automation` mencampur kartu WA Pairing (simpel,
+   pas untuk Owner) dengan form "Tambah Webhook" n8n lama (istilah teknis
+   `n8n`/`HMAC`/`Secret Key`, bertentangan prinsip "Owner First" —
+   preseden sama pernah menyebabkan rombak Aksi Cepat Dashboard Owner).
+   Founder lontarkan ide **Super Admin panel** yang nanti bisa
+   terintegrasi lintas-deployment AODP (`aodp-waluyo-demo`,
+   `aodp-<client2>`, dst) sebagai solusi jangka panjang — **sengaja
+   ditunda**, baru relevan begitu ada deployment AODP kedua aktif (sejalan
+   keputusan CTO sebelumnya soal Control Centre, lihat memory
+   `surabradja-demo-plan`). Untuk sekarang halaman dibiarkan apa adanya,
+   cukup untuk keperluan testing.
 2. `[REQUEST FOUNDER]` **Chatbot bisnis Owner — Milestone 1-3 SELESAI
    (2026-08-20), Milestone 4 menunggu API key.** Dipecah 4 milestone
    (lihat Log Milestone 2026-08-20): M1 Context Builder, M2 Chat UI
