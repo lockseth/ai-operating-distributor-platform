@@ -41,7 +41,16 @@ async function callInternalRoute(
   body: string,
 ): Promise<GenerateAndDispatchStepResult> {
   const res = await fetch(`${origin}${path}`, { method: "POST", headers, body });
-  const parsedBody = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const rawText = await res.text().catch(() => "");
+  let parsedBody: Record<string, unknown>;
+  try {
+    parsedBody = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : {};
+  } catch {
+    // Response bukan JSON (mis. halaman auth-challenge Vercel) -- simpan
+    // cuplikan mentahnya supaya kegagalan tetap terlihat, bukan diam-diam
+    // jadi objek kosong.
+    parsedBody = { raw: rawText.slice(0, 500) };
+  }
   return { ok: res.ok, status: res.status, body: parsedBody };
 }
 
@@ -64,7 +73,14 @@ export async function generateAndDispatch(
   const internalToken = process.env.INTERNAL_AUTOMATION_TOKEN;
   if (!internalToken) throw new Error("INTERNAL_AUTOMATION_TOKEN belum diset di environment");
 
-  const origin = new URL(request.url).origin;
+  // SENGAJA bukan new URL(request.url).origin -- Vercel Cron memanggil cron
+  // route ini lewat URL deployment spesifik (bukan domain production alias),
+  // dan URL deployment itu bisa terkena proteksi Vercel Authentication yang
+  // memblokir fetch-diri-sendiri ke rute internal di origin yang sama
+  // (ditemukan saat verifikasi hosted Gate P4.14 -- generate/dispatch selalu
+  // gagal diam-diam padahal token & credential benar). NEXT_PUBLIC_APP_URL
+  // (domain production stabil) tidak kena proteksi itu.
+  const origin = process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
   const headers = { Authorization: `Bearer ${internalToken}`, "Content-Type": "application/json" };
 
   const generate = await callInternalRoute(origin, generatePath, headers, "{}");
