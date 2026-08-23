@@ -4,6 +4,7 @@ import {
   generateBehaviorChangeReport,
   generateTransactionRiskReport,
   generateUnremittedCollectionRiskReport,
+  generateSuspiciousCallTimingReport,
 } from "@/lib/business-guard/engine";
 import type {
   ExecutiveContributor,
@@ -34,12 +35,13 @@ export const businessGuardContributor: ExecutiveContributor = {
   moduleLabel: "Business Guard",
 
   async contribute({ companyId }): Promise<ModuleContribution> {
-    const [collectionReport, discountReport, behaviorReport, transactionReport, unremittedReport] = await Promise.all([
+    const [collectionReport, discountReport, behaviorReport, transactionReport, unremittedReport, callTimingReport] = await Promise.all([
       generateCollectionRiskReport(companyId),
       generateDiscountAnomalyReport(companyId),
       generateBehaviorChangeReport(companyId),
       generateTransactionRiskReport(companyId),
       generateUnremittedCollectionRiskReport(companyId),
+      generateSuspiciousCallTimingReport(companyId),
     ]);
 
     const health: HealthComponent[] = [];
@@ -100,6 +102,18 @@ export const businessGuardContributor: ExecutiveContributor = {
         score: completePct,
         weight: 2,
         reason: `${healthyCount} dari ${unremittedReport.length} klaim "sudah terima pembayaran" sudah diformalkan jadi klaim pembayaran resmi`,
+        trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
+      });
+    }
+    if (callTimingReport.length > 0) {
+      const healthyCount = callTimingReport.filter((r) => r.risk_level === "NONE" || r.risk_level === "LOW").length;
+      const completePct = Math.round((healthyCount / callTimingReport.length) * 100);
+      health.push({
+        key: "call_timing_integrity",
+        label: "Kewajaran Jarak Waktu Kunjungan",
+        score: completePct,
+        weight: 1,
+        reason: `${healthyCount} dari ${callTimingReport.length} hari kunjungan sales dengan jarak waktu antar-toko yang wajar`,
         trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
       });
     }
@@ -289,6 +303,43 @@ export const businessGuardContributor: ExecutiveContributor = {
         priority: "HIGH",
         action: "Follow-up klaim pembayaran yang belum diformalkan",
         rationale: `${unremittedMedium.length} klaim penagihan masuk kategori risiko sedang`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    const callTimingHigh = callTimingReport.filter((r) => r.risk_level === "HIGH");
+    const callTimingMedium = callTimingReport.filter((r) => r.risk_level === "MEDIUM");
+
+    if (callTimingHigh.length > 0) {
+      const names = callTimingHigh.map((r) => r.salesperson_name).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "critical",
+        title: `${callTimingHigh.length} hari kunjungan sales dengan jarak waktu antar-toko mencurigakan`,
+        narrative: `${names}${callTimingHigh.length > 5 ? ", …" : ""} -- jarak waktu antar-kunjungan berurutan terlalu singkat untuk benar-benar berpindah toko.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "URGENT",
+        action: "Cek langsung pola kunjungan dengan jarak waktu mencurigakan",
+        rationale: `${callTimingHigh.length} hari kunjungan sales, jarak waktu antar-toko tidak masuk akal`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    if (callTimingMedium.length > 0) {
+      const names = callTimingMedium.map((r) => r.salesperson_name).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "warning",
+        title: `${callTimingMedium.length} hari kunjungan sales perlu ditinjau jarak waktunya`,
+        narrative: `${names}${callTimingMedium.length > 5 ? ", …" : ""} -- ada pola jarak waktu antar-kunjungan yang cukup singkat.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "HIGH",
+        action: "Tinjau catatan kunjungan dengan jarak waktu sedang",
+        rationale: `${callTimingMedium.length} hari kunjungan sales masuk kategori risiko sedang`,
         href: "/dashboard/risk",
       });
     }

@@ -1,19 +1,21 @@
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { PageHeader } from "@/components/ui/page-header";
-import { ShieldAlert, UserX, Gauge, AlertTriangle, Banknote, Wallet } from "lucide-react";
+import { ShieldAlert, UserX, Gauge, AlertTriangle, Banknote, Wallet, Clock } from "lucide-react";
 import {
   generateDiscountAnomalyReport,
   generateCollectionRiskReport,
   generateBehaviorChangeReport,
   generateTransactionRiskReport,
   generateUnremittedCollectionRiskReport,
+  generateSuspiciousCallTimingReport,
 } from "@/lib/business-guard/engine";
 import type { DiscountRiskLevel } from "@/lib/business-guard/features/discount-anomaly";
 import type { CollectionRiskLevel } from "@/lib/business-guard/features/collection-risk";
 import type { BehaviorChangeRiskLevel } from "@/lib/business-guard/features/behavior-change";
 import type { TransactionRiskLevel } from "@/lib/business-guard/features/transaction-risk";
 import type { UnremittedCollectionRiskLevel } from "@/lib/business-guard/features/unremitted-collection";
+import type { CallTimingRiskLevel } from "@/lib/business-guard/features/call-timing-anomaly";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import { formatJakartaDateTime } from "@/lib/audit-log/format";
 
@@ -40,7 +42,7 @@ function formatPercent(n: number) {
 const SEVERITY_ORDER: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
 
 interface UnifiedRiskAlert {
-  category: "Sales Risk" | "Collection Risk" | "Behavior Change" | "Transaction Risk" | "Klaim Belum Diformalkan";
+  category: "Sales Risk" | "Collection Risk" | "Behavior Change" | "Transaction Risk" | "Klaim Belum Diformalkan" | "Kunjungan Mencurigakan";
   riskLevel: DiscountRiskLevel;
   entityName: string;
   recommendation: string;
@@ -56,18 +58,20 @@ export default async function RiskPage() {
 
   if (!hasAccess) redirect("/dashboard");
 
-  const [discountAnomalyReport, collectionRiskReport, behaviorChangeReport, transactionRiskReport, unremittedReport] = await Promise.all([
+  const [discountAnomalyReport, collectionRiskReport, behaviorChangeReport, transactionRiskReport, unremittedReport, callTimingReport] = await Promise.all([
     generateDiscountAnomalyReport(user.company_id),
     generateCollectionRiskReport(user.company_id),
     generateBehaviorChangeReport(user.company_id),
     generateTransactionRiskReport(user.company_id),
     generateUnremittedCollectionRiskReport(user.company_id),
+    generateSuspiciousCallTimingReport(user.company_id),
   ]);
   const flagged = discountAnomalyReport.filter((r) => r.risk_level !== "NONE");
   const collectionFlagged = collectionRiskReport.filter((r) => r.risk_level !== "NONE");
   const behaviorFlagged = behaviorChangeReport.filter((r) => r.risk_level !== "NONE");
   const transactionFlagged = transactionRiskReport.filter((r) => r.risk_level !== "NONE");
   const unremittedFlagged = unremittedReport.filter((r) => r.risk_level !== "NONE");
+  const callTimingFlagged = callTimingReport.filter((r) => r.risk_level !== "NONE");
 
   // Risk Alert List -- gabungan Sales Risk + Collection Risk + Behavior Change
   // + Transaction Risk, murni penggabungan + pengurutan dari report yang
@@ -105,6 +109,12 @@ export default async function RiskPage() {
       entityName: `${r.collector_name} — ${r.customer_name}`,
       recommendation: r.recommendation,
     })),
+    ...callTimingFlagged.map((r) => ({
+      category: "Kunjungan Mencurigakan" as const,
+      riskLevel: r.risk_level,
+      entityName: `${r.salesperson_name} — ${r.call_date}`,
+      recommendation: r.recommendation,
+    })),
   ].sort((a, b) => SEVERITY_ORDER[a.riskLevel]! - SEVERITY_ORDER[b.riskLevel]!);
 
   return (
@@ -116,7 +126,7 @@ export default async function RiskPage() {
 
       <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
         <p className="text-sm font-medium text-emerald-800">
-          Business Guard AI — 5 fitur aktif (Sales Risk, Collection Risk, Behavior Change, Transaction Risk Score, Klaim Belum Diformalkan)
+          Business Guard AI — 6 fitur aktif (Sales Risk, Collection Risk, Behavior Change, Transaction Risk Score, Klaim Belum Diformalkan, Kunjungan Mencurigakan)
         </p>
         <p className="mt-0.5 text-xs text-emerald-700">
           Alert risiko hanya dapat dilihat owner dan manager — tidak dapat dihapus oleh sales.
@@ -365,6 +375,53 @@ export default async function RiskPage() {
                     {r.reported_amount !== null && <span>{formatRupiah(r.reported_amount)}</span>}
                     <span>{r.days_elapsed} hari sejak dilaporkan</span>
                     <span>{formatJakartaDateTime(r.occurred_at)}</span>
+                  </div>
+                </div>
+
+                {r.signals.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {r.signals.map((s, i) => (
+                      <li key={i} className="text-xs text-gray-600">• {s}</li>
+                    ))}
+                  </ul>
+                )}
+
+                <p className="mt-2 text-xs italic text-gray-500">{r.recommendation}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Suspicious Call Timing -- jarak waktu antar-kunjungan yang tidak masuk akal secara fisik, fitur aktif keenam (Gate P4.19) */}
+      <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+          <Clock className="h-4 w-4 text-purple-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Kunjungan Mencurigakan — Jarak Waktu Antar-Toko</h2>
+          <span className="ml-auto text-xs text-gray-400">
+            {callTimingReport.length} hari kunjungan · {callTimingFlagged.length} perlu perhatian
+          </span>
+        </div>
+
+        {callTimingReport.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Tidak ada hari dengan &ge;2 kunjungan dalam 30 hari terakhir untuk dianalisis.</p>
+        ) : callTimingFlagged.length === 0 ? (
+          <p className="px-5 py-6 text-sm text-gray-500">Semua jarak waktu kunjungan dalam pola wajar -- tidak ada yang perlu perhatian.</p>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {callTimingFlagged.map((r) => (
+              <div key={`${r.salesperson_id}-${r.call_date}`} className="px-5 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-gray-900">{r.salesperson_name} — {r.call_date}</p>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${RISK_BADGE[r.risk_level]}`}>
+                      {RISK_LABEL[r.risk_level]}
+                    </span>
+                  </div>
+                  <div className="flex gap-4 text-xs text-gray-500">
+                    <span>{r.total_calls} kunjungan</span>
+                    {r.min_gap_seconds !== null && <span>jarak terketat {r.min_gap_seconds} detik</span>}
+                    <span>{r.tight_gap_count} pasang &lt; 2 menit</span>
                   </div>
                 </div>
 

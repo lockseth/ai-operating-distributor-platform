@@ -8,6 +8,7 @@
 import type { ActiveSalesKpiPeriod, SalesKpiAchievementProjection } from "@/lib/sales-kpi/types";
 import type { ChurnRiskLevel } from "@/lib/ai/features/churn-prediction";
 import type { UnremittedCollectionRiskLevel } from "@/lib/business-guard/features/unremitted-collection";
+import type { CallTimingRiskLevel } from "@/lib/business-guard/features/call-timing-anomaly";
 
 export interface KpiDailySummarySalesmanLine {
   salesmanFullName: string;
@@ -25,6 +26,14 @@ export interface KpiDailySummaryUnremittedCandidate {
   customerName: string;
   riskLevel: UnremittedCollectionRiskLevel;
   daysElapsed: number;
+}
+
+export interface KpiDailySummaryCallTimingCandidate {
+  salespersonName: string;
+  callDate: string;
+  riskLevel: CallTimingRiskLevel;
+  minGapSeconds: number | null;
+  tightGapCount: number;
 }
 
 export interface KpiDailySummaryContext {
@@ -46,6 +55,15 @@ export interface KpiDailySummaryContext {
    * collection.ts) -- HIGH/MEDIUM saja, pola opsional identik churnCandidates.
    */
   unremittedCandidates?: KpiDailySummaryUnremittedCandidate[] | null;
+  /**
+   * Hari kunjungan dengan jarak waktu antar-toko mencurigakan (Gate P4.19,
+   * lib/business-guard/features/call-timing-anomaly.ts) -- BEDA dari
+   * churnCandidates/unremittedCandidates: HANYA HIGH yang dikirim (bukan
+   * HIGH+MEDIUM), karena sinyal ini heuristik berbasis aturan, bukan fakta
+   * terkonfirmasi -- MEDIUM/LOW di sini artinya "layak dilihat", bukan
+   * "anomali terkonfirmasi". Pola opsional identik 2 field lain.
+   */
+  callTimingCandidates?: KpiDailySummaryCallTimingCandidate[] | null;
 }
 
 export interface KpiDailySummaryContent {
@@ -85,6 +103,19 @@ function appendUnremittedLines(lines: string[], ctx: KpiDailySummaryContext): vo
   }
 }
 
+/** Kunjungan mencurigakan (Gate P4.19, HIGH saja) -- HANYA muncul kalau ada, pola sama appendUnremittedLines. */
+function appendCallTimingLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.callTimingCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Kunjungan Mencurigakan (${candidates.length}):`);
+  for (const c of candidates) {
+    const gapLabel = c.minGapSeconds !== null ? `${c.minGapSeconds} detik` : "-";
+    lines.push(`${c.salespersonName} -- ${c.callDate}, jarak terketat ${gapLabel}, ${c.tightGapCount} pasang < 2 menit`);
+  }
+}
+
 export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySummaryContent {
   const lines: string[] = [];
   lines.push(`${ctx.tenantName} -- KPI Daily Summary ${ctx.businessDate}`);
@@ -94,6 +125,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
     lines.push("Periode KPI belum diaktifkan. Belum ada target resmi untuk ditampilkan.");
     appendChurnLines(lines, ctx);
     appendUnremittedLines(lines, ctx);
+    appendCallTimingLines(lines, ctx);
     return {
       text: lines.join("\n"),
       structured: {
@@ -104,6 +136,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
         salesmen: [],
         churnCandidates: ctx.churnCandidates ?? [],
         unremittedCandidates: ctx.unremittedCandidates ?? [],
+        callTimingCandidates: ctx.callTimingCandidates ?? [],
       },
     };
   }
@@ -142,6 +175,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
 
   appendChurnLines(lines, ctx);
   appendUnremittedLines(lines, ctx);
+  appendCallTimingLines(lines, ctx);
 
   return {
     text: lines.join("\n"),
@@ -158,6 +192,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
       salesmen: structuredSalesmen,
       churnCandidates: ctx.churnCandidates ?? [],
       unremittedCandidates: ctx.unremittedCandidates ?? [],
+      callTimingCandidates: ctx.callTimingCandidates ?? [],
     },
   };
 }

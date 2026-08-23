@@ -31,6 +31,12 @@ import {
   type ClaimedActivityInput,
   type PaymentClaimInput,
 } from "./features/unremitted-collection";
+import {
+  detectSuspiciousCallTiming,
+  type SalesCallTimingResult,
+  type SalesDayCallActivity,
+  type SalesCallTimingInput,
+} from "./features/call-timing-anomaly";
 
 const LOOKBACK_DAYS = 180;
 
@@ -597,4 +603,97 @@ export async function generateUnremittedCollectionRiskReport(
   now: Date = new Date(),
 ): Promise<UnremittedCollectionResult[]> {
   return getUnremittedCollectionCandidates(companyId, getAdminClient(), now);
+}
+
+// =============================================================================
+// Suspicious Call Timing (Gate P4.19) -- query sales_calls (Call jalur
+// Telegram, LOCKED, Gate 3E-D5) untuk VALID + coverage_basis ASSIGNED/AREA/
+// EXCEPTION saja, kelompokkan per (salesperson_id, call_date), lalu jalankan
+// detectSuspiciousCallTiming per grup yang punya >= 2 Call. Read-only --
+// tidak menyentuh RPC record_sales_call/reverse_sales_call sama sekali.
+//
+// BEDA dari Gate P4.18: sales_calls_select RLS (20260805000001:164-171) SUDAH
+// benar untuk owner/manager/super_admin (lihat kolom salesperson_id = auth.uid()
+// OR user_has_role([...])) -- TIDAK ADA celah RLS seperti payment_claims.
+// generateSuspiciousCallTimingReport pakai createClient() session-scoped
+// BIASA. Admin client HANYA dipakai jalur cron KPI Daily Summary (route tidak
+// pernah punya sesi cookie) -- reuse fungsi yang sama, BUKAN workaround bug RLS.
+// =============================================================================
+
+const CALL_TIMING_LOOKBACK_DAYS = 30;
+const TELEGRAM_COVERAGE_BASIS = ["ASSIGNED", "AREA", "EXCEPTION"] as const;
+
+type SalesCallRow = {
+  id: string;
+  salesperson_id: string;
+  customer_id: string;
+  call_date: string;
+  occurred_at: string;
+  customers: { name: string } | { name: string }[] | null;
+};
+
+/**
+ * Fungsi data-fetching dengan client yang DI-INJECT -- dipakai
+ * generateSuspiciousCallTimingReport (session-scoped, RLS sudah benar) DAN
+ * route KPI Daily Summary (admin client, route automation tidak punya sesi).
+ */
+export async function getSuspiciousCallTimingCandidates(
+  companyId: string,
+  supabase: SupabaseClient,
+  now: Date = new Date(),
+): Promise<SalesCallTimingResult[]> {
+  const lookbackDate = new Date(now.getTime() - CALL_TIMING_LOOKBACK_DAYS * 86_400_000);
+
+  const { data: callRows } = await supabase
+    .from("sales_calls")
+    .select("id, salesperson_id, customer_id, call_date, occurred_at, customers(name)")
+    .eq("company_id", companyId)
+    .eq("status", "VALID")
+    .in("coverage_basis", TELEGRAM_COVERAGE_BASIS)
+    .gte("call_date", lookbackDate.toISOString().slice(0, 10));
+
+  const rows = (callRows ?? []) as unknown as SalesCallRow[];
+  if (rows.length === 0) return [];
+
+  const salespersonIds = [...new Set(rows.map((r) => r.salesperson_id))];
+  const { data: userRows } = await supabase.from("users").select("id, full_name").in("id", salespersonIds);
+  const salespersonNameById = new Map(((userRows ?? []) as { id: string; full_name: string }[]).map((u) => [u.id, u.full_name]));
+
+  const groupKey = (salespersonId: string, callDate: string): string => `${salespersonId}:${callDate}`;
+  const groups = new Map<string, SalesDayCallActivity>();
+  rows.forEach((r) => {
+    const key = groupKey(r.salesperson_id, r.call_date);
+    const group = groups.get(key) ?? {
+      salesperson_id: r.salesperson_id,
+      salesperson_name: salespersonNameById.get(r.salesperson_id) ?? "Sales (tidak dikenal)",
+      call_date: r.call_date,
+      calls: [] as SalesCallTimingInput[],
+    };
+    group.calls.push({
+      call_id: r.id,
+      customer_id: r.customer_id,
+      customer_name: resolveCustomerName(r.customers),
+      occurred_at: r.occurred_at,
+    });
+    groups.set(key, group);
+  });
+
+  const results: SalesCallTimingResult[] = [];
+  groups.forEach((group) => {
+    if (group.calls.length < 2) return;
+    results.push(detectSuspiciousCallTiming(group, now));
+  });
+
+  return results.sort((a, b) => {
+    const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+    return order[a.risk_level]! - order[b.risk_level]! || (a.min_gap_seconds ?? Infinity) - (b.min_gap_seconds ?? Infinity);
+  });
+}
+
+export async function generateSuspiciousCallTimingReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<SalesCallTimingResult[]> {
+  const supabase = await createClient();
+  return getSuspiciousCallTimingCandidates(companyId, supabase, now);
 }

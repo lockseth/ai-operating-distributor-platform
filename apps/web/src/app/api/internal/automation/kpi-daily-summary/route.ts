@@ -17,12 +17,13 @@ import {
   kpiDailySummaryIdempotencyKey,
   type KpiDailySummaryChurnCandidate,
   type KpiDailySummaryUnremittedCandidate,
+  type KpiDailySummaryCallTimingCandidate,
 } from "@/lib/n8n-automation/kpi-daily-summary";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
 import { normalizeIndonesianPhone } from "@/lib/integrations/bablast";
 import { getChurnCandidatesForCompany } from "@/lib/ai/insights-engine";
-import { getUnremittedCollectionCandidates } from "@/lib/business-guard/engine";
+import { getUnremittedCollectionCandidates, getSuspiciousCallTimingCandidates } from "@/lib/business-guard/engine";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -127,7 +128,35 @@ export async function POST(request: Request) {
       console.error("[Internal Automation /kpi-daily-summary] gagal hitung unremitted collection candidates (diabaikan):", unremittedErr);
     }
 
-    const content = buildKpiDailySummary({ tenantName, businessDate, activePeriod, lines, churnCandidates, unremittedCandidates });
+    // Gate P4.19: hari kunjungan dengan jarak waktu antar-toko mencurigakan --
+    // HANYA HIGH yang ikut brief (beda dari churn/unremitted yang HIGH+MEDIUM,
+    // lihat header KpiDailySummaryContext.callTimingCandidates) -- best-effort
+    // sama seperti 2 blok di atas, tidak boleh memblokir KPI Daily Summary.
+    let callTimingCandidates: KpiDailySummaryCallTimingCandidate[] = [];
+    try {
+      const callTimingResults = await getSuspiciousCallTimingCandidates(credential.companyId, admin);
+      callTimingCandidates = callTimingResults
+        .filter((r) => r.risk_level === "HIGH")
+        .map((r) => ({
+          salespersonName: r.salesperson_name,
+          callDate: r.call_date,
+          riskLevel: r.risk_level,
+          minGapSeconds: r.min_gap_seconds,
+          tightGapCount: r.tight_gap_count,
+        }));
+    } catch (callTimingErr) {
+      console.error("[Internal Automation /kpi-daily-summary] gagal hitung call timing candidates (diabaikan):", callTimingErr);
+    }
+
+    const content = buildKpiDailySummary({
+      tenantName,
+      businessDate,
+      activePeriod,
+      lines,
+      churnCandidates,
+      unremittedCandidates,
+      callTimingCandidates,
+    });
 
     const enqueueResult = await repository.enqueueJob({
       companyId: credential.companyId,
@@ -146,6 +175,7 @@ export async function POST(request: Request) {
       salesmen_included: lines.length,
       churn_candidates_included: churnCandidates.length,
       unremitted_candidates_included: unremittedCandidates.length,
+      call_timing_candidates_included: callTimingCandidates.length,
       outcome: enqueueResult.outcome,
       job_id: "jobId" in enqueueResult ? enqueueResult.jobId : null,
     });
