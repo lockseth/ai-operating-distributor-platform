@@ -294,6 +294,32 @@ sekarang murni next-workstream/accepted-limitation, bukan lagi P0 blocking.
 9. **[TEMUAN 2026-08-19, DIAUDIT ULANG 2026-08-22]** Audit arsitektur "event AODP → WhatsApp" — awalnya ada **2 pipeline terpisah**, keduanya belum siap kirim WA nyata. **Status sekarang jauh beda antara keduanya**:
    - **Jalur B (scheduled — Morning Brief, Rencana Penagihan, KPI Daily Summary, Laporan Sore) — TUTUP PENUH.** Sejak Gate P4.13-P4.15 (2026-08-22) arsitekturnya diganti total: BUKAN lagi lewat `automation_outbox` di-poll n8n tiap menit, tapi **Vercel Cron native** memanggil generate+dispatch langsung ke endpoint internal AODP, yang langsung memanggil Bablast (`lib/integrations/bablast.ts`) TANPA n8n sama sekali. `BABLAST_DRY_RUN=false` aktif, kirim nyata terverifikasi hosted berkali-kali termasuk fisik di HP penerima. `n8n/aodp-*.json` sekarang murni **arsip** (masih dijaga 90 test Gate 3A Domain 5 supaya strukturnya tidak dirusak tanpa sadar, tapi tidak lagi jadi mekanisme aktif apa pun).
    - **Jalur A (event-triggered — dipakai Gate P4.08, notifikasi WA saat sales ajukan harga khusus) — DITUTUP 2026-08-23.** Action baru `call_bablast` dibangun (lihat Log Milestone "Fase 1 Lock Toko + Notifikasi WA") — TIDAK lanjutkan jalur n8n lama sama sekali, langsung panggil Bablast konsisten arsitektur Jalur B. Rule `automation_rules` di-seed untuk tenant Waluyo. Server-side terverifikasi sukses (`automation_logs`, response API `/api/automation/trigger`); konten pesan di HP masih menunggu konfirmasi visual Founder.
+10. **[TEMUAN 2026-08-23]** "Bukti Pembayaran" di form Catat Pembayaran
+    (Finance, `record-payment-panel.tsx` + `payment_proofs`, Gate 2D lama)
+    **bukan bukti sungguhan** — cuma 2 kolom teks bebas (`proof_type` +
+    `object_reference`), tidak ada validasi format URL, tidak ada file
+    tersimpan di AODP sama sekali (`object_reference TEXT NOT NULL CHECK
+    (length(trim(...)) > 0)` — literal apa saja lolos). Ditemukan Founder
+    saat tanya kenapa field itu cuma terima link, bukan upload foto.
+    Root cause terdokumentasi di komentar migration asli
+    (`20260829000001`): saat Gate 2D dibangun, AODP belum punya
+    infrastruktur upload file sama sekali, dan scope gate itu sengaja
+    dibatasi "UI-only, tanpa infrastruktur baru" — jadi proof disederhanakan
+    jadi pointer/link, bukan keputusan desain final yang dipikir matang.
+    **Bug tambahan**: link yang ditempel pun ditampilkan sebagai teks biasa
+    (bukan `<a href>`) di halaman review (`/dashboard/finance/payments/[id]`)
+    — tidak bisa diklik langsung. **CTO assessment**: celah nyata untuk
+    kekuatan bukti audit finansial (satu tema dengan Gate P4.18/P4.19 —
+    beda: ini soal "kalau dilaporkan, apa buktinya bisa dipercaya", bukan
+    "apakah dilaporkan sama sekali") — TAPI tidak darurat, karena
+    perhitungan alokasi/saldo piutang tidak bergantung pada isi field ini.
+    **Kabar baik**: AODP sekarang sudah punya infrastruktur Supabase
+    Storage nyata (bucket `store-photos`, dipakai foto toko/PIC,
+    `lib/customer-pic/actions.ts`) yang tidak ada saat Gate 2D dibangun —
+    perbaikan jadi upload foto beneran sekarang jauh lebih murah, tinggal
+    reuse pola yang sudah ada. **Founder putuskan 2026-08-23: catat dulu,
+    belum dikerjakan** — diprioritaskan setelah celah #3 (push proaktif
+    Business Guard alert) selesai.
 
 ### Accepted limitations (dari audit 2026-08-12, tidak berubah, tidak blocking)
 
