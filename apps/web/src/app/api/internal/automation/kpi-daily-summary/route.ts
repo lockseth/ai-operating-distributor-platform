@@ -12,10 +12,11 @@ import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-
 import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential } from "@/lib/n8n-automation/service";
 import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directory";
-import { buildKpiDailySummary, kpiDailySummaryIdempotencyKey } from "@/lib/n8n-automation/kpi-daily-summary";
+import { buildKpiDailySummary, kpiDailySummaryIdempotencyKey, type KpiDailySummaryChurnCandidate } from "@/lib/n8n-automation/kpi-daily-summary";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
 import { normalizeIndonesianPhone } from "@/lib/integrations/bablast";
+import { getChurnCandidatesForCompany } from "@/lib/ai/insights-engine";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -83,7 +84,25 @@ export async function POST(request: Request) {
       }
     }
 
-    const content = buildKpiDailySummary({ tenantName, businessDate, activePeriod, lines });
+    // Gate P4.17: calon churn (HIGH/MEDIUM) ikut ditampilkan di brief Owner --
+    // kegagalan di sini ditelan (best-effort, TIDAK memblokir KPI Daily
+    // Summary yang sudah PASS lama sekiranya query churn error).
+    let churnCandidates: KpiDailySummaryChurnCandidate[] = [];
+    try {
+      const churnPredictions = await getChurnCandidatesForCompany(credential.companyId, admin);
+      churnCandidates = churnPredictions
+        .filter((p) => p.risk_level === "HIGH" || p.risk_level === "MEDIUM")
+        .sort((a, b) => (a.risk_level === b.risk_level ? 0 : a.risk_level === "HIGH" ? -1 : 1))
+        .map((p) => ({
+          customerName: p.customer_name,
+          riskLevel: p.risk_level,
+          daysSinceLastOrder: p.days_since_last_order,
+        }));
+    } catch (churnErr) {
+      console.error("[Internal Automation /kpi-daily-summary] gagal hitung churn candidates (diabaikan):", churnErr);
+    }
+
+    const content = buildKpiDailySummary({ tenantName, businessDate, activePeriod, lines, churnCandidates });
 
     const enqueueResult = await repository.enqueueJob({
       companyId: credential.companyId,
@@ -100,6 +119,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       business_date: businessDate,
       salesmen_included: lines.length,
+      churn_candidates_included: churnCandidates.length,
       outcome: enqueueResult.outcome,
       job_id: "jobId" in enqueueResult ? enqueueResult.jobId : null,
     });

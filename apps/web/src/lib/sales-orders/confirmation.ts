@@ -98,13 +98,16 @@ export function buildOrderConfirmedReply(orderNumber: string, order: PricedOrder
  * tersimpan sama sekali, pesan tidak membocorkan detail internal (id/tabel).
  */
 export function buildOrderRejectedReply(
-  code: "invalid_customer" | "customer_not_owned" | "invalid_product" | "invalid_quantity" | "forbidden",
+  code: "invalid_customer" | "customer_not_owned" | "invalid_product" | "invalid_quantity" | "forbidden" | "customer_locked_overdue",
 ): string {
   if (code === "invalid_customer") {
     return "Nama toko pada pesan ini belum bisa dipastikan (tidak ditemukan, cocok dengan lebih dari satu toko terdaftar, tidak aktif, atau bukan bagian dari tenant Anda). Order tidak disimpan — mohon sebutkan nama toko yang lebih spesifik/lengkap, atau hubungi admin/owner.";
   }
   if (code === "customer_not_owned") {
     return "Toko ini terdaftar milik Sales lain. Order tidak disimpan — mohon hubungi admin/owner untuk konfirmasi kepemilikan toko ini.";
+  }
+  if (code === "customer_locked_overdue") {
+    return "Toko ini terkunci karena ada tagihan yang belum dibayar lebih dari 3 hari dari jatuh tempo. Order tidak disimpan — ajukan buka kunci ke Owner lewat halaman Pelanggan di aplikasi web.";
   }
   if (code === "invalid_product") {
     return "Salah satu produk pada pesan ini tidak aktif atau tidak terdaftar untuk tenant Anda. Order tidak disimpan — mohon periksa kembali nama produk.";

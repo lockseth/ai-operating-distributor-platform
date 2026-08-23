@@ -58,7 +58,8 @@ export type DraftOrderRejectionCode =
   | "customer_not_owned"
   | "invalid_product"
   | "invalid_quantity"
-  | "forbidden";
+  | "forbidden"
+  | "customer_locked_overdue";
 
 export class DraftOrderRejectedError extends Error {
   constructor(
@@ -206,7 +207,8 @@ function isDraftOrderRejectionCode(
     value === "customer_not_owned" ||
     value === "invalid_product" ||
     value === "invalid_quantity" ||
-    value === "forbidden"
+    value === "forbidden" ||
+    value === "customer_locked_overdue"
   );
 }
 

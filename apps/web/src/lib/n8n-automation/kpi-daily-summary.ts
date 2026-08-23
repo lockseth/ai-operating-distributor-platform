@@ -6,10 +6,17 @@
 // =============================================================================
 
 import type { ActiveSalesKpiPeriod, SalesKpiAchievementProjection } from "@/lib/sales-kpi/types";
+import type { ChurnRiskLevel } from "@/lib/ai/features/churn-prediction";
 
 export interface KpiDailySummarySalesmanLine {
   salesmanFullName: string;
   projection: SalesKpiAchievementProjection | null;
+}
+
+export interface KpiDailySummaryChurnCandidate {
+  customerName: string;
+  riskLevel: ChurnRiskLevel;
+  daysSinceLastOrder: number;
 }
 
 export interface KpiDailySummaryContext {
@@ -17,6 +24,14 @@ export interface KpiDailySummaryContext {
   businessDate: string;
   activePeriod: ActiveSalesKpiPeriod | null;
   lines: KpiDailySummarySalesmanLine[];
+  /**
+   * Toko risiko churn HIGH/MEDIUM (lib/ai/features/churn-prediction.ts) --
+   * opsional/null kalau pemanggil tidak menyediakan (skip bagian ini, bukan
+   * error). Kosong (array 0 elemen) juga skip -- bagian ini HANYA muncul
+   * kalau memang ada calon churn, konsisten pola PR Data Toko Kredit di
+   * morning-brief.ts.
+   */
+  churnCandidates?: KpiDailySummaryChurnCandidate[] | null;
 }
 
 export interface KpiDailySummaryContent {
@@ -30,6 +45,19 @@ function ecRateOf(projection: SalesKpiAchievementProjection): number | null {
     : null;
 }
 
+/** Calon churn (HIGH/MEDIUM) -- HANYA muncul kalau ada, pola sama PR Data Toko Kredit di morning-brief.ts. */
+function appendChurnLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.churnCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Calon Churn (${candidates.length} toko):`);
+  for (const c of candidates) {
+    const label = c.riskLevel === "HIGH" ? "Tinggi" : "Sedang";
+    lines.push(`${c.customerName} -- risiko ${label}, tidak order ${c.daysSinceLastOrder} hari`);
+  }
+}
+
 export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySummaryContent {
   const lines: string[] = [];
   lines.push(`${ctx.tenantName} -- KPI Daily Summary ${ctx.businessDate}`);
@@ -37,6 +65,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
 
   if (!ctx.activePeriod) {
     lines.push("Periode KPI belum diaktifkan. Belum ada target resmi untuk ditampilkan.");
+    appendChurnLines(lines, ctx);
     return {
       text: lines.join("\n"),
       structured: {
@@ -45,6 +74,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
         activePeriod: null,
         status: "NO_ACTIVE_PERIOD",
         salesmen: [],
+        churnCandidates: ctx.churnCandidates ?? [],
       },
     };
   }
@@ -81,6 +111,8 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
     });
   }
 
+  appendChurnLines(lines, ctx);
+
   return {
     text: lines.join("\n"),
     structured: {
@@ -94,6 +126,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
       },
       status: "ACTIVE_PERIOD",
       salesmen: structuredSalesmen,
+      churnCandidates: ctx.churnCandidates ?? [],
     },
   };
 }

@@ -60,6 +60,59 @@ describe("buildKpiDailySummary -- agregat Owner, n8n tidak menghitung sendiri", 
   });
 });
 
+describe("buildKpiDailySummary -- Gate P4.17: calon churn (HIGH/MEDIUM)", () => {
+  it("tidak ada churnCandidates -> tidak ada bagian 'Calon Churn' sama sekali (bukan baris kosong)", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+    });
+    expect(content.text).not.toContain("Calon Churn");
+    expect(content.structured.churnCandidates).toEqual([]);
+  });
+
+  it("churnCandidates array kosong -> sama seperti tidak ada, tidak muncul di teks", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      churnCandidates: [],
+    });
+    expect(content.text).not.toContain("Calon Churn");
+  });
+
+  it("ada calon churn -> muncul dengan jumlah, nama toko, level risiko, dan hari sejak order terakhir", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      churnCandidates: [
+        { customerName: "Toko Sumber Rejeki", riskLevel: "HIGH", daysSinceLastOrder: 65 },
+        { customerName: "Toko Makmur Jaya", riskLevel: "MEDIUM", daysSinceLastOrder: 40 },
+      ],
+    });
+    expect(content.text).toContain("Calon Churn (2 toko):");
+    expect(content.text).toContain("Toko Sumber Rejeki -- risiko Tinggi, tidak order 65 hari");
+    expect(content.text).toContain("Toko Makmur Jaya -- risiko Sedang, tidak order 40 hari");
+  });
+
+  it("churn tetap muncul walau periode KPI belum diaktifkan", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: null,
+      lines: [],
+      churnCandidates: [{ customerName: "Toko A", riskLevel: "HIGH", daysSinceLastOrder: 70 }],
+    });
+    expect(content.text).toContain("belum diaktifkan");
+    expect(content.text).toContain("Calon Churn (1 toko):");
+    expect(content.structured.status).toBe("NO_ACTIVE_PERIOD");
+  });
+});
+
 describe("kpiDailySummaryIdempotencyKey", () => {
   it("satu company + satu business date -> key unik", () => {
     expect(kpiDailySummaryIdempotencyKey("waluyo", "2026-08-10")).toBe("kpi_daily_summary:waluyo:2026-08-10");

@@ -196,6 +196,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Master Data",
     items: [
       { label: "Pelanggan", href: "/dashboard/customers", icon: <IconUsers />,   permission: "customers.view" },
+      { label: "Buka Kunci Toko", href: "/dashboard/customers/unlock-requests", icon: <IconShield />, roles: ["owner"] },
       { label: "Produk",    href: "/dashboard/products",  icon: <IconPackage />, permission: "products.view" },
     ],
   },

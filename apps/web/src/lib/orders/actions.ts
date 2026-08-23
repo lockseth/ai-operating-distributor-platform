@@ -129,6 +129,8 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       throw new Error("Customer tidak ditemukan");
     case "customer_not_owned":
       throw new Error("Toko ini sudah diatribusikan ke Sales lain — order ditolak.");
+    case "customer_locked_overdue":
+      throw new Error("Toko ini terkunci karena ada tagihan tertunggak lebih dari 3 hari — ajukan buka kunci ke Owner dulu.");
     case "invalid_sales_id":
       throw new Error("Salesperson tidak valid");
     case "invalid_product":
@@ -274,6 +276,8 @@ export async function updateOrderStatusAction(
         throw new Error("Order berubah setelah disetujui Owner -- ajukan ulang proposal harga khusus.");
       case "unapproved_special_price":
         throw new Error("Order memakai harga khusus yang belum/tidak disetujui Owner.");
+      case "customer_locked_overdue":
+        throw new Error("Toko ini terkunci karena ada tagihan tertunggak lebih dari 3 hari — ajukan buka kunci ke Owner dulu.");
       default:
         throw new Error(`Gagal mengonfirmasi order: ${row.result_outcome}`);
     }

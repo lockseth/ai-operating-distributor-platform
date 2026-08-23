@@ -1,15 +1,16 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { DeactivateButton } from "@/components/customers/deactivate-button";
+import { RequestUnlockButton } from "@/components/customers/request-unlock-button";
 import { PicPanel, type PicView, type PicHistoryView, type RelationshipEventView } from "@/components/customer-pic/pic-panel";
 import { AddPicForm } from "@/components/customer-pic/add-pic-form";
 import type { PicRole, PicValidationStatus } from "@/lib/customer-pic/types";
 import {
   ChevronLeft, Edit2, Users, Phone, Mail, MapPin,
-  Calendar, Clock, User, Info,
+  Calendar, Clock, User, Info, Lock,
 } from "lucide-react";
 
 export const metadata = { title: "Detail Pelanggan — AODP" };
@@ -88,6 +89,30 @@ export default async function CustomerDetailPage({
   const daysSinceOrder = customer.last_order_at
     ? Math.floor((new Date().getTime() - new Date(customer.last_order_at).getTime()) / 86_400_000)
     : null;
+
+  // --- Gate P4.16: Lock Toko Tertunggak (purely additive, hanya untuk role
+  // sales -- lihat rencana Fase 2) ---
+  const isSales = hasRole(user.roles, "sales");
+  let isLocked = false;
+  let hasPendingUnlockRequest = false;
+  if (isSales) {
+    const { data: lockedData } = await supabase.rpc("is_customer_order_locked", {
+      p_company_id: user.company_id,
+      p_customer_id: customer.id,
+    });
+    isLocked = lockedData === true;
+
+    if (isLocked) {
+      const { data: pendingRow } = await supabase
+        .from("store_unlock_requests")
+        .select("id")
+        .eq("company_id", user.company_id)
+        .eq("customer_id", customer.id)
+        .eq("status", "PENDING")
+        .maybeSingle();
+      hasPendingUnlockRequest = !!pendingRow;
+    }
+  }
 
   // --- Tambah Toko & PIC (purely additive) ---
   const canVerifyPic = hasPermission(user.permissions, "customers.pic_verify");
@@ -178,7 +203,22 @@ export default async function CustomerDetailPage({
               }`}>
                 {customer.is_active ? "Aktif" : "Nonaktif"}
               </span>
+              {isLocked && (
+                <span className="flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700">
+                  <Lock className="h-3 w-3" />
+                  Terkunci (tunggakan)
+                </span>
+              )}
             </div>
+            {isLocked && (
+              <div className="mt-2">
+                <RequestUnlockButton
+                  customerId={customer.id}
+                  customerName={customer.name}
+                  hasPendingRequest={hasPendingUnlockRequest}
+                />
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
               <span className="font-mono text-xs">{customer.code}</span>
               <span>·</span>

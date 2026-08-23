@@ -3,6 +3,7 @@
 // Server-side: query DB, jalankan semua 5 AI features, cache ke ai_insights.
 // =============================================================================
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { predictChurn } from "./features/churn-prediction";
@@ -60,7 +61,7 @@ export async function generateAllInsights(
 ): Promise<AiInsightsBundle> {
   const supabase = await createClient();
   const now = new Date();
-  const sixMonthsAgo = new Date("2026-01-01");
+  const sixMonthsAgo = new Date(now.getTime() - 180 * 86_400_000);
   const modelVersion = "rule-based-v1";
 
   // ── 1. Fetch all raw data in parallel ──
@@ -294,4 +295,63 @@ function computeAvgInterval(dates: string[]): number {
     total += (new Date(sorted[i]!).getTime() - new Date(sorted[i - 1]!).getTime()) / 86_400_000;
   }
   return total / (sorted.length - 1);
+}
+
+/**
+ * Gate P4.17: subset ringan generateAllInsights() KHUSUS churn -- dipakai
+ * KPI Daily Summary (route internal automation, admin client, TIDAK PERNAH
+ * punya sesi cookie login) supaya bisa dapat calon churn tanpa menghitung
+ * ulang repeat-order/revenue-forecast/sales-recommendation/executive-summary
+ * yang tidak relevan untuk WA brief. Sengaja DUPLIKASI query customers/orders
+ * (bukan reuse generateAllInsights) -- generateAllInsights terikat pada
+ * createClient() session-scoped khusus untuk halaman AI Insights, memaksanya
+ * menerima client injeksi berisiko regresi di jalur yang sudah jalan.
+ * Client di-inject (bukan selalu admin) supaya tetap bisa dipanggil dari
+ * konteks session-scoped juga kalau suatu saat dibutuhkan.
+ */
+export async function getChurnCandidatesForCompany(
+  companyId: string,
+  supabase: SupabaseClient,
+  now: Date = new Date()
+): Promise<ChurnPredictionResult[]> {
+  const sixMonthsAgo = new Date(now.getTime() - 180 * 86_400_000);
+
+  const [ordersResult, customersResult] = await Promise.all([
+    supabase
+      .from("sales_orders")
+      .select("customer_id, final_amount, created_at")
+      .eq("company_id", companyId)
+      .gte("created_at", sixMonthsAgo.toISOString())
+      .in("status", ["confirmed", "delivering", "delivered", "invoiced", "paid"]),
+    supabase
+      .from("customers")
+      .select("id, name, last_order_at")
+      .eq("company_id", companyId),
+  ]);
+
+  type OrderRow = { customer_id: string; final_amount: number; created_at: string };
+  type CustomerRow = { id: string; name: string; last_order_at: string | null };
+
+  const orders = (ordersResult.data ?? []) as unknown as OrderRow[];
+  const customers = (customersResult.data ?? []) as unknown as CustomerRow[];
+
+  const customerOrderMap: Record<string, { dates: string[]; revenue: number }> = {};
+  orders.forEach((o) => {
+    if (!customerOrderMap[o.customer_id]) customerOrderMap[o.customer_id] = { dates: [], revenue: 0 };
+    customerOrderMap[o.customer_id]!.dates.push(o.created_at);
+    customerOrderMap[o.customer_id]!.revenue += o.final_amount ?? 0;
+  });
+
+  return customers.map((c) =>
+    predictChurn(
+      {
+        customer_id: c.id,
+        customer_name: c.name,
+        last_order_at: c.last_order_at,
+        order_dates: customerOrderMap[c.id]?.dates ?? [],
+        total_revenue: customerOrderMap[c.id]?.revenue ?? 0,
+      },
+      now
+    )
+  );
 }
