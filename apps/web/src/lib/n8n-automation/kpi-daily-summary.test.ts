@@ -113,6 +113,143 @@ describe("buildKpiDailySummary -- Gate P4.17: calon churn (HIGH/MEDIUM)", () => 
   });
 });
 
+describe("buildKpiDailySummary -- Gate P4.20: 4 fitur Business Guard baru (HIGH saja)", () => {
+  it("discountAnomalyCandidates kosong/tidak ada -> tidak ada bagian 'Anomali Pengajuan Diskon'", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      discountAnomalyCandidates: [],
+    });
+    expect(content.text).not.toContain("Anomali Pengajuan Diskon");
+    expect(content.structured.discountAnomalyCandidates).toEqual([]);
+  });
+
+  it("ada anomali diskon -> muncul dengan nama sales, jumlah pengajuan, dan persentase ditolak", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      discountAnomalyCandidates: [{ salesName: "Budi", riskLevel: "HIGH", totalRequests: 12, rejectionRate: 0.5 }],
+    });
+    expect(content.text).toContain("Anomali Pengajuan Diskon (1):");
+    expect(content.text).toContain("Budi -- 12 pengajuan, 50% ditolak");
+  });
+
+  it("collectionRiskCandidates kosong/tidak ada -> tidak ada bagian 'Piutang Berisiko Macet'", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      collectionRiskCandidates: [],
+    });
+    expect(content.text).not.toContain("Piutang Berisiko Macet");
+    expect(content.structured.collectionRiskCandidates).toEqual([]);
+  });
+
+  it("ada piutang macet -> muncul dengan nama customer, nominal Rupiah, dan umur hari", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      collectionRiskCandidates: [
+        { customerName: "Toko Sumber Rejeki", riskLevel: "HIGH", totalOutstandingAmount: 5_000_000, maxAgeDays: 95 },
+      ],
+    });
+    expect(content.text).toContain("Piutang Berisiko Macet (1):");
+    expect(content.text).toContain("Toko Sumber Rejeki -- Rp5.000.000, 95 hari lewat jatuh tempo");
+  });
+
+  it("ada piutang macet dengan maxAgeDays null -> label 'umur tidak diketahui', tidak crash", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      collectionRiskCandidates: [{ customerName: "Toko A", riskLevel: "HIGH", totalOutstandingAmount: 1_000_000, maxAgeDays: null }],
+    });
+    expect(content.text).toContain("Toko A -- Rp1.000.000, umur tidak diketahui");
+  });
+
+  it("behaviorChangeCandidates kosong/tidak ada -> tidak ada bagian 'Perubahan Perilaku Customer'", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      behaviorChangeCandidates: [],
+    });
+    expect(content.text).not.toContain("Perubahan Perilaku Customer");
+    expect(content.structured.behaviorChangeCandidates).toEqual([]);
+  });
+
+  it("ada perubahan perilaku -> muncul dengan nama customer dan hari sejak order terakhir", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      behaviorChangeCandidates: [{ customerName: "Toko Makmur", riskLevel: "HIGH", daysSinceLastOrder: 80 }],
+    });
+    expect(content.text).toContain("Perubahan Perilaku Customer (1):");
+    expect(content.text).toContain("Toko Makmur -- 80 hari sejak order terakhir");
+  });
+
+  it("transactionRiskCandidates kosong/tidak ada -> tidak ada bagian 'Transaksi Berisiko'", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      transactionRiskCandidates: [],
+    });
+    expect(content.text).not.toContain("Transaksi Berisiko");
+    expect(content.structured.transactionRiskCandidates).toEqual([]);
+  });
+
+  it("ada transaksi berisiko -> muncul dengan nomor order, nama customer, dan nominal Rupiah", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: ACTIVE_PERIOD,
+      lines: [],
+      transactionRiskCandidates: [
+        { orderNumber: "SO-2608-0099", customerName: "Toko Baru", riskLevel: "HIGH", orderTotalAmount: 7_500_000 },
+      ],
+    });
+    expect(content.text).toContain("Transaksi Berisiko (1):");
+    expect(content.text).toContain("SO-2608-0099 -- Toko Baru, Rp7.500.000");
+  });
+
+  it("semua bagian Business Guard bisa muncul sekaligus tanpa saling menimpa, plus tetap muncul walau periode belum aktif", () => {
+    const content = buildKpiDailySummary({
+      tenantName: "Waluyo Distributor",
+      businessDate: "2026-08-10",
+      activePeriod: null,
+      lines: [],
+      churnCandidates: [{ customerName: "Toko Churn", riskLevel: "HIGH", daysSinceLastOrder: 70 }],
+      unremittedCandidates: [{ collectorName: "Sales A", customerName: "Toko Unremitted", riskLevel: "HIGH", daysElapsed: 8 }],
+      callTimingCandidates: [{ salespersonName: "Sales B", callDate: "2026-08-10", riskLevel: "HIGH", minGapSeconds: 45, tightGapCount: 2 }],
+      discountAnomalyCandidates: [{ salesName: "Sales C", riskLevel: "HIGH", totalRequests: 5, rejectionRate: 0.8 }],
+      collectionRiskCandidates: [{ customerName: "Toko Piutang", riskLevel: "HIGH", totalOutstandingAmount: 2_000_000, maxAgeDays: 100 }],
+      behaviorChangeCandidates: [{ customerName: "Toko Perilaku", riskLevel: "HIGH", daysSinceLastOrder: 60 }],
+      transactionRiskCandidates: [{ orderNumber: "SO-1", customerName: "Toko Order", riskLevel: "HIGH", orderTotalAmount: 3_000_000 }],
+    });
+    expect(content.text).toContain("belum diaktifkan");
+    expect(content.text).toContain("Calon Churn (1 toko):");
+    expect(content.text).toContain("Klaim Pembayaran Belum Diformalkan (1):");
+    expect(content.text).toContain("Kunjungan Mencurigakan (1):");
+    expect(content.text).toContain("Anomali Pengajuan Diskon (1):");
+    expect(content.text).toContain("Piutang Berisiko Macet (1):");
+    expect(content.text).toContain("Perubahan Perilaku Customer (1):");
+    expect(content.text).toContain("Transaksi Berisiko (1):");
+  });
+});
+
 describe("kpiDailySummaryIdempotencyKey", () => {
   it("satu company + satu business date -> key unik", () => {
     expect(kpiDailySummaryIdempotencyKey("waluyo", "2026-08-10")).toBe("kpi_daily_summary:waluyo:2026-08-10");

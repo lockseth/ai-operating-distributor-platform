@@ -57,11 +57,17 @@ type UserRoleRow = {
   role: { name: string } | null;
 };
 
-export async function generateDiscountAnomalyReport(
+/**
+ * Fungsi data-fetching dengan client yang DI-INJECT (Gate P4.20) -- dipakai
+ * generateDiscountAnomalyReport (session-scoped) DAN route KPI Daily Summary
+ * (admin client, route automation tidak punya sesi). Pola sama persis
+ * unremitted-collection/call-timing-anomaly.
+ */
+export async function getDiscountAnomalyCandidates(
   companyId: string,
+  supabase: SupabaseClient,
   now: Date = new Date()
 ): Promise<DiscountAnomalyResult[]> {
-  const supabase = await createClient();
   const lookbackDate = new Date(now.getTime() - LOOKBACK_DAYS * 86_400_000);
 
   const [requestsResult, userRolesResult] = await Promise.all([
@@ -152,6 +158,14 @@ export async function generateDiscountAnomalyReport(
   });
 }
 
+export async function generateDiscountAnomalyReport(
+  companyId: string,
+  now: Date = new Date()
+): Promise<DiscountAnomalyResult[]> {
+  const supabase = await createClient();
+  return getDiscountAnomalyCandidates(companyId, supabase, now);
+}
+
 // =============================================================================
 // Collection Risk -- query invoice_receivable_balances (Gate 2A, view) +
 // invoices + promises_to_pay + collection_activities (Gate 2C, LOCKED), lalu
@@ -178,11 +192,12 @@ function resolveCustomerName(customers: InvoiceRow["customers"]): string {
   return Array.isArray(customers) ? (customers[0]?.name ?? "-") : customers.name;
 }
 
-export async function generateCollectionRiskReport(
+/** Client di-inject (Gate P4.20) -- pola sama getDiscountAnomalyCandidates. */
+export async function getCollectionRiskCandidates(
   companyId: string,
+  supabase: SupabaseClient,
   now: Date = new Date(),
 ): Promise<CollectionRiskResult[]> {
-  const supabase = await createClient();
   const lookbackDate = new Date(now.getTime() - COLLECTION_RISK_LOOKBACK_DAYS * 86_400_000);
 
   const { data: balanceRows } = await supabase
@@ -273,6 +288,14 @@ export async function generateCollectionRiskReport(
   });
 }
 
+export async function generateCollectionRiskReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<CollectionRiskResult[]> {
+  const supabase = await createClient();
+  return getCollectionRiskCandidates(companyId, supabase, now);
+}
+
 // =============================================================================
 // Behavior Change -- query sales_orders (confirmed_at, untuk baseline pola
 // order per customer) + customer_relationship_events (Gate PIC master
@@ -291,11 +314,12 @@ type CustomerRow = { id: string; name: string };
 type OrderDateRow = { customer_id: string; confirmed_at: string };
 type RelationshipEventRow = { customer_id: string; event_type: string };
 
-export async function generateBehaviorChangeReport(
+/** Client di-inject (Gate P4.20) -- pola sama getDiscountAnomalyCandidates. */
+export async function getBehaviorChangeCandidates(
   companyId: string,
+  supabase: SupabaseClient,
   now: Date = new Date(),
 ): Promise<BehaviorChangeResult[]> {
-  const supabase = await createClient();
   const lookbackDate = new Date(now.getTime() - BEHAVIOR_CHANGE_LOOKBACK_DAYS * 86_400_000);
 
   const [customersResult, ordersResult, eventsResult] = await Promise.all([
@@ -359,6 +383,14 @@ export async function generateBehaviorChangeReport(
   });
 }
 
+export async function generateBehaviorChangeReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<BehaviorChangeResult[]> {
+  const supabase = await createClient();
+  return getBehaviorChangeCandidates(companyId, supabase, now);
+}
+
 // =============================================================================
 // Transaction Risk Score -- skor PER TRANSAKSI (order individual), beda dari
 // 3 slice lain yang agregat per-entity. Query sales_orders (final_amount,
@@ -384,11 +416,12 @@ type ScoredOrderRow = {
 type BaselineOrderRow = { id: string; customer_id: string; final_amount: number };
 type OrderItemRow = { order_id: string; product_id: string | null; product_name_raw: string; quantity: number };
 
-export async function generateTransactionRiskReport(
+/** Client di-inject (Gate P4.20) -- pola sama getDiscountAnomalyCandidates. */
+export async function getTransactionRiskCandidates(
   companyId: string,
+  supabase: SupabaseClient,
   now: Date = new Date(),
 ): Promise<TransactionRiskResult[]> {
-  const supabase = await createClient();
   const baselineStart = new Date(now.getTime() - TX_RISK_LOOKBACK_DAYS * 86_400_000);
   const recentStart = new Date(now.getTime() - TX_RISK_RECENT_WINDOW_DAYS * 86_400_000);
 
@@ -496,6 +529,14 @@ export async function generateTransactionRiskReport(
   });
 }
 
+export async function generateTransactionRiskReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<TransactionRiskResult[]> {
+  const supabase = await createClient();
+  return getTransactionRiskCandidates(companyId, supabase, now);
+}
+
 // =============================================================================
 // Unremitted Collection Risk (Gate P4.18) -- query collection_activities
 // (klaim "sudah terima pembayaran", Gate 2C LOCKED) + payment_claims (klaim
@@ -503,10 +544,10 @@ export async function generateTransactionRiskReport(
 // Guard feature murni), lalu jalankan detectUnremittedCollectionRisk per
 // aktivitas yang belum matched. Read-only -- tidak menyentuh RPC manapun.
 //
-// PENTING -- BEDA dari 4 fungsi generate*Report di atas: fungsi ini SELALU
-// pakai admin client (getAdminClient()), TIDAK PERNAH createClient() session-
-// scoped. Alasan: payment_claims_select RLS (20261010000001) HANYA
-// mengizinkan lihat SEMUA baris kalau permission 'payment.record' -- dan
+// PENTING -- fungsi ini SELALU pakai admin client (getAdminClient()), TIDAK
+// PERNAH createClient() session-scoped. Alasan: payment_claims_select RLS
+// (20261010000001) HANYA mengizinkan lihat SEMUA baris kalau permission
+// 'payment.record' -- dan
 // permission itu HANYA di-grant ke role owner/finance (20260829000001,
 // SENGAJA lebih sempit dari manager/admin/super_admin). Kalau fungsi ini
 // pakai createClient() biasa, seorang manager yang buka halaman Risk Alert

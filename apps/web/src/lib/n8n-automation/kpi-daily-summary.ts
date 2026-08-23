@@ -9,6 +9,11 @@ import type { ActiveSalesKpiPeriod, SalesKpiAchievementProjection } from "@/lib/
 import type { ChurnRiskLevel } from "@/lib/ai/features/churn-prediction";
 import type { UnremittedCollectionRiskLevel } from "@/lib/business-guard/features/unremitted-collection";
 import type { CallTimingRiskLevel } from "@/lib/business-guard/features/call-timing-anomaly";
+import type { DiscountRiskLevel } from "@/lib/business-guard/features/discount-anomaly";
+import type { CollectionRiskLevel } from "@/lib/business-guard/features/collection-risk";
+import type { BehaviorChangeRiskLevel } from "@/lib/business-guard/features/behavior-change";
+import type { TransactionRiskLevel } from "@/lib/business-guard/features/transaction-risk";
+import { formatRupiah } from "@/lib/document-engine/monetary";
 
 export interface KpiDailySummarySalesmanLine {
   salesmanFullName: string;
@@ -34,6 +39,33 @@ export interface KpiDailySummaryCallTimingCandidate {
   riskLevel: CallTimingRiskLevel;
   minGapSeconds: number | null;
   tightGapCount: number;
+}
+
+export interface KpiDailySummaryDiscountAnomalyCandidate {
+  salesName: string;
+  riskLevel: DiscountRiskLevel;
+  totalRequests: number;
+  rejectionRate: number;
+}
+
+export interface KpiDailySummaryCollectionRiskCandidate {
+  customerName: string;
+  riskLevel: CollectionRiskLevel;
+  totalOutstandingAmount: number;
+  maxAgeDays: number | null;
+}
+
+export interface KpiDailySummaryBehaviorChangeCandidate {
+  customerName: string;
+  riskLevel: BehaviorChangeRiskLevel;
+  daysSinceLastOrder: number | null;
+}
+
+export interface KpiDailySummaryTransactionRiskCandidate {
+  orderNumber: string;
+  customerName: string;
+  riskLevel: TransactionRiskLevel;
+  orderTotalAmount: number;
 }
 
 export interface KpiDailySummaryContext {
@@ -64,6 +96,20 @@ export interface KpiDailySummaryContext {
    * "anomali terkonfirmasi". Pola opsional identik 2 field lain.
    */
   callTimingCandidates?: KpiDailySummaryCallTimingCandidate[] | null;
+  /**
+   * Gate P4.20 -- 4 fitur Business Guard yang baru pertama kali dapat jalur
+   * WA (Anomali Diskon, Piutang Macet, Perubahan Perilaku, Transaction
+   * Risk). HIGH saja untuk keempatnya (heuristik/relatif, konsisten
+   * callTimingCandidates) -- SEMUA 6 field opsional Business Guard di file
+   * ini (termasuk unremitted/callTiming) sekarang sudah di-dedup di sumber
+   * (route automation, lewat evaluateAndPersistAlertState) sebelum sampai
+   * ke sini -- builder ini TIDAK tahu/tidak perlu tahu soal anti-spam,
+   * cukup terima daftar yang MEMANG layak dikirim hari ini.
+   */
+  discountAnomalyCandidates?: KpiDailySummaryDiscountAnomalyCandidate[] | null;
+  collectionRiskCandidates?: KpiDailySummaryCollectionRiskCandidate[] | null;
+  behaviorChangeCandidates?: KpiDailySummaryBehaviorChangeCandidate[] | null;
+  transactionRiskCandidates?: KpiDailySummaryTransactionRiskCandidate[] | null;
 }
 
 export interface KpiDailySummaryContent {
@@ -116,6 +162,56 @@ function appendCallTimingLines(lines: string[], ctx: KpiDailySummaryContext): vo
   }
 }
 
+/** Anomali diskon (Gate P4.20, HIGH saja) -- HANYA muncul kalau ada, pola sama appendCallTimingLines. */
+function appendDiscountAnomalyLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.discountAnomalyCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Anomali Pengajuan Diskon (${candidates.length}):`);
+  for (const c of candidates) {
+    lines.push(`${c.salesName} -- ${c.totalRequests} pengajuan, ${Math.round(c.rejectionRate * 100)}% ditolak`);
+  }
+}
+
+/** Piutang macet (Gate P4.20, HIGH saja) -- HANYA muncul kalau ada, pola sama appendCallTimingLines. */
+function appendCollectionRiskLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.collectionRiskCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Piutang Berisiko Macet (${candidates.length}):`);
+  for (const c of candidates) {
+    const ageLabel = c.maxAgeDays !== null ? `${c.maxAgeDays} hari lewat jatuh tempo` : "umur tidak diketahui";
+    lines.push(`${c.customerName} -- ${formatRupiah(c.totalOutstandingAmount)}, ${ageLabel}`);
+  }
+}
+
+/** Perubahan perilaku customer (Gate P4.20, HIGH saja) -- HANYA muncul kalau ada, pola sama appendCallTimingLines. */
+function appendBehaviorChangeLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.behaviorChangeCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Perubahan Perilaku Customer (${candidates.length}):`);
+  for (const c of candidates) {
+    const label = c.daysSinceLastOrder !== null ? `${c.daysSinceLastOrder} hari sejak order terakhir` : "belum pernah order";
+    lines.push(`${c.customerName} -- ${label}`);
+  }
+}
+
+/** Transaction risk (Gate P4.20, HIGH saja) -- HANYA muncul kalau ada, pola sama appendCallTimingLines. */
+function appendTransactionRiskLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.transactionRiskCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Transaksi Berisiko (${candidates.length}):`);
+  for (const c of candidates) {
+    lines.push(`${c.orderNumber} -- ${c.customerName}, ${formatRupiah(c.orderTotalAmount)}`);
+  }
+}
+
 export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySummaryContent {
   const lines: string[] = [];
   lines.push(`${ctx.tenantName} -- KPI Daily Summary ${ctx.businessDate}`);
@@ -126,6 +222,10 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
     appendChurnLines(lines, ctx);
     appendUnremittedLines(lines, ctx);
     appendCallTimingLines(lines, ctx);
+    appendDiscountAnomalyLines(lines, ctx);
+    appendCollectionRiskLines(lines, ctx);
+    appendBehaviorChangeLines(lines, ctx);
+    appendTransactionRiskLines(lines, ctx);
     return {
       text: lines.join("\n"),
       structured: {
@@ -137,6 +237,10 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
         churnCandidates: ctx.churnCandidates ?? [],
         unremittedCandidates: ctx.unremittedCandidates ?? [],
         callTimingCandidates: ctx.callTimingCandidates ?? [],
+        discountAnomalyCandidates: ctx.discountAnomalyCandidates ?? [],
+        collectionRiskCandidates: ctx.collectionRiskCandidates ?? [],
+        behaviorChangeCandidates: ctx.behaviorChangeCandidates ?? [],
+        transactionRiskCandidates: ctx.transactionRiskCandidates ?? [],
       },
     };
   }
@@ -176,6 +280,10 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
   appendChurnLines(lines, ctx);
   appendUnremittedLines(lines, ctx);
   appendCallTimingLines(lines, ctx);
+  appendDiscountAnomalyLines(lines, ctx);
+  appendCollectionRiskLines(lines, ctx);
+  appendBehaviorChangeLines(lines, ctx);
+  appendTransactionRiskLines(lines, ctx);
 
   return {
     text: lines.join("\n"),
@@ -193,6 +301,10 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
       churnCandidates: ctx.churnCandidates ?? [],
       unremittedCandidates: ctx.unremittedCandidates ?? [],
       callTimingCandidates: ctx.callTimingCandidates ?? [],
+      discountAnomalyCandidates: ctx.discountAnomalyCandidates ?? [],
+      collectionRiskCandidates: ctx.collectionRiskCandidates ?? [],
+      behaviorChangeCandidates: ctx.behaviorChangeCandidates ?? [],
+      transactionRiskCandidates: ctx.transactionRiskCandidates ?? [],
     },
   };
 }
