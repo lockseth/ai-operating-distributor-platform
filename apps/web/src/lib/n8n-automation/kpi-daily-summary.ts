@@ -7,6 +7,7 @@
 
 import type { ActiveSalesKpiPeriod, SalesKpiAchievementProjection } from "@/lib/sales-kpi/types";
 import type { ChurnRiskLevel } from "@/lib/ai/features/churn-prediction";
+import type { UnremittedCollectionRiskLevel } from "@/lib/business-guard/features/unremitted-collection";
 
 export interface KpiDailySummarySalesmanLine {
   salesmanFullName: string;
@@ -17,6 +18,13 @@ export interface KpiDailySummaryChurnCandidate {
   customerName: string;
   riskLevel: ChurnRiskLevel;
   daysSinceLastOrder: number;
+}
+
+export interface KpiDailySummaryUnremittedCandidate {
+  collectorName: string;
+  customerName: string;
+  riskLevel: UnremittedCollectionRiskLevel;
+  daysElapsed: number;
 }
 
 export interface KpiDailySummaryContext {
@@ -32,6 +40,12 @@ export interface KpiDailySummaryContext {
    * morning-brief.ts.
    */
   churnCandidates?: KpiDailySummaryChurnCandidate[] | null;
+  /**
+   * Klaim "sudah terima pembayaran" yang belum diformalkan jadi payment
+   * claim resmi (Gate P4.18, lib/business-guard/features/unremitted-
+   * collection.ts) -- HIGH/MEDIUM saja, pola opsional identik churnCandidates.
+   */
+  unremittedCandidates?: KpiDailySummaryUnremittedCandidate[] | null;
 }
 
 export interface KpiDailySummaryContent {
@@ -58,6 +72,19 @@ function appendChurnLines(lines: string[], ctx: KpiDailySummaryContext): void {
   }
 }
 
+/** Klaim belum diformalkan (Gate P4.18, HIGH/MEDIUM) -- HANYA muncul kalau ada, pola sama appendChurnLines. */
+function appendUnremittedLines(lines: string[], ctx: KpiDailySummaryContext): void {
+  const candidates = ctx.unremittedCandidates;
+  if (!candidates || candidates.length === 0) return;
+
+  lines.push("");
+  lines.push(`Klaim Pembayaran Belum Diformalkan (${candidates.length}):`);
+  for (const c of candidates) {
+    const label = c.riskLevel === "HIGH" ? "Tinggi" : "Sedang";
+    lines.push(`${c.collectorName} -- ${c.customerName}, risiko ${label}, ${c.daysElapsed} hari belum ada klaim pembayaran`);
+  }
+}
+
 export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySummaryContent {
   const lines: string[] = [];
   lines.push(`${ctx.tenantName} -- KPI Daily Summary ${ctx.businessDate}`);
@@ -66,6 +93,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
   if (!ctx.activePeriod) {
     lines.push("Periode KPI belum diaktifkan. Belum ada target resmi untuk ditampilkan.");
     appendChurnLines(lines, ctx);
+    appendUnremittedLines(lines, ctx);
     return {
       text: lines.join("\n"),
       structured: {
@@ -75,6 +103,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
         status: "NO_ACTIVE_PERIOD",
         salesmen: [],
         churnCandidates: ctx.churnCandidates ?? [],
+        unremittedCandidates: ctx.unremittedCandidates ?? [],
       },
     };
   }
@@ -112,6 +141,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
   }
 
   appendChurnLines(lines, ctx);
+  appendUnremittedLines(lines, ctx);
 
   return {
     text: lines.join("\n"),
@@ -127,6 +157,7 @@ export function buildKpiDailySummary(ctx: KpiDailySummaryContext): KpiDailySumma
       status: "ACTIVE_PERIOD",
       salesmen: structuredSalesmen,
       churnCandidates: ctx.churnCandidates ?? [],
+      unremittedCandidates: ctx.unremittedCandidates ?? [],
     },
   };
 }

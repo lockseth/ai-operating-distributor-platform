@@ -5,7 +5,9 @@
 // Read-only -- tidak menyentuh RPC/tabel approval, murni SELECT.
 // =============================================================================
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
 import {
   detectDiscountAnomaly,
   type DiscountAnomalyResult,
@@ -22,6 +24,13 @@ import {
   type TransactionRiskResult,
   type OrderItemQuantityOutlier,
 } from "./features/transaction-risk";
+import {
+  matchUnremittedClaims,
+  detectUnremittedCollectionRisk,
+  type UnremittedCollectionResult,
+  type ClaimedActivityInput,
+  type PaymentClaimInput,
+} from "./features/unremitted-collection";
 
 const LOOKBACK_DAYS = 180;
 
@@ -479,4 +488,113 @@ export async function generateTransactionRiskReport(
     const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
     return order[a.risk_level]! - order[b.risk_level]! || b.order_total_amount - a.order_total_amount;
   });
+}
+
+// =============================================================================
+// Unremitted Collection Risk (Gate P4.18) -- query collection_activities
+// (klaim "sudah terima pembayaran", Gate 2C LOCKED) + payment_claims (klaim
+// resmi, Gate P4.06 LOCKED), cocokkan lewat matchUnremittedClaims (Business
+// Guard feature murni), lalu jalankan detectUnremittedCollectionRisk per
+// aktivitas yang belum matched. Read-only -- tidak menyentuh RPC manapun.
+//
+// PENTING -- BEDA dari 4 fungsi generate*Report di atas: fungsi ini SELALU
+// pakai admin client (getAdminClient()), TIDAK PERNAH createClient() session-
+// scoped. Alasan: payment_claims_select RLS (20261010000001) HANYA
+// mengizinkan lihat SEMUA baris kalau permission 'payment.record' -- dan
+// permission itu HANYA di-grant ke role owner/finance (20260829000001,
+// SENGAJA lebih sempit dari manager/admin/super_admin). Kalau fungsi ini
+// pakai createClient() biasa, seorang manager yang buka halaman Risk Alert
+// akan RLS-filtered ke nyaris 0 baris payment_claims terlihat -- membuat
+// SEMUA sales tampak "tidak pernah formalkan klaim" (HIGH risk PALSU untuk
+// semua orang). Admin client di sini aman karena setiap pemanggil (dashboard,
+// Executive Overview, cron KPI Daily Summary) SUDAH gate akses halaman ke
+// owner/manager/super_admin duluan -- ini cuma memastikan audiens yang sudah
+// dipercaya melihat data yang BENAR, bukan data yang salah kena RLS.
+// JANGAN ganti balik ke createClient() session-scoped -- itu akan
+// menghidupkan kembali bug false-positive massal ini.
+// =============================================================================
+
+const UNREMITTED_LOOKBACK_DAYS = 90;
+
+type ClaimedActivityRow = {
+  id: string;
+  customer_id: string;
+  collector_id: string;
+  outcome: "claimed_paid_full" | "claimed_paid_partial";
+  reported_amount: number | null;
+  occurred_at: string;
+  customers: { name: string } | { name: string }[] | null;
+};
+type PaymentClaimRow = { id: string; customer_id: string; claimed_by: string; claimed_at: string };
+type UserNameRow = { id: string; full_name: string };
+
+/**
+ * Fungsi data-fetching dengan client yang DI-INJECT (bukan hardcode) --
+ * dipakai LANGSUNG oleh generateUnremittedCollectionRiskReport (admin
+ * client) DAN oleh route KPI Daily Summary (admin client juga, lihat header
+ * di atas kenapa fungsi ini tidak butuh varian terpisah seperti pola churn
+ * Gate P4.17 -- di sini SEMUA pemanggil butuh admin client yang sama).
+ */
+export async function getUnremittedCollectionCandidates(
+  companyId: string,
+  supabase: SupabaseClient,
+  now: Date = new Date(),
+): Promise<UnremittedCollectionResult[]> {
+  const lookbackDate = new Date(now.getTime() - UNREMITTED_LOOKBACK_DAYS * 86_400_000);
+
+  const [activitiesResult, claimsResult] = await Promise.all([
+    supabase
+      .from("collection_activities")
+      .select("id, customer_id, collector_id, outcome, reported_amount, occurred_at, customers(name)")
+      .eq("company_id", companyId)
+      .in("outcome", ["claimed_paid_full", "claimed_paid_partial"])
+      .gte("occurred_at", lookbackDate.toISOString()),
+    supabase
+      .from("payment_claims")
+      .select("id, customer_id, claimed_by, claimed_at")
+      .eq("company_id", companyId)
+      .gte("claimed_at", lookbackDate.toISOString()),
+  ]);
+
+  const activityRows = (activitiesResult.data ?? []) as unknown as ClaimedActivityRow[];
+  if (activityRows.length === 0) return [];
+
+  const claimRows = (claimsResult.data ?? []) as PaymentClaimRow[];
+
+  const collectorIds = [...new Set(activityRows.map((a) => a.collector_id))];
+  const { data: userRows } = await supabase.from("users").select("id, full_name").in("id", collectorIds);
+  const collectorNameById = new Map(((userRows ?? []) as UserNameRow[]).map((u) => [u.id, u.full_name]));
+
+  const activities: ClaimedActivityInput[] = activityRows.map((a) => ({
+    activity_id: a.id,
+    customer_id: a.customer_id,
+    customer_name: resolveCustomerName(a.customers),
+    collector_id: a.collector_id,
+    collector_name: collectorNameById.get(a.collector_id) ?? "Sales (tidak dikenal)",
+    outcome: a.outcome,
+    reported_amount: a.reported_amount,
+    occurred_at: a.occurred_at,
+  }));
+
+  const claims: PaymentClaimInput[] = claimRows.map((c) => ({
+    claim_id: c.id,
+    customer_id: c.customer_id,
+    claimed_by: c.claimed_by,
+    claimed_at: c.claimed_at,
+  }));
+
+  const matched = matchUnremittedClaims(activities, claims);
+  const results = matched.map((a) => detectUnremittedCollectionRisk(a, now));
+
+  return results.sort((a, b) => {
+    const order: Record<string, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NONE: 3 };
+    return order[a.risk_level]! - order[b.risk_level]! || b.days_elapsed - a.days_elapsed;
+  });
+}
+
+export async function generateUnremittedCollectionRiskReport(
+  companyId: string,
+  now: Date = new Date(),
+): Promise<UnremittedCollectionResult[]> {
+  return getUnremittedCollectionCandidates(companyId, getAdminClient(), now);
 }

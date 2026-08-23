@@ -12,11 +12,17 @@ import { checkRateLimit, getClientIp, buildRateLimitResponse } from "@/lib/rate-
 import { SupabaseAutomationRepository } from "@/lib/n8n-automation/repository";
 import { resolveAutomationCredential } from "@/lib/n8n-automation/service";
 import { SupabaseSalesmanDirectory } from "@/lib/n8n-automation/salesman-directory";
-import { buildKpiDailySummary, kpiDailySummaryIdempotencyKey, type KpiDailySummaryChurnCandidate } from "@/lib/n8n-automation/kpi-daily-summary";
+import {
+  buildKpiDailySummary,
+  kpiDailySummaryIdempotencyKey,
+  type KpiDailySummaryChurnCandidate,
+  type KpiDailySummaryUnremittedCandidate,
+} from "@/lib/n8n-automation/kpi-daily-summary";
 import { businessDateJakarta } from "@/lib/n8n-automation/timezone";
 import { SupabaseSalesKpiRepository } from "@/lib/sales-kpi/repository";
 import { normalizeIndonesianPhone } from "@/lib/integrations/bablast";
 import { getChurnCandidatesForCompany } from "@/lib/ai/insights-engine";
+import { getUnremittedCollectionCandidates } from "@/lib/business-guard/engine";
 
 const RATE_LIMIT = 20;
 const RATE_WINDOW_MS = 60_000;
@@ -102,7 +108,26 @@ export async function POST(request: Request) {
       console.error("[Internal Automation /kpi-daily-summary] gagal hitung churn candidates (diabaikan):", churnErr);
     }
 
-    const content = buildKpiDailySummary({ tenantName, businessDate, activePeriod, lines, churnCandidates });
+    // Gate P4.18: klaim "sudah terima pembayaran" yang belum diformalkan
+    // jadi klaim pembayaran resmi (HIGH/MEDIUM) -- best-effort sama seperti
+    // churn di atas, tidak boleh memblokir KPI Daily Summary yang sudah ada.
+    let unremittedCandidates: KpiDailySummaryUnremittedCandidate[] = [];
+    try {
+      const unremittedResults = await getUnremittedCollectionCandidates(credential.companyId, admin);
+      unremittedCandidates = unremittedResults
+        .filter((r) => r.risk_level === "HIGH" || r.risk_level === "MEDIUM")
+        .sort((a, b) => (a.risk_level === b.risk_level ? 0 : a.risk_level === "HIGH" ? -1 : 1))
+        .map((r) => ({
+          collectorName: r.collector_name,
+          customerName: r.customer_name,
+          riskLevel: r.risk_level,
+          daysElapsed: r.days_elapsed,
+        }));
+    } catch (unremittedErr) {
+      console.error("[Internal Automation /kpi-daily-summary] gagal hitung unremitted collection candidates (diabaikan):", unremittedErr);
+    }
+
+    const content = buildKpiDailySummary({ tenantName, businessDate, activePeriod, lines, churnCandidates, unremittedCandidates });
 
     const enqueueResult = await repository.enqueueJob({
       companyId: credential.companyId,
@@ -120,6 +145,7 @@ export async function POST(request: Request) {
       business_date: businessDate,
       salesmen_included: lines.length,
       churn_candidates_included: churnCandidates.length,
+      unremitted_candidates_included: unremittedCandidates.length,
       outcome: enqueueResult.outcome,
       job_id: "jobId" in enqueueResult ? enqueueResult.jobId : null,
     });

@@ -3,6 +3,7 @@ import {
   generateDiscountAnomalyReport,
   generateBehaviorChangeReport,
   generateTransactionRiskReport,
+  generateUnremittedCollectionRiskReport,
 } from "@/lib/business-guard/engine";
 import type {
   ExecutiveContributor,
@@ -33,11 +34,12 @@ export const businessGuardContributor: ExecutiveContributor = {
   moduleLabel: "Business Guard",
 
   async contribute({ companyId }): Promise<ModuleContribution> {
-    const [collectionReport, discountReport, behaviorReport, transactionReport] = await Promise.all([
+    const [collectionReport, discountReport, behaviorReport, transactionReport, unremittedReport] = await Promise.all([
       generateCollectionRiskReport(companyId),
       generateDiscountAnomalyReport(companyId),
       generateBehaviorChangeReport(companyId),
       generateTransactionRiskReport(companyId),
+      generateUnremittedCollectionRiskReport(companyId),
     ]);
 
     const health: HealthComponent[] = [];
@@ -86,6 +88,18 @@ export const businessGuardContributor: ExecutiveContributor = {
         score: completePct,
         weight: 1,
         reason: `${healthyCount} dari ${transactionReport.length} order 30 hari terakhir dalam pola nilai/kuantitas wajar`,
+        trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
+      });
+    }
+    if (unremittedReport.length > 0) {
+      const healthyCount = unremittedReport.filter((r) => r.risk_level === "NONE").length;
+      const completePct = Math.round((healthyCount / unremittedReport.length) * 100);
+      health.push({
+        key: "unremitted_collection",
+        label: "Klaim Pembayaran Diformalkan",
+        score: completePct,
+        weight: 2,
+        reason: `${healthyCount} dari ${unremittedReport.length} klaim "sudah terima pembayaran" sudah diformalkan jadi klaim pembayaran resmi`,
         trend: completePct >= 90 ? "up" : completePct >= 60 ? "neutral" : "down",
       });
     }
@@ -238,6 +252,43 @@ export const businessGuardContributor: ExecutiveContributor = {
         priority: "HIGH",
         action: "Konfirmasi order dengan skor risiko transaksi sedang",
         rationale: `${txMedium.length} order masuk kategori risiko sedang`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    const unremittedHigh = unremittedReport.filter((r) => r.risk_level === "HIGH");
+    const unremittedMedium = unremittedReport.filter((r) => r.risk_level === "MEDIUM");
+
+    if (unremittedHigh.length > 0) {
+      const names = unremittedHigh.map((r) => `${r.collector_name} (${r.customer_name})`).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "critical",
+        title: `${unremittedHigh.length} klaim "sudah terima pembayaran" belum diformalkan >= 7 hari`,
+        narrative: `${names}${unremittedHigh.length > 5 ? ", …" : ""} -- sales/collector melaporkan sudah menerima pembayaran tapi belum pernah mengajukan klaim pembayaran resmi.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "URGENT",
+        action: "Tanyakan langsung status pembayaran yang belum diformalkan",
+        rationale: `${unremittedHigh.length} klaim penagihan tanpa klaim pembayaran resmi >= 7 hari`,
+        href: "/dashboard/risk",
+      });
+    }
+
+    if (unremittedMedium.length > 0) {
+      const names = unremittedMedium.map((r) => `${r.collector_name} (${r.customer_name})`).slice(0, 5).join(", ");
+      insights.push({
+        module: "business_guard",
+        severity: "warning",
+        title: `${unremittedMedium.length} klaim "sudah terima pembayaran" perlu di-follow-up`,
+        narrative: `${names}${unremittedMedium.length > 5 ? ", …" : ""} -- belum ada klaim pembayaran resmi dalam 3-6 hari sejak dilaporkan.`,
+      });
+      actions.push({
+        module: "business_guard",
+        priority: "HIGH",
+        action: "Follow-up klaim pembayaran yang belum diformalkan",
+        rationale: `${unremittedMedium.length} klaim penagihan masuk kategori risiko sedang`,
         href: "/dashboard/risk",
       });
     }
