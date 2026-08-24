@@ -66,6 +66,45 @@ export async function recordCollectionActivityAction(input: RecordCollectionActi
   return (data as Array<{ out_activity_id: string; out_activity_type: string; out_outcome: string | null; out_already_exists: boolean }>)[0];
 }
 
+// ---------------------------------------------------------------------------
+// Catat Hasil Kunjungan Penagihan (sisi sales/driver, non-pembayaran) --
+// migration 20261022000001. Tier terbatas dari record_collection_activity
+// yang sama -- permission collection.record.field (BUKAN collection.record
+// penuh), RPC menolak outcome pembayaran di levelnya sendiri (defense-in-
+// depth), union type di sini cuma lapis pertama.
+// ---------------------------------------------------------------------------
+
+export type CollectionFieldOutcome = "contacted_successfully" | "not_contactable" | "not_paid_yet" | "dispute";
+
+export interface RecordCollectionFieldOutcomeInput {
+  invoiceId: string;
+  outcome: CollectionFieldOutcome;
+  note?: string | null;
+  idempotencyKey?: string;
+}
+
+export async function recordCollectionFieldOutcomeAction(input: RecordCollectionFieldOutcomeInput) {
+  const user = await getAuthUser();
+  requirePermission(user.permissions, "collection.record.field", "Tidak punya akses untuk mencatat hasil kunjungan penagihan");
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("record_collection_activity", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_invoice_id: input.invoiceId,
+    p_channel: "visit",
+    p_activity_type: "outcome",
+    p_outcome: input.outcome,
+    p_reported_amount: null,
+    p_note: input.note ?? null,
+    p_idempotency_key: input.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(mapFinanceRpcError(error.message));
+
+  revalidatePath("/dashboard/payment-claims");
+  return (data as Array<{ out_activity_id: string; out_activity_type: string; out_outcome: string | null; out_already_exists: boolean }>)[0];
+}
+
 export interface CreatePromiseToPayInput {
   invoiceId: string;
   promisedAmount: number;

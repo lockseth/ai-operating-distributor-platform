@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusBadge } from "@/components/dashboard/status-badge";
 import { SubmitPaymentClaimForm } from "@/components/finance/submit-payment-claim-form";
+import { RecordCollectionFieldOutcomeForm } from "@/components/finance/record-collection-field-outcome-form";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import { formatJakartaDateTime } from "@/lib/audit-log/format";
 
@@ -93,6 +94,10 @@ export default async function PaymentClaimsSalesPage() {
       />
 
       <SubmitPaymentClaimForm customers={customers} outstandingInvoices={outstandingInvoices} />
+
+      {hasPermission(user.permissions, "collection.record.field") && (
+        <RecordCollectionFieldOutcomeForm customers={customers} outstandingInvoices={outstandingInvoices} />
+      )}
 
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-900">Riwayat Laporan Saya</h2>

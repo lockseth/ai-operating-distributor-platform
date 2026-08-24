@@ -419,14 +419,18 @@ describeIfDb("Gate 2C: Collection Activity & Promise-to-Pay (DB-backed, Postgres
     expect(error!.message).toContain("FORBIDDEN");
   });
 
-  it("9b. FORBIDDEN: actor role sales (tanpa permission collection.record/promise) ditolak", async () => {
+  it("9b. Role sales: record_collection_activity kini diizinkan (collection.record.field), create_promise_to_pay tetap FORBIDDEN", async () => {
+    // Sejak migration 20261022000001 (collection.record.field), role sales/driver
+    // memang sengaja diberi izin record_collection_activity untuk outcome
+    // non-pembayaran (lihat collection-field-outcome.integration.test.ts untuk
+    // cakupan tier outcome-nya) -- assertion FORBIDDEN lama di sini sudah usang.
+    // create_promise_to_pay TIDAK disentuh migration itu, tetap finance-tier saja.
     const inv = await createInvoice(companyId, `${runTag}-SALESFORBID`, financeUser.userId);
     const activity = await supabase.rpc("record_collection_activity", {
       p_company_id: companyId, p_actor_id: salesUser.userId, p_invoice_id: inv.invoiceId,
       p_channel: "phone", p_activity_type: "attempt",
     });
-    expect(activity.error).not.toBeNull();
-    expect(activity.error!.message).toContain("FORBIDDEN");
+    expect(activity.error).toBeNull();
 
     const promise = await supabase.rpc("create_promise_to_pay", {
       p_company_id: companyId, p_actor_id: salesUser.userId, p_invoice_id: inv.invoiceId,

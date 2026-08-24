@@ -18,6 +18,7 @@ export const FINANCE_ERROR_MESSAGES: Record<string, string> = {
   PROMISE_NOT_YET_DUE: "Janji bayar belum melewati tanggal jatuh tempo.",
   REPORTED_AMOUNT_NOT_APPLICABLE: "Nominal klaim hanya berlaku untuk klaim bayar sebagian/lunas.",
   INVALID_OUTCOME_RESERVED: "Hasil aktivitas ini hanya dapat dibuat lewat alur janji bayar.",
+  INVALID_OUTCOME_FIELD_TIER: "Untuk lapor sudah terima pembayaran, gunakan menu Klaim Pembayaran -- bukan form ini.",
   PROOF_REQUIRED: "Minimal satu bukti pembayaran wajib dilampirkan.",
   INVALID_PROOF: "Bukti pembayaran tidak lengkap.",
   ALLOCATION_TOTAL_MISMATCH: "Total alokasi harus sama dengan nominal pembayaran.",
