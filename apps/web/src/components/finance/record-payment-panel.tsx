@@ -2,12 +2,12 @@
 
 // =============================================================================
 // Gate 2I.2 -- Pembayaran & Verifikasi: form "Catat Pembayaran" (kontrak
-// §5.3). Proof direpresentasikan sebagai referensi/tautan objek (proof_type +
-// object_reference) -- TIDAK ADA widget upload file baru di gate ini (belum
-// ada storage-upload primitive di design system, di luar scope "UI-only,
-// tidak ada infrastruktur baru"). Running total alokasi vs nominal
-// ditampilkan real-time sebagai bantuan UX -- validasi final tetap RPC
-// (§5.3: "bukan menggantikan validasi server").
+// §5.3). Proof direpresentasikan sebagai referensi objek (proof_type +
+// object_reference) -- object_reference sekarang diisi PATH STORAGE hasil
+// upload sungguhan (bucket payment-proofs), bukan lagi teks/link ketikan
+// manual (perbaikan 2026-08-24, lihat TRACKER.md). Running total alokasi vs
+// nominal ditampilkan real-time sebagai bantuan UX -- validasi final tetap
+// RPC (§5.3: "bukan menggantikan validasi server").
 // =============================================================================
 
 import { useMemo, useState, useTransition } from "react";
@@ -15,10 +15,16 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import type { CustomerWithOutstandingOption, OutstandingInvoiceOption } from "@/lib/finance/queries";
 import { recordVerifiedPaymentAction } from "@/lib/finance/actions";
+import { uploadPaymentProofAction } from "@/lib/finance/proof-upload-actions";
+
+type ProofUploadStatus = "idle" | "uploading" | "done" | "error";
 
 interface ProofRow {
   proofType: string;
   objectReference: string;
+  fileName: string;
+  uploadStatus: ProofUploadStatus;
+  uploadError: string | null;
 }
 
 interface RecordPaymentPanelProps {
@@ -37,7 +43,9 @@ export function RecordPaymentPanel({ customers, outstandingInvoices, canRecord }
   const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
   const [amount, setAmount] = useState("");
   const [transferReference, setTransferReference] = useState("");
-  const [proofs, setProofs] = useState<ProofRow[]>([{ proofType: "bank_transfer_receipt", objectReference: "" }]);
+  const [proofs, setProofs] = useState<ProofRow[]>([
+    { proofType: "bank_transfer_receipt", objectReference: "", fileName: "", uploadStatus: "idle", uploadError: null },
+  ]);
   const [allocations, setAllocations] = useState<Record<string, string>>({});
 
   const customerInvoices = useMemo(
@@ -58,7 +66,7 @@ export function RecordPaymentPanel({ customers, outstandingInvoices, canRecord }
     setMethod("cash");
     setAmount("");
     setTransferReference("");
-    setProofs([{ proofType: "cash_receipt", objectReference: "" }]);
+    setProofs([{ proofType: "cash_receipt", objectReference: "", fileName: "", uploadStatus: "idle", uploadError: null }]);
     setAllocations({});
     setOpen(true);
   }
@@ -81,6 +89,25 @@ export function RecordPaymentPanel({ customers, outstandingInvoices, canRecord }
     });
   }
 
+  async function handleProofFileChange(idx: number, file: File | null) {
+    if (!file) return;
+    setProofs((prev) => prev.map((p, i) => (i === idx ? { ...p, uploadStatus: "uploading", uploadError: null } : p)));
+
+    const formData = new FormData();
+    formData.set("file", file);
+    const result = await uploadPaymentProofAction(formData);
+
+    setProofs((prev) =>
+      prev.map((p, i) =>
+        i === idx
+          ? result.ok
+            ? { ...p, objectReference: result.path!, fileName: file.name, uploadStatus: "done", uploadError: null }
+            : { ...p, objectReference: "", fileName: "", uploadStatus: "error", uploadError: result.error ?? "Gagal mengunggah." }
+          : p,
+      ),
+    );
+  }
+
   function submit() {
     if (!customerId) {
       setError("Pilih customer terlebih dahulu.");
@@ -90,9 +117,13 @@ export function RecordPaymentPanel({ customers, outstandingInvoices, canRecord }
       setError("Nominal pembayaran harus lebih besar dari nol.");
       return;
     }
-    const filledProofs = proofs.filter((p) => p.proofType.trim() && p.objectReference.trim());
+    if (proofs.some((p) => p.uploadStatus === "uploading")) {
+      setError("Tunggu sampai semua bukti selesai diunggah.");
+      return;
+    }
+    const filledProofs = proofs.filter((p) => p.proofType.trim() && p.objectReference.trim() && p.uploadStatus === "done");
     if (filledProofs.length === 0) {
-      setError("Minimal satu bukti pembayaran wajib dilampirkan.");
+      setError("Minimal satu bukti pembayaran wajib diunggah.");
       return;
     }
     const allocationEntries = Object.entries(allocations).filter(([, v]) => Number(v) > 0);
@@ -223,39 +254,48 @@ export function RecordPaymentPanel({ customers, outstandingInvoices, canRecord }
             <p className="text-xs font-medium text-gray-600">Bukti Pembayaran</p>
             <div className="mt-1 space-y-2">
               {proofs.map((proof, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Jenis bukti (mis. bank_transfer_receipt)"
-                    value={proof.proofType}
-                    onChange={(e) =>
-                      setProofs((prev) => prev.map((p, i) => (i === idx ? { ...p, proofType: e.target.value } : p)))
-                    }
-                    className="w-2/5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
-                  />
-                  <input
-                    type="text"
-                    placeholder="Referensi/tautan bukti"
-                    value={proof.objectReference}
-                    onChange={(e) =>
-                      setProofs((prev) => prev.map((p, i) => (i === idx ? { ...p, objectReference: e.target.value } : p)))
-                    }
-                    className="flex-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
-                  />
-                  {proofs.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setProofs((prev) => prev.filter((_, i) => i !== idx))}
-                      className="text-xs text-red-500"
-                    >
-                      Hapus
-                    </button>
-                  )}
+                <div key={idx} className="flex flex-col gap-1 rounded-lg border border-gray-200 p-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Jenis bukti (mis. bank_transfer_receipt)"
+                      value={proof.proofType}
+                      onChange={(e) =>
+                        setProofs((prev) => prev.map((p, i) => (i === idx ? { ...p, proofType: e.target.value } : p)))
+                      }
+                      className="w-2/5 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
+                    />
+                    <label className="flex-1 cursor-pointer rounded-lg border border-dashed border-gray-300 px-2.5 py-1.5 text-center text-xs text-gray-500 hover:border-blue-400 hover:text-blue-600">
+                      {proof.uploadStatus === "uploading" ? "Mengunggah…" : proof.fileName || "Pilih file bukti (foto/PDF)"}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+                        className="hidden"
+                        onChange={(e) => handleProofFileChange(idx, e.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                    {proofs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setProofs((prev) => prev.filter((_, i) => i !== idx))}
+                        className="text-xs text-red-500"
+                      >
+                        Hapus
+                      </button>
+                    )}
+                  </div>
+                  {proof.uploadStatus === "done" && <p className="text-xs text-green-600">✓ Sudah terunggah</p>}
+                  {proof.uploadStatus === "error" && <p className="text-xs text-red-500">{proof.uploadError}</p>}
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => setProofs((prev) => [...prev, { proofType: "", objectReference: "" }])}
+                onClick={() =>
+                  setProofs((prev) => [
+                    ...prev,
+                    { proofType: "", objectReference: "", fileName: "", uploadStatus: "idle", uploadError: null },
+                  ])
+                }
                 className="text-xs font-medium text-blue-600 hover:underline"
               >
                 + Tambah Bukti

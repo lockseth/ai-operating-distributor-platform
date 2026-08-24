@@ -10,6 +10,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission } from "@/lib/auth/permissions";
+import { createClient } from "@/lib/supabase/server";
 import { getPaymentReceiptDetail, getReconciliationHistory, hasFinanceWorkspaceAccess } from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeader } from "@/components/ui/section-header";
@@ -22,6 +23,27 @@ import { formatJakartaDateTime } from "@/lib/audit-log/format";
 export const metadata = { title: "Detail Pembayaran — AODP" };
 
 const METHOD_LABELS: Record<string, string> = { cash: "Tunai", bank_transfer: "Transfer Bank" };
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".heic"];
+const PROOF_SIGNED_URL_EXPIRY_SECONDS = 300;
+
+/**
+ * Coba buat signed URL untuk objectReference sebagai path di bucket
+ * payment-proofs -- baris LAMA (dibuat sebelum perbaikan upload sungguhan,
+ * 2026-08-24) isinya teks bebas/link ketikan manual, BUKAN path storage
+ * valid, jadi createSignedUrl akan gagal untuk baris itu -- pemanggil
+ * fallback tampilkan sebagai teks biasa. Tidak perlu flag kolom/migrasi
+ * data untuk membedakan gaya lama vs baru.
+ */
+async function resolveProofSignedUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  objectReference: string,
+): Promise<string | null> {
+  const { data, error } = await supabase.storage
+    .from("payment-proofs")
+    .createSignedUrl(objectReference, PROOF_SIGNED_URL_EXPIRY_SECONDS);
+  if (error || !data) return null;
+  return data.signedUrl;
+}
 
 export default async function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -46,6 +68,11 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
 
   const history = await getReconciliationHistory(user.company_id, id);
   const canReconcile = hasPermission(user.permissions, "payment.reconcile");
+
+  const supabase = await createClient();
+  const proofSignedUrls = await Promise.all(
+    receipt.proofs.map((p) => resolveProofSignedUrl(supabase, p.objectReference)),
+  );
 
   return (
     <div className="space-y-5">
@@ -78,13 +105,30 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
           {receipt.proofs.length === 0 ? (
             <p className="text-xs text-gray-400">Tidak ada bukti.</p>
           ) : (
-            <ul className="space-y-1.5 text-xs">
-              {receipt.proofs.map((p) => (
-                <li key={p.id} className="flex gap-2">
-                  <span className="font-medium text-gray-600">{p.proofType}</span>
-                  <span className="truncate text-gray-400">{p.objectReference}</span>
-                </li>
-              ))}
+            <ul className="space-y-2 text-xs">
+              {receipt.proofs.map((p, i) => {
+                const signedUrl = proofSignedUrls[i];
+                const isImage = IMAGE_EXTENSIONS.some((ext) => p.objectReference.toLowerCase().endsWith(ext));
+                return (
+                  <li key={p.id} className="flex items-center gap-3">
+                    <span className="font-medium text-gray-600">{p.proofType}</span>
+                    {signedUrl ? (
+                      isImage ? (
+                        <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                          {/* eslint-disable-next-line @next/next/no-img-element -- signed URL sementara, bukan aset statis */}
+                          <img src={signedUrl} alt="Bukti pembayaran" className="h-14 w-14 rounded-lg border border-gray-200 object-cover" />
+                        </a>
+                      ) : (
+                        <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline">
+                          Lihat Bukti (PDF)
+                        </a>
+                      )
+                    ) : (
+                      <span className="truncate text-gray-400">{p.objectReference}</span>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
