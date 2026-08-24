@@ -15,6 +15,8 @@ import {
   generateCollectionRiskReport,
   generateBehaviorChangeReport,
   generateTransactionRiskReport,
+  generateUnremittedCollectionRiskReport,
+  generateSuspiciousCallTimingReport,
 } from "@/lib/business-guard/engine";
 import { aggregateGovernedKpis, type GovernedKpiAggregate } from "@/lib/executive/contributors/flowsales";
 import type { SalesKpiCode } from "@/lib/sales-kpi/types";
@@ -43,6 +45,10 @@ export interface OwnerBusinessSnapshot {
     collectionRisk: RiskLevelCounts;
     behaviorChange: RiskLevelCounts;
     transactionRisk: RiskLevelCounts;
+    /** Gate P4.18. */
+    unremittedCollection: RiskLevelCounts;
+    /** Gate P4.19. */
+    callTiming: RiskLevelCounts;
   };
 }
 
@@ -69,7 +75,16 @@ export async function getOwnerBusinessSnapshot(
 ): Promise<OwnerBusinessSnapshot> {
   const supabase = await createClient();
 
-  const [ordersResult, activePeriodResult, discountReport, collectionReport, behaviorReport, transactionReport] =
+  const [
+    ordersResult,
+    activePeriodResult,
+    discountReport,
+    collectionReport,
+    behaviorReport,
+    transactionReport,
+    unremittedReport,
+    callTimingReport,
+  ] =
     await Promise.all([
       supabase
         .from("sales_orders")
@@ -94,6 +109,8 @@ export async function getOwnerBusinessSnapshot(
       generateCollectionRiskReport(companyId),
       generateBehaviorChangeReport(companyId),
       generateTransactionRiskReport(companyId),
+      generateUnremittedCollectionRiskReport(companyId),
+      generateSuspiciousCallTimingReport(companyId),
     ]);
 
   const orders = (ordersResult.data ?? []) as unknown as OrderRow[];
@@ -160,6 +177,8 @@ export async function getOwnerBusinessSnapshot(
       collectionRisk: summarizeRiskLevels(collectionReport.map((r) => r.risk_level)),
       behaviorChange: summarizeRiskLevels(behaviorReport.map((r) => r.risk_level)),
       transactionRisk: summarizeRiskLevels(transactionReport.map((r) => r.risk_level)),
+      unremittedCollection: summarizeRiskLevels(unremittedReport.map((r) => r.risk_level)),
+      callTiming: summarizeRiskLevels(callTimingReport.map((r) => r.risk_level)),
     },
   };
 }

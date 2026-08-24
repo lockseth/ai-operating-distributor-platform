@@ -79,6 +79,8 @@ export function buildOwnerChatContext(snapshot: OwnerBusinessSnapshot): string {
     ["Piutang Berisiko Macet", snapshot.riskSummary.collectionRisk],
     ["Perubahan Perilaku Customer", snapshot.riskSummary.behaviorChange],
     ["Transaksi Janggal (30 Hari Terakhir)", snapshot.riskSummary.transactionRisk],
+    ["Klaim Pembayaran Belum Diformalkan", snapshot.riskSummary.unremittedCollection],
+    ["Kunjungan Mencurigakan (Jarak Waktu)", snapshot.riskSummary.callTiming],
   ];
   riskEntries.forEach(([label, counts]) => {
     lines.push(
