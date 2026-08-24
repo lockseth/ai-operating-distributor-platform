@@ -111,3 +111,19 @@ describe("Sidebar — Activity & Audit Log (Gate 1D-A)", () => {
     expect(outbox?.roles).toEqual(["owner", "manager", "super_admin"]);
   });
 });
+
+describe("Sidebar — AI Insights digate role, bukan permission ai.view", () => {
+  // Ditemukan CTO saat review sidebar sales (2026-08-24): permission ai.view
+  // digrant ke role sales di seed (Gate 3B), tapi halaman /dashboard/ai
+  // sendiri hard-code hanya owner/manager/super_admin (ai/page.tsx) --
+  // sales yang klik menu ini sebelumnya langsung di-redirect ke /dashboard,
+  // jalan buntu. Gating sidebar diselaraskan ke roles yang SAMA PERSIS
+  // dengan guard halaman, bukan lagi permission ai.view (yang tetap
+  // dipegang sales di seed -- tidak diubah, cuma tidak lagi dipakai untuk
+  // visibility menu ini).
+  it("digate roles owner/manager/super_admin -- persis sama dengan guard halaman /dashboard/ai, bukan permission ai.view", () => {
+    const item = allItems().find((i) => i.label === "AI Insights");
+    expect(item?.roles).toEqual(["super_admin", "owner", "manager"]);
+    expect(item?.permission).toBeUndefined();
+  });
+});
