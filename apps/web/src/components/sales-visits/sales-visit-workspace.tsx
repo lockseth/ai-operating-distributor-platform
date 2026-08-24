@@ -7,6 +7,12 @@ import {
   startSalesVisitAction,
 } from "@/lib/sales-visits/actions";
 import {
+  recordCollectionFieldOutcomeAction,
+  type CollectionFieldOutcome,
+} from "@/lib/finance/actions";
+import type { OutstandingInvoiceOption } from "@/lib/finance/queries";
+import { formatRupiah } from "@/lib/document-engine/monetary";
+import {
   VISIT_ACTIVITIES,
   VISIT_MET_WITH_OPTIONS,
   VISIT_PURPOSES,
@@ -24,6 +30,15 @@ import {
   VISIT_RESULT_LABELS,
 } from "./labels";
 
+// Gate P4.21 -- outcome non-pembayaran yang boleh ditulis actor field-tier
+// (collection.record.field), dikecualikan not_contactable karena kontradiktif
+// dengan konteks di sini (form ini hanya muncul saat visitResult=MET_STORE).
+const COLLECTION_OUTCOME_OPTIONS: { value: CollectionFieldOutcome; label: string }[] = [
+  { value: "not_paid_yet", label: "Belum bisa bayar" },
+  { value: "dispute", label: "Ada keberatan/sengketa jumlah" },
+  { value: "contacted_successfully", label: "Bertemu, tidak ada kendala penagihan" },
+];
+
 interface CustomerOption {
   id: string;
   name: string;
@@ -34,6 +49,7 @@ interface SalesVisitWorkspaceProps {
   customers: CustomerOption[];
   initialActiveVisit: SalesVisit | null;
   initialHistory: SalesVisit[];
+  outstandingInvoices: OutstandingInvoiceOption[];
 }
 
 interface GeoPoint {
@@ -121,6 +137,7 @@ export function SalesVisitWorkspace({
   customers,
   initialActiveVisit,
   initialHistory,
+  outstandingInvoices,
 }: SalesVisitWorkspaceProps) {
   const [isPending, startTransition] = useTransition();
   // Tidak dikelola sebagai state lokal -- setiap mutasi sukses memicu
@@ -147,6 +164,11 @@ export function SalesVisitWorkspace({
   const [followUpNeeded, setFollowUpNeeded] = useState(false);
   const [followUpPlan, setFollowUpPlan] = useState("");
   const [followUpDate, setFollowUpDate] = useState("");
+
+  // Gate P4.21 -- follow-up "Catat Hasil Penagihan" (opsional), muncul hanya
+  // saat kunjungan bertujuan Penagihan DAN berhasil ketemu toko.
+  const [collectionInvoiceId, setCollectionInvoiceId] = useState("");
+  const [collectionOutcome, setCollectionOutcome] = useState<CollectionFieldOutcome>("not_paid_yet");
 
   // Idempotency key dibuat sekali per percobaan submit (bukan per klik) --
   // retry request yang sama (double-click, koneksi putus lalu klik ulang)
@@ -179,7 +201,15 @@ export function SalesVisitWorkspace({
     setFollowUpNeeded(false);
     setFollowUpPlan("");
     setFollowUpDate("");
+    setCollectionInvoiceId("");
+    setCollectionOutcome("not_paid_yet");
   }
+
+  const showCollectionFollowUp =
+    activeVisit?.visitPurpose === "COLLECTION" && visitResult === "MET_STORE";
+  const collectionInvoices = activeVisit
+    ? outstandingInvoices.filter((i) => i.customerId === activeVisit.customerId)
+    : [];
 
   function handleStart(e: React.FormEvent) {
     e.preventDefault();
@@ -286,12 +316,31 @@ export function SalesVisitWorkspace({
         setError(result.error ?? "Gagal menyelesaikan kunjungan.");
         return;
       }
-      const badge =
+      let badge =
         result.outcome === "completed_cancelled"
           ? "Kunjungan dibatalkan tercatat, tidak ada achievement."
           : result.outcome === "completed_no_active_period"
             ? "Kunjungan tercatat, namun tidak ada periode KPI aktif sehingga achievement tidak dikreditkan."
             : `Kunjungan selesai. CALL ${result.callCredited ? "+1" : "0"}, Effective Call ${result.ecCredited ? "+1" : "0"}.`;
+
+      // Gate P4.21 -- kunjungan sudah tercatat sukses di atas; hasil penagihan
+      // adalah tambahan opsional, kegagalannya TIDAK membatalkan/mengulang
+      // pencatatan kunjungan yang sudah sukses -- cukup ditambahkan sebagai
+      // catatan di badge yang sama.
+      if (showCollectionFollowUp && collectionInvoiceId) {
+        try {
+          await recordCollectionFieldOutcomeAction({
+            invoiceId: collectionInvoiceId,
+            outcome: collectionOutcome,
+            note: resultNotes.trim() || null,
+            idempotencyKey: crypto.randomUUID(),
+          });
+          badge += " Hasil penagihan tercatat.";
+        } catch (err) {
+          badge += ` Namun gagal mencatat hasil penagihan: ${err instanceof Error ? err.message : "terjadi kesalahan"}.`;
+        }
+      }
+
       setNotice(badge);
       resetCompleteForm();
       window.location.reload();
@@ -385,6 +434,56 @@ export function SalesVisitWorkspace({
                   </div>
                 </div>
               </>
+            )}
+
+            {showCollectionFollowUp && (
+              <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Catat Hasil Penagihan</p>
+                  <p className="text-xs text-gray-500">
+                    Opsional -- kalau diisi, langsung tercatat sebagai hasil kunjungan penagihan (tidak perlu buka menu Klaim Pembayaran lagi).
+                  </p>
+                </div>
+                {collectionInvoices.length === 0 ? (
+                  <p className="text-xs text-gray-400">Toko ini tidak punya invoice outstanding.</p>
+                ) : (
+                  <>
+                    <div>
+                      <label className={labelCls}>Tagihan yang Dikunjungi</label>
+                      <select
+                        value={collectionInvoiceId}
+                        onChange={(e) => setCollectionInvoiceId(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="">— Lewati, jangan catat hasil penagihan —</option>
+                        {collectionInvoices.map((inv) => (
+                          <option key={inv.id} value={inv.id}>
+                            {inv.invoiceNumber} — {formatRupiah(inv.outstandingBalance)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {collectionInvoiceId && (
+                      <div>
+                        <label className={labelCls}>Hasil Penagihan</label>
+                        <div className="space-y-1.5">
+                          {COLLECTION_OUTCOME_OPTIONS.map((opt) => (
+                            <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700">
+                              <input
+                                type="radio"
+                                name="collection-outcome"
+                                checked={collectionOutcome === opt.value}
+                                onChange={() => setCollectionOutcome(opt.value)}
+                              />
+                              {opt.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             )}
 
             <div>

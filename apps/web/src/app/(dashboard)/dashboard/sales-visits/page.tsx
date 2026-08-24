@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasRole } from "@/lib/auth/permissions";
+import { hasRole, hasPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { getAdminClient } from "@/lib/supabase/admin";
+import { getOutstandingInvoices, type OutstandingInvoiceOption } from "@/lib/finance/queries";
 import { PageHeader } from "@/components/ui/page-header";
 import { SalesVisitWorkspace } from "@/components/sales-visits/sales-visit-workspace";
 import { getSalesVisitDataAction } from "@/lib/sales-visits/actions";
@@ -26,6 +28,20 @@ export default async function SalesVisitsPage() {
 
   const visitData = await getSalesVisitDataAction();
 
+  // Gate P4.21 follow-up: kunjungan bertujuan Penagihan yang berhasil ketemu
+  // toko bisa langsung lanjut catat hasil penagihan di form yang sama (lihat
+  // sales-visit-workspace.tsx) -- invoice outstanding perlu admin client,
+  // pola identik dashboard/payment-claims/page.tsx (sales tidak punya
+  // receivable.view, cuma dipakai sebagai referensi pilihan invoice).
+  let outstandingInvoices: OutstandingInvoiceOption[] = [];
+  if (hasPermission(user.permissions, "collection.record.field")) {
+    try {
+      outstandingInvoices = await getOutstandingInvoices(user.company_id, {}, getAdminClient());
+    } catch {
+      outstandingInvoices = [];
+    }
+  }
+
   return (
     <div className="p-6 space-y-5 max-w-4xl">
       <PageHeader
@@ -36,6 +52,7 @@ export default async function SalesVisitsPage() {
         customers={customers}
         initialActiveVisit={visitData.ok ? visitData.activeVisit ?? null : null}
         initialHistory={visitData.ok ? visitData.history ?? [] : []}
+        outstandingInvoices={outstandingInvoices}
       />
     </div>
   );
