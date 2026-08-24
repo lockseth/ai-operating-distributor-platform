@@ -321,7 +321,9 @@ export function SalesVisitWorkspace({
           ? "Kunjungan dibatalkan tercatat, tidak ada achievement."
           : result.outcome === "completed_no_active_period"
             ? "Kunjungan tercatat, namun tidak ada periode KPI aktif sehingga achievement tidak dikreditkan."
-            : `Kunjungan selesai. CALL ${result.callCredited ? "+1" : "0"}, Effective Call ${result.ecCredited ? "+1" : "0"}.`;
+            : result.outcome === "completed_duplicate_call"
+              ? "Kunjungan tercatat. Toko ini sudah dapat kredit CALL hari ini dari kunjungan sebelumnya, jadi tidak dikreditkan dua kali."
+              : `Kunjungan selesai. CALL ${result.callCredited ? "+1" : "0"}, Effective Call ${result.ecCredited ? "+1" : "0"}.`;
 
       // Gate P4.21 -- kunjungan sudah tercatat sukses di atas; hasil penagihan
       // adalah tambahan opsional, kegagalannya TIDAK membatalkan/mengulang

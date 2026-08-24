@@ -334,6 +334,41 @@ describeIfDb("Gate 3E-D5-B -- Kunjungan Sales CALL/EC crediting (DB-backed, Post
     expect(callIds.size).toBe(1);
   });
 
+  it("12b. Kunjungan KEDUA ke toko yang SAMA pada hari yang sama tetap SELESAI (bukan error), tanpa kredit CALL/EC ganda (fix uq_sales_calls_one_per_day graceful)", async () => {
+    const custId = await freshCustomer("dup-call");
+    const key1 = `visit-start:${runTag}:dup-call-1`;
+    const key2 = `visit-start:${runTag}:dup-call-2`;
+
+    const started1 = await startVisit(salesAuthId, custId, key1);
+    const done1 = await completeVisit(salesAuthId, started1.result_visit_id!, {
+      visitResult: "MET_STORE", metWith: "OWNER", activities: ["COLLECT_PAYMENT"],
+      key: `visit-complete:${runTag}:dup-call-1`,
+    });
+    expect(done1.result_outcome).toBe("completed");
+    expect(done1.result_call_credited).toBe(true);
+
+    const started2 = await startVisit(salesAuthId, custId, key2);
+    expect(started2.result_outcome).toBe("started");
+    const done2 = await completeVisit(salesAuthId, started2.result_visit_id!, {
+      visitResult: "MET_STORE", metWith: "OWNER", activities: ["COLLECT_PAYMENT"],
+      key: `visit-complete:${runTag}:dup-call-2`,
+    });
+    // Sebelum fix: baris ini melempar raw Postgres error (unique_violation)
+    // dan MEMBATALKAN seluruh completion (visit tetap IN_PROGRESS selamanya).
+    expect(done2.result_outcome).toBe("completed_duplicate_call");
+    expect(done2.result_call_credited).toBe(false);
+    expect(done2.result_ec_credited).toBe(false);
+
+    const { data: visit2Row } = await supabase
+      .from("sales_visits").select("status, call_id").eq("id", started2.result_visit_id!).single();
+    expect((visit2Row as { status: string; call_id: string | null }).status).toBe("COMPLETED");
+    expect((visit2Row as { status: string; call_id: string | null }).call_id).toBeNull();
+
+    const { data: callsToday } = await supabase
+      .from("sales_calls").select("id").eq("company_id", companyId).eq("customer_id", custId);
+    expect((callsToday ?? []).length).toBe(1);
+  });
+
   it("13. Completion ulang dengan idempotency key yang SAMA tetap satu credit (idempotent replay)", async () => {
     const custId = await freshCustomer("retry");
     const started = await startVisit(salesAuthId, custId, `visit-start:${runTag}:retry`);

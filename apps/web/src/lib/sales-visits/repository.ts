@@ -184,7 +184,8 @@ export class SupabaseSalesVisitsRepository implements SalesVisitsRepository {
     }
     if (
       (row.result_outcome === "completed_cancelled" ||
-        row.result_outcome === "completed_no_active_period") &&
+        row.result_outcome === "completed_no_active_period" ||
+        row.result_outcome === "completed_duplicate_call") &&
       row.result_visit_id
     ) {
       return { outcome: row.result_outcome, visitId: row.result_visit_id };

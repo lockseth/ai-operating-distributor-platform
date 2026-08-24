@@ -130,7 +130,7 @@ export type CompleteSalesVisitResult =
       callCredited: boolean;
       ecCredited: boolean;
     }
-  | { outcome: "completed_cancelled" | "completed_no_active_period"; visitId: string }
+  | { outcome: "completed_cancelled" | "completed_no_active_period" | "completed_duplicate_call"; visitId: string }
   | {
       outcome:
         | "idempotency_key_required"

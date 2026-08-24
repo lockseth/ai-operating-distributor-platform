@@ -189,7 +189,8 @@ export async function completeSalesVisitAction(
   }
   if (
     result.outcome === "completed_cancelled" ||
-    result.outcome === "completed_no_active_period"
+    result.outcome === "completed_no_active_period" ||
+    result.outcome === "completed_duplicate_call"
   ) {
     return { ok: true, outcome: result.outcome, visitId: result.visitId, callCredited: false, ecCredited: false };
   }
