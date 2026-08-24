@@ -8,6 +8,7 @@ import { TelegramEnrollmentControl } from "@/components/users/telegram-enrollmen
 import { resolveSalesmanTelegramStatus } from "@/lib/salesman/status";
 import { SalesmanCoverageControl } from "@/components/users/salesman-coverage-control";
 import { SalesmanStatusControl } from "@/components/users/salesman-status-control";
+import { ResetTenantUserPasswordButton } from "@/components/users/reset-tenant-user-password-button";
 import { TELEGRAM_PAIRING_ELIGIBLE_ROLES } from "@/lib/telegram-enrollment/capability";
 
 export const metadata = { title: "Pengguna — AODP" };
@@ -233,13 +234,18 @@ export default async function UsersPage() {
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
                 Pairing Telegram
               </th>
+              {isOwner ? (
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Reset Password
+                </th>
+              ) : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {users.length === 0 ? (
               <tr>
                 <td
-                  colSpan={7}
+                  colSpan={isOwner ? 8 : 7}
                   className="px-4 py-10 text-center text-sm text-gray-400"
                 >
                   Belum ada pengguna. Setup pengguna awal dilakukan oleh super
@@ -366,6 +372,21 @@ export default async function UsersPage() {
                         <span className="text-xs text-gray-300">—</span>
                       )}
                     </td>
+                    {isOwner ? (
+                      <td className="px-4 py-3 align-top">
+                        {!u.is_active ? (
+                          <span className="text-xs text-gray-400">Pengguna nonaktif</span>
+                        ) : roles.includes("owner") || roles.includes("super_admin") ? (
+                          <span className="text-xs text-gray-300">—</span>
+                        ) : (
+                          <ResetTenantUserPasswordButton
+                            targetUserId={u.id}
+                            fullName={displayName}
+                            email={u.email}
+                          />
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 );
               })

@@ -340,4 +340,117 @@ describeIfDb("Gate 3E-D2-A-R1: super_admin_{begin,finalize,fail}_tenant_user_pas
       .eq("action", "tenant_user.password_reset_started");
     expect(audit.data).toHaveLength(1);
   });
+
+  // ---------------------------------------------------------------------
+  // Migration 20261024000001 -- tier Owner (diminta Founder langsung).
+  // Perilaku super_admin di atas TIDAK diubah sama sekali (semua test 1-7
+  // tetap hijau tanpa modifikasi) -- ini murni cabang otorisasi TAMBAHAN.
+  // ---------------------------------------------------------------------
+
+  it("8. Owner sukses reset admin/sales di company SENDIRI", async () => {
+    const companyId = await createCompany("owner-ok");
+    const owner = await createTenantUser("owner-ok-actor", companyId, ownerRoleId);
+    const target = await createTenantUser("owner-ok-target", companyId, salesRoleId);
+
+    const begin = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: randomUUID(),
+      p_actor_id: owner.id,
+      p_target_user_id: target.id,
+    });
+    expect(begin.error).toBeNull();
+    expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("db_committed");
+    expect((begin.data as OutcomeRow[])[0].target_email).toBe(target.email);
+    expect((await getUserRow(target.id))?.must_change_password).toBe(true);
+  });
+
+  it("9. Owner mencoba reset user di company LAIN -- target_not_found (tidak bocor keberadaan lintas-tenant), zero mutation", async () => {
+    const companyA = await createCompany("owner-cross-a");
+    const companyB = await createCompany("owner-cross-b");
+    const owner = await createTenantUser("owner-cross-actor", companyA, ownerRoleId);
+    const targetOtherCompany = await createTenantUser("owner-cross-target", companyB, salesRoleId);
+
+    const begin = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: randomUUID(),
+      p_actor_id: owner.id,
+      p_target_user_id: targetOtherCompany.id,
+    });
+    expect(begin.error).toBeNull();
+    expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("target_not_found");
+    expect((await getUserRow(targetOtherCompany.id))?.must_change_password).toBe(false);
+  });
+
+  // "10. Owner reset sesama owner di company sendiri" TIDAK dapat diuji
+  // secara dinamis di sini -- trigger AODP_SINGLE_OWNER_VIOLATION (Gate
+  // 3D-B1, migration terpisah) sudah menolak fixture-nya sendiri (dua baris
+  // user_roles role=owner pada satu company_id secara fisik tidak mungkin
+  // ada). Cabang `IF 'owner' = ANY(v_role_names)` di migration
+  // 20261024000001 tetap dipertahankan sebagai defense-in-depth (kalau
+  // suatu saat aturan single-owner berubah), tapi statusnya sengaja
+  // unreachable lewat jalur provisioning normal saat ini.
+
+  it("11. Owner tidak dapat mereset super_admin di company sendiri -- target_forbidden_super_admin, zero mutation", async () => {
+    const companyId = await createCompany("owner-vs-sa");
+    const owner = await createTenantUser("owner-vs-sa-actor", companyId, ownerRoleId);
+    const superAdminInSameCompany = await createTenantUser("owner-vs-sa-target", companyId, superAdminRoleId);
+
+    const begin = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: randomUUID(),
+      p_actor_id: owner.id,
+      p_target_user_id: superAdminInSameCompany.id,
+    });
+    expect(begin.error).toBeNull();
+    expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("target_forbidden_super_admin");
+    expect((await getUserRow(superAdminInSameCompany.id))?.must_change_password).toBe(false);
+  });
+
+  it("12. Alur penuh Owner: begin -> auth update -> finalize sukses, audit tercatat dengan actor_tier owner", async () => {
+    const companyId = await createCompany("owner-full");
+    const owner = await createTenantUser("owner-full-actor", companyId, ownerRoleId);
+    const target = await createTenantUser("owner-full-target", companyId, adminRoleId);
+    const operationId = randomUUID();
+
+    const begin = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: operationId,
+      p_actor_id: owner.id,
+      p_target_user_id: target.id,
+    });
+    expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("db_committed");
+
+    const newTempPassword = randomUUID();
+    const authUpdate = await service.auth.admin.updateUserById(target.id, { password: newTempPassword });
+    expect(authUpdate.error).toBeNull();
+
+    const finalize = await service.rpc("super_admin_finalize_tenant_user_password_reset", {
+      p_operation_id: operationId,
+      p_actor_id: owner.id,
+      p_target_user_id: target.id,
+    });
+    expect((finalize.data as { result_outcome: string }[])[0].result_outcome).toBe("succeeded");
+    expect((await getUserRow(target.id))?.must_change_password).toBe(true);
+
+    const audit = await service.from("audit_logs").select("action, new_data").eq("entity_id", target.id).in("action", [
+      "tenant_user.password_reset_started",
+      "tenant_user.password_reset_completed",
+    ]);
+    expect(audit.data).toHaveLength(2);
+    const startedEvent = (audit.data as { action: string; new_data: { actor_tier?: string } }[]).find(
+      (r) => r.action === "tenant_user.password_reset_started"
+    );
+    expect(startedEvent?.new_data.actor_tier).toBe("owner");
+  });
+
+  it("13. Actor tanpa role owner maupun super_admin tetap ditolak (regresi tidak berubah)", async () => {
+    const companyId = await createCompany("neither-actor");
+    const fakeActor = await createTenantUser("neither-actor-fake", companyId, salesRoleId);
+    const target = await createTenantUser("neither-actor-target", companyId, adminRoleId);
+
+    const begin = await service.rpc("super_admin_begin_tenant_user_password_reset", {
+      p_operation_id: randomUUID(),
+      p_actor_id: fakeActor.id,
+      p_target_user_id: target.id,
+    });
+    expect(begin.error).toBeNull();
+    expect((begin.data as OutcomeRow[])[0].result_outcome).toBe("forbidden");
+    expect((await getUserRow(target.id))?.must_change_password).toBe(false);
+  });
 });

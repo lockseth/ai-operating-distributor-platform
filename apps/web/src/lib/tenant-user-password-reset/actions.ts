@@ -25,13 +25,17 @@ const OUTCOME_MESSAGE: Record<string, string> = {
 };
 
 /**
- * super_admin mereset password user tenant EXISTING (owner|admin|sales) --
- * domain otorisasi TERPISAH dari createTenantUserAction (owner-only, user
- * BARU, tenant-users/actions.ts). Hanya menerima targetUserId dari client
+ * super_admin ATAU owner mereset password user tenant EXISTING -- domain
+ * otorisasi TERPISAH dari createTenantUserAction (owner-only, user BARU,
+ * tenant-users/actions.ts). Hanya menerima targetUserId dari client
  * (kontrak gate §3) -- actorId SELALU dari sesi (getAuthUser()), tidak
  * pernah dari input, tidak pernah company_id/role client yang dipercaya
  * (keduanya di-resolve ULANG server-side lewat RPC, lihat migration
- * 20260913000001).
+ * 20260913000001 + perluasan tier owner migration 20261024000001). Gate
+ * di sini HANYA memfilter kasar (super_admin ATAU owner) -- pembatasan
+ * sesungguhnya (owner cuma company sendiri, tidak bisa target owner/
+ * super_admin lain) ditegakkan DI DALAM RPC, tidak pernah dipercaya dari
+ * app layer saja.
  */
 export async function resetTenantUserPasswordAction(
   targetUserId: string
@@ -41,7 +45,7 @@ export async function resetTenantUserPasswordAction(
   if (user.isDemo) {
     return { ok: false, error: "Reset password tidak tersedia pada sesi demo." };
   }
-  if (!user.roles.includes("super_admin")) {
+  if (!user.roles.includes("super_admin") && !user.roles.includes("owner")) {
     return { ok: false, error: OUTCOME_MESSAGE.forbidden };
   }
 

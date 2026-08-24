@@ -4,7 +4,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { OnboardingChecklist } from "@/components/platform/onboarding-checklist";
 import { FirstUserForm } from "@/components/platform/first-user-form";
-import { ResetTenantUserPasswordButton } from "@/components/platform/reset-tenant-user-password-button";
+import { ResetTenantUserPasswordButton } from "@/components/users/reset-tenant-user-password-button";
 import {
   ChevronLeft, Edit2, Building2, CheckCircle2, XCircle,
   Users, Package, ShoppingCart, FileText, Globe,
