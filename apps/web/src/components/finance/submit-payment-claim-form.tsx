@@ -36,6 +36,14 @@ interface ProofRow {
 interface SubmitPaymentClaimFormProps {
   customers: CustomerOption[];
   outstandingInvoices: OutstandingInvoiceOption[];
+  /**
+   * Dipakai saat form ini di-embed dalam konteks yang sudah punya customer
+   * tetap (mis. Selesaikan Kunjungan Gate P4.21 -- toko kunjungan sudah
+   * pasti) -- dropdown customer disembunyikan, ganti label statis. Kosong =
+   * perilaku existing (dropdown bebas pilih), dipakai halaman Klaim
+   * Pembayaran mandiri.
+   */
+  lockedCustomerId?: string;
 }
 
 function formatDueDate(iso: string | null): string {
@@ -43,9 +51,9 @@ function formatDueDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-export function SubmitPaymentClaimForm({ customers, outstandingInvoices }: SubmitPaymentClaimFormProps) {
+export function SubmitPaymentClaimForm({ customers, outstandingInvoices, lockedCustomerId }: SubmitPaymentClaimFormProps) {
   const router = useRouter();
-  const [customerId, setCustomerId] = useState("");
+  const [customerId, setCustomerId] = useState(lockedCustomerId ?? "");
   const [method, setMethod] = useState<"cash" | "bank_transfer">("cash");
   const [amount, setAmount] = useState("");
   const [transferReference, setTransferReference] = useState("");
@@ -73,7 +81,7 @@ export function SubmitPaymentClaimForm({ customers, outstandingInvoices }: Submi
   }
 
   function reset() {
-    setCustomerId("");
+    setCustomerId(lockedCustomerId ?? "");
     setMethod("cash");
     setAmount("");
     setTransferReference("");
@@ -131,21 +139,27 @@ export function SubmitPaymentClaimForm({ customers, outstandingInvoices }: Submi
       )}
 
       <div className="mt-4 space-y-3">
-        <label className="block text-xs font-medium text-gray-600">
-          Customer
-          <select
-            value={customerId}
-            onChange={(e) => selectCustomer(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
-          >
-            <option value="">Pilih customer…</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {lockedCustomerId ? (
+          <p className="text-xs font-medium text-gray-600">
+            Customer <span className="ml-1 font-normal text-gray-900">{customers.find((c) => c.id === lockedCustomerId)?.name ?? "—"}</span>
+          </p>
+        ) : (
+          <label className="block text-xs font-medium text-gray-600">
+            Customer
+            <select
+              value={customerId}
+              onChange={(e) => selectCustomer(e.target.value)}
+              className="mt-1 w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs"
+            >
+              <option value="">Pilih customer…</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         {customerId && (
           <div>

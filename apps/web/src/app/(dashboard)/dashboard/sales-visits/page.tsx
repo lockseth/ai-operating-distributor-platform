@@ -29,12 +29,15 @@ export default async function SalesVisitsPage() {
   const visitData = await getSalesVisitDataAction();
 
   // Gate P4.21 follow-up: kunjungan bertujuan Penagihan yang berhasil ketemu
-  // toko bisa langsung lanjut catat hasil penagihan di form yang sama (lihat
-  // sales-visit-workspace.tsx) -- invoice outstanding perlu admin client,
-  // pola identik dashboard/payment-claims/page.tsx (sales tidak punya
-  // receivable.view, cuma dipakai sebagai referensi pilihan invoice).
+  // toko bisa langsung lanjut catat hasil penagihan ATAU lapor pembayaran
+  // diterima di form yang sama (lihat sales-visit-workspace.tsx) -- invoice
+  // outstanding perlu admin client, pola identik dashboard/payment-claims/
+  // page.tsx (sales tidak punya receivable.view, cuma dipakai sebagai
+  // referensi pilihan invoice).
+  const canRecordCollectionField = hasPermission(user.permissions, "collection.record.field");
+  const canClaimPayment = hasPermission(user.permissions, "payment.claim");
   let outstandingInvoices: OutstandingInvoiceOption[] = [];
-  if (hasPermission(user.permissions, "collection.record.field")) {
+  if (canRecordCollectionField || canClaimPayment) {
     try {
       outstandingInvoices = await getOutstandingInvoices(user.company_id, {}, getAdminClient());
     } catch {
@@ -53,6 +56,7 @@ export default async function SalesVisitsPage() {
         initialActiveVisit={visitData.ok ? visitData.activeVisit ?? null : null}
         initialHistory={visitData.ok ? visitData.history ?? [] : []}
         outstandingInvoices={outstandingInvoices}
+        canClaimPayment={canClaimPayment}
       />
     </div>
   );

@@ -11,6 +11,7 @@ import {
   type CollectionFieldOutcome,
 } from "@/lib/finance/actions";
 import type { OutstandingInvoiceOption } from "@/lib/finance/queries";
+import { SubmitPaymentClaimForm } from "@/components/finance/submit-payment-claim-form";
 import { formatRupiah } from "@/lib/document-engine/monetary";
 import {
   VISIT_ACTIVITIES,
@@ -50,6 +51,7 @@ interface SalesVisitWorkspaceProps {
   initialActiveVisit: SalesVisit | null;
   initialHistory: SalesVisit[];
   outstandingInvoices: OutstandingInvoiceOption[];
+  canClaimPayment: boolean;
 }
 
 interface GeoPoint {
@@ -138,6 +140,7 @@ export function SalesVisitWorkspace({
   initialActiveVisit,
   initialHistory,
   outstandingInvoices,
+  canClaimPayment,
 }: SalesVisitWorkspaceProps) {
   const [isPending, startTransition] = useTransition();
   // Tidak dikelola sebagai state lokal -- setiap mutasi sukses memicu
@@ -438,12 +441,20 @@ export function SalesVisitWorkspace({
               </>
             )}
 
+            {showCollectionFollowUp && canClaimPayment && (
+              <SubmitPaymentClaimForm
+                customers={customers}
+                outstandingInvoices={outstandingInvoices}
+                lockedCustomerId={activeVisit?.customerId}
+              />
+            )}
+
             {showCollectionFollowUp && (
               <div className="space-y-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
                 <div>
                   <p className="text-sm font-semibold text-gray-900">Catat Hasil Penagihan</p>
                   <p className="text-xs text-gray-500">
-                    Opsional -- kalau diisi, langsung tercatat sebagai hasil kunjungan penagihan (tidak perlu buka menu Klaim Pembayaran lagi).
+                    Toko belum bayar/ada kendala -- kalau toko SUDAH bayar, pakai form &quot;Lapor Pembayaran Diterima&quot; di atas. Opsional -- kalau diisi, langsung tercatat sebagai hasil kunjungan penagihan (tidak perlu buka menu Klaim Pembayaran lagi).
                   </p>
                 </div>
                 {collectionInvoices.length === 0 ? (
