@@ -143,6 +143,7 @@ memang sudah direncanakan.
 - [x] Test penuh `vitest run`: **219/219 file, 2807 test PASS** (1 test hardcode path Windows `C:\\Users\\PC\\...` di `full-path-demo.integration.test.ts` diganti `mkdtemp(os.tmpdir())`).
 - [x] 11 error `tsc` di 3 file test diperbaiki (tipe `notes` opsional, cast `unknown`, regex flag `s` dibuang karena target ES2017) — `pnpm type-check` bersih, test terkait PASS.
 - [x] Vercel CLI dipasang & login (project `aodp-waluyo-demo`, deploy terakhir Ready); `supabase login` + `link` ke `mcbwgvtkhykrrtvbpeys` sukses — `migration list` Local==Remote (s/d `20261024000001`, tidak ada migration tertunda).
+- [x] Identitas company di DB lokal Mac diisi ulang (PT SUMBER WARNA ALAM SUDIADA + logo dari `docs/document-engine/assets/samples/waluyo/`; data alamat/kontak dari fixture `invoice-builder.test.ts`) — **DB lokal tidak ikut pindah dari Windows, data company/logo itu data-only dan hilang saat DB dibuat ulang**; template cetak invoice terverifikasi tampil penuh. Kandidat: masukkan ke `scripts/seed-dev.ts` supaya tidak hilang tiap `db reset`.
 - [ ] Verifikasi `.env.local` (root & `apps/web`) masih menunjuk Supabase lokal untuk dev; `.env.demo.local` / `.env.flowsales-cloud-backup.local` berisi kredensial — pastikan di-gitignore & jangan dikomit.
 - [ ] Commit perubahan yang tertunda (`.gitattributes`, TRACKER, WIP forgot-password) — menunggu keputusan Founder.
 
