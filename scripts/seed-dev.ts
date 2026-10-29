@@ -60,6 +60,26 @@ const COMPANY = {
   slug: "aodp-dev",
 };
 
+// Profil perusahaan untuk header dokumen cetak (invoice/PO/surat jalan) dan
+// syarat issue_invoice_atomic (validate_company_profile_complete). Data-only;
+// identitas tenant Waluyo, logo dari docs/document-engine/assets/samples/waluyo.
+const COMPANY_PROFILE = {
+  name: "PT SUMBER WARNA ALAM SUDIADA",
+  legal_address: "Jl. Cendana Raya Talun Cirebon 45171",
+  contact_email: "sumberwanaalamsudiada@gmail.com",
+  contact_phone: "085185905859",
+  document_number_prefix: "AODP",
+};
+const COMPANY_LOGO_PATH = path.resolve(
+  __dirname,
+  "../docs/document-engine/assets/samples/waluyo/logo-pt-sumber-warna-alam-sudiada.jpeg",
+);
+
+function loadCompanyLogoDataUri(): string | null {
+  if (!fs.existsSync(COMPANY_LOGO_PATH)) return null;
+  return `data:image/jpeg;base64,${fs.readFileSync(COMPANY_LOGO_PATH).toString("base64")}`;
+}
+
 const USERS = [
   { email: "owner@aodp.test", fullName: "Owner AODP",   phone: "0812-0000-0001", role: "owner" },
   { email: "sales@aodp.test", fullName: "Sales Pertama", phone: "0812-0000-0002", role: "sales" },
@@ -133,6 +153,14 @@ async function main() {
   } else {
     console.log(`[1] Company sudah ada: ${COMPANY.name} (${companyId})`);
   }
+
+  // 1b. Profil perusahaan (idempotent -- selalu diterapkan ulang)
+  const { error: profileError } = await supabase
+    .from("companies")
+    .update({ ...COMPANY_PROFILE, logo_url: loadCompanyLogoDataUri() })
+    .eq("id", companyId);
+  if (profileError) throw new Error(`Gagal mengisi profil company: ${profileError.message}`);
+  console.log(`[1b] Profil company diisi: ${COMPANY_PROFILE.name}`);
 
   // 2. Users + roles
   const userIds: Record<string, string> = {};
