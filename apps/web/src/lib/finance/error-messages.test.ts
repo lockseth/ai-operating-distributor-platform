@@ -58,6 +58,13 @@ describe("mapFinanceRpcError", () => {
     expect(mapFinanceRpcError("REFUND_ALREADY_RESOLVED: sudah rejected")).toMatch(/sudah diputuskan sebelumnya/i);
   });
 
+  it("kode error terbit invoice dipetakan", () => {
+    expect(mapFinanceRpcError("COMPANY_PROFILE_INCOMPLETE")).toMatch(/profil perusahaan belum lengkap/i);
+    expect(mapFinanceRpcError("INVALID_ORDER_STATE: order x berstatus confirmed")).toMatch(/berstatus Terkirim/);
+    expect(mapFinanceRpcError("ORDER_ALREADY_INVOICED: order x")).toMatch(/sudah memiliki invoice/i);
+    expect(mapFinanceRpcError("INCOMPLETE_DELIVERY_COVERAGE: order x")).toMatch(/belum selesai diverifikasi/i);
+  });
+
   it("kode tak dikenal jatuh ke pesan default, bukan crash atau pesan kosong", () => {
     expect(mapFinanceRpcError("SOME_UNKNOWN_FUTURE_CODE: detail")).toBe("Terjadi kesalahan saat memproses permintaan.");
     expect(mapFinanceRpcError("")).toBe("Terjadi kesalahan saat memproses permintaan.");

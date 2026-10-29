@@ -642,3 +642,34 @@ export async function rejectPaymentClaimAction(input: RejectPaymentClaimInput) {
   revalidateFinanceQueue();
   return (data as Array<{ out_outcome: string }>)[0];
 }
+
+// ---------------------------------------------------------------------------
+// Terbit Invoice manual (keputusan Founder 2026-10-29: tombol di detail order,
+// bukan otomatis). Memanggil issue_invoice_atomic apa adanya -- RPC itu yang
+// menegakkan permission invoice.issue, status order delivered, cakupan
+// kuantitas penuh, dan idempotensi (ORDER_ALREADY_INVOICED). Mengembalikan
+// objek hasil (bukan throw) supaya pesan tidak di-redaksi Next.js production.
+// ---------------------------------------------------------------------------
+
+export type IssueInvoiceResult = { ok: true; invoiceId: string } | { ok: false; message: string };
+
+export async function issueInvoiceAction(orderId: string): Promise<IssueInvoiceResult> {
+  const user = await getAuthUser();
+  if (!hasPermission(user.permissions, "invoice.issue")) {
+    return { ok: false, message: "Tidak punya akses untuk menerbitkan invoice" };
+  }
+
+  const admin = getAdminClient();
+  const { data, error } = await admin.rpc("issue_invoice_atomic", {
+    p_company_id: user.company_id,
+    p_actor_id: user.id,
+    p_order_id: orderId,
+  });
+  if (error) return { ok: false, message: mapFinanceRpcError(error.message) };
+
+  revalidatePath(`/dashboard/orders/${orderId}`);
+  revalidatePath("/dashboard/orders");
+  revalidatePath("/dashboard/finance/invoices");
+  revalidateFinanceQueue();
+  return { ok: true, invoiceId: (data as Array<{ out_invoice_id: string }>)[0].out_invoice_id };
+}

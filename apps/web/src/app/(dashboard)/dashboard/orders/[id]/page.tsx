@@ -8,6 +8,7 @@ import { StatusUpdater } from "@/components/orders/status-updater";
 import { OrderStatusBadge } from "@/components/orders/order-status-badge";
 import { AssignDriverForm } from "@/components/delivery/assign-driver-form";
 import { DeliveryPanel } from "@/components/delivery/delivery-panel";
+import { IssueInvoiceButton } from "@/components/finance/issue-invoice-button";
 import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
 import { computeInvoiceEligibility } from "@/lib/delivery/service";
 import { getAdminClient } from "@/lib/supabase/admin";
@@ -109,6 +110,17 @@ export default async function OrderDetailPage({
   const canManageDelivery = hasPermission(user.permissions, "delivery.manage");
   const deliveryRepository = new SupabaseDeliveryRepository(supabase);
   const delivery = await deliveryRepository.getLatestDeliveryForOrder(order.id);
+
+  // --- Invoice (tahap 6): terbit manual lewat tombol, oleh role dengan invoice.issue ---
+  const canIssueInvoice = hasPermission(user.permissions, "invoice.issue");
+  const { data: invoiceRow } = await supabase
+    .from("invoices")
+    .select("id, invoice_number")
+    .eq("sales_order_id", order.id)
+    .eq("company_id", user.company_id)
+    .limit(1)
+    .maybeSingle();
+  const invoice = invoiceRow as { id: string; invoice_number: string | null } | null;
 
   let deliveryEvents: { eventType: string; toStatus: string | null; createdAt: string }[] = [];
   let ownerAlertStatus: "pending" | "sent" | "failed" | null = null;
@@ -427,6 +439,32 @@ export default async function OrderDetailPage({
       ) : (
         order.status === "confirmed" && canManageDelivery && (
           <AssignDriverForm salesOrderId={order.id} drivers={availableDrivers} />
+        )
+      )}
+
+      {/* Invoice */}
+      {invoice ? (
+        <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+          <div>
+            <p className="text-sm font-semibold text-gray-900">Invoice</p>
+            <p className="text-xs text-gray-500">{invoice.invoice_number ?? "Sudah diterbitkan"}</p>
+          </div>
+          <Link
+            href={`/dashboard/finance/invoices/${invoice.id}`}
+            className="text-sm font-semibold text-blue-600 hover:text-blue-700"
+          >
+            Lihat Invoice →
+          </Link>
+        </div>
+      ) : (
+        order.status === "delivered" && canIssueInvoice && (
+          <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
+            <div>
+              <p className="text-sm font-semibold text-gray-900">Invoice</p>
+              <p className="text-xs text-gray-500">Pengiriman sudah selesai diverifikasi. Invoice belum diterbitkan.</p>
+            </div>
+            <IssueInvoiceButton orderId={order.id} />
+          </div>
         )
       )}
 

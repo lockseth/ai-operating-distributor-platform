@@ -51,7 +51,7 @@ export function StatusUpdater({ orderId, currentStatus }: StatusUpdaterProps) {
     if (currentStatus === "delivered") {
       return (
         <p className="text-xs text-gray-500">
-          Penerbitan invoice terverifikasi belum tersedia di modul ini.
+          Terbitkan invoice lewat panel Invoice di bawah (khusus Finance/Owner/Manager/Admin).
         </p>
       );
     }

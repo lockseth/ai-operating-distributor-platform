@@ -77,6 +77,16 @@ export const FINANCE_ERROR_MESSAGES: Record<string, string> = {
   PAYMENT_CLAIM_CORE_IMMUTABLE: "Data klaim tidak dapat diubah setelah dikirim.",
   PAYMENT_CLAIM_IMMUTABLE: "Klaim pembayaran tidak dapat dihapus.",
   ALLOCATION_CUSTOMER_MISMATCH: "Invoice yang dipilih bukan milik customer pada klaim ini.",
+
+  // Terbit Invoice (issue_invoice_atomic).
+  INVALID_ORDER_STATE: "Invoice hanya bisa diterbitkan untuk order yang sudah berstatus Terkirim.",
+  COMPANY_PROFILE_INCOMPLETE: "Profil perusahaan belum lengkap (alamat legal, email, telepon, atau prefix nomor dokumen). Hubungi admin platform untuk melengkapinya.",
+  ORDER_CUSTOMER_REQUIRED: "Order ini belum memiliki pelanggan, invoice tidak dapat diterbitkan.",
+  ORDER_ALREADY_INVOICED: "Order ini sudah memiliki invoice. Muat ulang halaman.",
+  NO_BILLABLE_LINES: "Tidak ada barang yang diterima pada pengiriman ini, tidak ada yang bisa ditagih.",
+  MULTI_DELIVERY_INVOICING_NOT_SUPPORTED: "Order ini dikirim lebih dari satu kali; penerbitan invoice untuk kasus ini belum didukung.",
+  INCOMPLETE_DELIVERY_COVERAGE: "Masih ada barang pada order yang belum selesai diverifikasi pengirimannya.",
+  INCOMPLETE_ORDER_LINE_COVERAGE: "Masih ada barang pada order yang belum selesai diverifikasi pengirimannya.",
 };
 
 const DEFAULT_FINANCE_ERROR_MESSAGE = "Terjadi kesalahan saat memproses permintaan.";
