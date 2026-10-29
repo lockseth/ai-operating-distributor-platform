@@ -159,6 +159,11 @@ memang sudah direncanakan.
 5. Prasyarat KPI per bulan: periode ACTIVE **dan** target per salesman; tanpa target, halaman KPI "Data belum cukup".
 6. Minor: kunjungan butuh GPS (di lokal harus dipalsukan); tombol "Batalkan"/"Batalkan Order" ganda di detail order; DB lokal berisi sisa data test integrasi (perusahaan `itest-*`).
 
+**`[TEMUAN]` Hasil run UAT role-play lokal #2 (2026-10-29, skenario B1–B3, C1, C3, C5, C6, D1–D2)** — OK: harga khusus ajukan→setujui→konfirmasi (B1–B3, sales tak bisa konfirmasi saat menunggu), batal order setelah invoice → invoice void + ledger netto 0 (C5), retur → credit note Rp68.000 ke customer credit karena invoice sudah lunas (C6), lapor cicil + catat hasil penagihan (D1–D2). Tidak dijalankan: B4 (tolak), C2/C4, D3 (view Collection), D4 (lock toko H+3, butuh invoice lewat jatuh tempo; invoice immutable), D5 (Risk Alert unremitted), E, F2–F5. Temuan baru:
+7. **[PENTING, alur bisnis] Pengiriman SEBAGIAN tidak bisa ditagih sama sekali.** Order baru jadi `delivered` bila total diterima ≥ dipesan; `issue_invoice_atomic` menolak bila received ≠ quantity (`INCOMPLETE_DELIVERY_COVERAGE`) dan menolak multi-delivery. Toko tolak 4 dari 10 dus → order mandek "Dikirim", 6 dus terkirim tak bisa ditagih (panel menampilkan "Invoice eligible Rp204.000" tapi tak ada jalannya; tombol "Tandai Terkirim" pun akhirnya ditolak RPC). Perlu keputusan produk: izinkan invoice parsial (tagih qty diterima) / wajib retur-batal dulu.
+8. Invoice yang jatuh tempo dihitung dari `payment_terms_days` order; tanpa termin invoice "tanpa jatuh tempo" → tidak pernah kena overdue/lock toko (P4.16) maupun Rencana Penagihan. Pastikan sales mengisi termin.
+9. Positif: dialog persetujuan harga/batal/retur/klaim menampilkan pratinjau dampak yang jelas; daftar tagihan di form klaim otomatis menyaring invoice lunas/void.
+
 **Sisa pekerjaan produk yang belum selesai** (detail di Berikutnya/Ditunda):
 Bablast P4.13 (pairing nomor production + Founder nyalakan saklar, pagar
 `BABLAST_TEST_OVERRIDE_PHONE` masih aktif), fix penegakan role sales/driver
