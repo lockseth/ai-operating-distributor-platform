@@ -50,6 +50,7 @@ flowchart LR
 | 14 | Go-Live Playbook | Onboarding & implementasi | Internal + ringkasan ke klien | [14_GO_LIVE_PLAYBOOK.md](14_GO_LIVE_PLAYBOOK.md) |
 | 15 | Follow-up Kit | Nurture sebelum & sesudah closing | Internal (template) | [15_FOLLOWUP_KIT.md](15_FOLLOWUP_KIT.md) |
 | 16 | Marketing Assets | Aset pendukung lintas kanal | Klien/publik | [16_MARKETING_ASSETS.md](16_MARKETING_ASSETS.md) |
+| 17 | Product Demo Movie (90s) | Video peluncuran/pembuka presentasi | Klien/publik | [demo-movie/](demo-movie/Storyboard.md) |
 
 ## Fakta Rujukan Wajib (konsisten di semua dokumen — jangan diulang panjang lebar di tiap file, cukup rujuk ke sini)
 

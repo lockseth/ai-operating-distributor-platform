@@ -1,0 +1,83 @@
+{
+  "_meta": {
+    "purpose": "Data ilustratif untuk AODP Product Demo Movie (90 detik) — bukan data klien nyata, bukan data Design Partner (Waluyo Distributor tetap anonim: Constitution L11). Nama, angka, dan kutipan di file ini fiktif namun realistis, dibangun untuk konsistensi visual antar-scene video.",
+    "anonymization_rule": "Sama seperti seluruh sales-kit: tidak ada identitas Design Partner asli yang boleh muncul di video publik.",
+    "created_for": "docs/sales-kit/demo-movie/",
+    "duration_seconds": 90
+  },
+  "company": {
+    "name": "Distribusi Makmur Jaya",
+    "type": "Distributor FMCG — makanan & minuman",
+    "location": "Bandung, Jawa Barat",
+    "sales_count": 8,
+    "logo_style": "wordmark sans-serif, aksen biru #2563EB"
+  },
+  "scene_2_executive_intelligence": {
+    "business_health_score": 82,
+    "business_health_label": "Bisnis Sehat",
+    "greeting": "Selamat pagi, Pak Dimas",
+    "date_label": "Senin, 8 Juli 2026",
+    "kpi_cards": [
+      { "label": "Omzet Hari Ini", "value": "Rp42,5 jt", "trend": "up" },
+      { "label": "Omzet Bulan Ini", "value": "Rp1,1 M", "trend": "up" },
+      { "label": "Gap Target", "value": "Rp180 rb / hari", "trend": "neutral" },
+      { "label": "Sales Lapor Hari Ini", "value": "7/8", "trend": "up" }
+    ],
+    "briefing_headline": "Kondisi bisnis hari ini: Bisnis Sehat (skor 82/100).",
+    "top_action": {
+      "priority": "HIGH",
+      "action": "Tinjau Toko Sumber Rejeki — pola order menurun 3 minggu berturut-turut"
+    }
+  },
+  "scene_3_customer_health": {
+    "concept_label": "Vision — Roadmap",
+    "example_customer": "Toko Anugerah Barokah",
+    "signal": "PIC order berganti dari pemilik ke karyawan, frekuensi order melambat 40%",
+    "health_label": "Perhatian",
+    "recommended_action": "Follow-up personal oleh sales area sebelum janji jatuh tempo berikutnya"
+  },
+  "scene_4_flowsales_voice_order": {
+    "live_feature": "FlowSales AI — laporan harian sales (sudah berjalan)",
+    "vision_feature": "Voice Order — order via pesan suara WhatsApp (visi produk, belum tersedia)",
+    "sample_report": {
+      "salesperson": "Andri Setiawan",
+      "area": "Cirebon Kota",
+      "target_oa": 12,
+      "achieved_oa": 10,
+      "target_revenue_idr": 15000000,
+      "achieved_revenue_idr": 13200000
+    },
+    "voice_order_sample_transcript": "Pak, order dari Toko Sumber Rejeki — dua puluh dus air mineral, sepuluh dus botol enam ratus mili."
+  },
+  "scene_5_business_guard": {
+    "concept_label": "Vision — Roadmap (hero module)",
+    "anchor_case_note": "Merujuk kasus anonim kerugian Rp550 juta akibat mismatch PO-pengiriman-penerimaan (Constitution v1.1)",
+    "sample_alert": {
+      "severity": "HIGH",
+      "title": "Anomali diskon terdeteksi",
+      "entity": "Sales: Rizky Ramadhan",
+      "description": "Diskon rata-rata naik dari 3% menjadi 11% dalam 2 minggu, di luar pola area sejenis",
+      "recommended_action": "Tinjau approval diskon Rizky untuk 8 transaksi terakhir"
+    }
+  },
+  "scene_6_collection_intelligence": {
+    "concept_label": "Vision — Roadmap",
+    "sample_case": {
+      "customer": "Toko Jaya Makmur",
+      "outstanding_idr": 18500000,
+      "days_overdue": 47,
+      "promise_to_pay_status": "Dilanggar 1x",
+      "priority_label": "Risiko Tinggi"
+    }
+  },
+  "scene_7_whatsapp_report": {
+    "concept_label": "Near-term roadmap — Executive WhatsApp Report",
+    "send_time": "08:00 WIB",
+    "message_preview": "🌅 Ringkasan Pagi — Distribusi Makmur Jaya\n\nSkor Bisnis: 82/100 (Sehat)\n1️⃣ Omzet kemarin Rp42,5 jt, 94% dari target\n2️⃣ Toko Jaya Makmur — piutang 47 hari, janji bayar dilanggar\n3️⃣ 1 sales belum lapor kemarin\n\nBuka Executive Intelligence untuk detail →"
+  },
+  "scene_8_closing": {
+    "wordmark": "AI Operating Distributor Platform",
+    "tagline": "Distributor yang dijaga, bukan sekadar dicatat.",
+    "cta": "aodp.id"
+  }
+}
