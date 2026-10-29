@@ -62,7 +62,8 @@ penuh karena masih operasional.
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-08-24 |
+| Tanggal update terakhir | 2026-10-29 |
+| Lingkungan dev | **Dipindah dari Windows ke macOS (2026-10-29).** `node_modules` sudah diinstal ulang untuk darwin, line ending dinormalkan ke LF (`.gitattributes`). Sisa checklist migrasi: lihat [Sedang Dikerjakan](#sedang-dikerjakan). |
 | Branch | `main` |
 | HEAD | `f76a05a` — **sinkron penuh dengan `origin/main`** (0 ahead/behind). **Owner bisa reset password anggota tim sendiri** (`4052ddc`, migration `20261024000001`) — perluasan tier RPC reset password existing (super_admin lintas-tenant tidak berubah + owner company sendiri, target selain owner/super_admin), kolom baru di halaman Pengguna. **Alur Selesaikan Kunjungan sekarang lengkap 3 skenario** (`f76a05a`): Lapor Pembayaran Diterima (toko bayar cicil/lunas) + Catat Hasil Penagihan (belum bayar/sengketa) tampil sekaligus untuk kunjungan Penagihan yang berhasil ketemu toko — reuse komponen existing, tanpa RPC baru. **Fix bug produksi (2026-08-24, ditemukan Founder real user)**: kunjungan sales KEDUA ke toko yang sama pada hari yang sama gagal total ("Gagal menyelesaikan kunjungan.") karena `unique_violation` (`uq_sales_calls_one_per_day`) tidak ditangkap `complete_sales_visit()` — sekarang graceful (outcome `completed_duplicate_call`), migration `20261023000001`. **Gate P4.21 (sales/driver bisa catat hasil kunjungan penagihan non-pembayaran) SELESAI & DEPLOYED**: permission baru `collection.record.field`, RPC `record_collection_activity` otorisasi dua-tier, form di halaman Klaim Pembayaran sales — DAN diintegrasikan langsung ke form Selesaikan Kunjungan di halaman Kunjungan Sales (muncul otomatis untuk kunjungan Penagihan yang berhasil ketemu toko). Migration `20261022000001`. Sebelumnya: upload Bukti Pembayaran sungguhan (`090d342`), Gate P4.20 (anti-spam dedup + push proaktif 6 fitur Business Guard), Gate P4.19 (Suspicious Call Timing), Gate P4.18 (Unremitted Collection Risk) — ketiganya fraud protection audit, semua DEPLOYED. Fase 2 "Lock Toko Tertunggak" (P4.16) & Churn Prediction gate (P4.17) juga DEPLOYED. `BABLAST_DRY_RUN=false` aktif, pagar `BABLAST_TEST_OVERRIDE_PHONE` **masih aktif** (keputusan Founder eksplisit — belum diminta dilepas). |
 | Deploy pipeline | **Production Vercel (`aodp-waluyo-demo.vercel.app`) auto-deploy dari branch `main`.** Branch lain hanya menghasilkan Preview deployment terpisah. `aodp-architecture-demo-v0.1` tetap target branch PR (CLAUDE.md), bukan branch deploy. **Vercel CLI terinstall & linked** — `vercel ls`/`vercel inspect` sumber kebenaran status deploy, jangan asumsi dari tanggal tracker. **PENTING**: `git push` KODE tidak menerapkan migration ke hosted — 2 langkah TERPISAH wajib manual: `git push` lalu `npx supabase db push` (project linked `mcbwgvtkhykrrtvbpeys`) SETIAP kali ada file baru di `supabase/migrations/`, cek dulu `npx supabase migration list` (Remote kosong = belum diterapkan). Insiden 2026-08-18: 6 migration sempat 3 hari tidak ter-apply ke hosted tanpa terdeteksi — pelajaran ini alasan aturan di atas. **TEMUAN 2026-08-22, DITUTUP hari sama**: migration `20261012000001` (Gate P4.06 extension) sempat Remote kosong (kode sudah live hosted duluan dari `git push` biasa, migration-nya ketinggalan) — ditemukan saat kerja Gate P4.11, langsung di-`db push` bareng migration `20261013000001` atas persetujuan Founder, dikonfirmasi `migration list` Local==Remote. |
@@ -74,6 +75,16 @@ penuh karena masih operasional.
 
 ## Catatan Lingkungan Kerja (evergreen — dipertahankan lintas sesi)
 
+- **macOS (sejak 2026-10-29)**: project dipindah dari Windows. Aturan
+  yang berlaku: (a) `node_modules` buatan Windows (binary `win32-x64`) TIDAK
+  bisa dipakai — selalu `rm -rf node_modules apps/*/node_modules
+  packages/*/node_modules && pnpm install` setelah pindah OS; (b) repo
+  memakai LF (`.gitattributes` `* text=auto eol=lf`, `core.autocrlf input`)
+  — jangan commit file CRLF; (c) Docker Desktop & Supabase CLI harus
+  diinstal/dijalankan di Mac (`brew install supabase/tap/supabase`) sebelum
+  `supabase start` dan integration test lokal (port 54321) bisa jalan;
+  (d) rujukan path Windows lama (`D:\PROJECT\FlowSalesAI`) hanya relevan
+  sebagai catatan sejarah.
 - Docker Desktop harus jalan dulu sebelum `supabase start`/`db reset` bisa
   connect.
 - Port 3000 bisa bentrok dengan sesi chat lain — `.claude/launch.json`
@@ -122,6 +133,29 @@ memang sudah direncanakan.
 
 ### Sedang Dikerjakan
 
+**`[REQUEST FOUNDER]` Migrasi lingkungan dev Windows → macOS (2026-10-29)**
+— SEBAGIAN SELESAI.
+- [x] Toolchain terdeteksi: Node v26.11, pnpm 11.9, git 2.50, Docker CLI.
+- [x] Reinstall `node_modules` untuk darwin (`pnpm install`, lockfile tidak berubah).
+- [x] Normalisasi CRLF→LF di 31 file + `.gitattributes` (diff palsu ±8000 baris hilang; sisa perubahan nyata: TRACKER.md, `forgot-password-form*`, `docs/sales-kit/00_INDEX.md`).
+- [x] Unit test non-DB lulus (2075 pass); `tsc` production code bersih.
+- [x] Docker Desktop jalan + Supabase CLI 2.122.0 terpasang (brew). `supabase start` sukses (semua migration terapply), `pnpm seed:dev` sukses.
+- [x] Test penuh `vitest run`: **219/219 file, 2807 test PASS** (1 test hardcode path Windows `C:\\Users\\PC\\...` di `full-path-demo.integration.test.ts` diganti `mkdtemp(os.tmpdir())`).
+- [ ] 11 error `tsc` di 3 file test (`gate-3d-b2-...`, `gate-3e-d4-c5-...`, `gate-3e-d4-c6-...`): tipe stale/target ES<2018 pada regex flag — hanya file test, bukan production; belum dibandingkan dengan baseline Windows. Perbaiki (regenerate types / naikkan `target`).
+- [ ] `vercel login` ulang di Mac (`.vercel/` linked tapi auth tidak ikut pindah) dan `supabase login`/`link` ke project `mcbwgvtkhykrrtvbpeys`.
+- [ ] Verifikasi `.env.local` (root & `apps/web`) masih menunjuk Supabase lokal untuk dev; `.env.demo.local` / `.env.flowsales-cloud-backup.local` berisi kredensial — pastikan di-gitignore & jangan dikomit.
+- [ ] Commit perubahan yang tertunda (`.gitattributes`, TRACKER, WIP forgot-password) — menunggu keputusan Founder.
+
+**Sisa pekerjaan produk yang belum selesai** (detail di Berikutnya/Ditunda):
+Bablast P4.13 (pairing nomor production + Founder nyalakan saklar, pagar
+`BABLAST_TEST_OVERRIDE_PHONE` masih aktif), fix penegakan role sales/driver
+(#7, Tier 1), bukti ROI Waluyo (#9, Tier 1), GPS watermark kunjungan (#4,
+Tier 1), Super Admin panel minimal + `delivery_model` (#6, Tier 2), trail
+verifikasi terpadu (#8, Tier 2), Warehouse Intelligence (rencana ada,
+implementasi belum), serta Tier 3 (#2, #3, #5) menunggu komitmen nyata.
+Ditunda keputusan Founder: WIP `forgot-password-form.tsx` (Backlog #14),
+drill-down Call/EC Owner (Backlog #7).
+
 **KOSONG.** Chatbot bisnis Owner — Milestone 1-4 **SELESAI PENUH**
 (2026-08-23, provider DeepSeek) — lihat Log Milestone.
 
@@ -158,6 +192,32 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    RBAC/security allowlist.
 
 ### Berikutnya (urutan prioritas, atas = duluan)
+
+**Ringkasan urutan eksekusi (2026-09-09, hasil diskusi arah produk sesi
+ini)** — nomor item TIDAK diurutkan ulang di bawah (supaya referensi dari
+memory eksternal ke nomor item tetap valid), ini cuma peta jalan mana
+duluan:
+
+- **Tier 1 — kerjakan duluan (murah, langsung dukung deal nyata Waluyo &
+  SURABRADJA)**: item #7 (fix penegakan role sales/driver — SURABRADJA
+  butuh ini sebelum onboarding sungguhan, cukup 1 kolom `delivery_model` di
+  `companies` + validasi RPC, BELUM perlu Super Admin panel penuh), item
+  baru #9 (bukti ROI dari data Waluyo — murah, langsung bantu closing
+  SURABRADJA/warehouse), item #4 (GPS watermark kunjungan sales — perkuat
+  produk yang sudah dijual, tanpa dependency baru).
+- **Tier 2 — berikutnya (fondasi scaling, baru relevan begitu SURABRADJA
+  benar-benar onboarding, bukan cuma diskusi)**: item #6 versi minimal
+  (Super Admin panel cukup untuk atur modul/paket + toggle
+  `delivery_model`, BUKAN visi penuh dulu), item baru #8 (trail verifikasi
+  terpadu — baru dikerjakan setelah ada 2-3 fitur "capture bukti" berjalan
+  supaya bentuknya digeneralisasi dengan benar, bukan ditebak dari awal).
+- **Tier 3 — tunggu ada komitmen nyata (jangan mulai duluan, hindari
+  over-engineering spekulatif)**: item #2 (network-effect intelligence —
+  butuh 2+ tenant AKTIF, bukan cuma prospek), item #5 (warehouse
+  security/hardware — tunggu klien tanda tangan), item #3 (WhatsApp AI
+  inbound — belum ada tekanan bisnis apa pun untuk ini), opsi silo di
+  item #6 (Enterprise infra terisolasi — tunggu klien yang eksplisit
+  minta & bayar).
 
 1. `[REQUEST FOUNDER]` **WhatsApp Bablast — Gate P4.13 (kirim nyata + pairing
    UI) & Gate P4.14 (jadwal Vercel Cron) SELESAI (2026-08-22). Sisa: pairing
@@ -228,7 +288,10 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    ditunda**, baru relevan begitu ada deployment AODP kedua aktif (sejalan
    keputusan CTO sebelumnya soal Control Centre, lihat memory
    `surabradja-demo-plan`). Untuk sekarang halaman dibiarkan apa adanya,
-   cukup untuk keperluan testing.
+   cukup untuk keperluan testing. **SUPERSEDED 2026-09-09**: syarat
+   "tenant kedua aktif" sekarang mulai terpenuhi (SURABRADJA + prospek
+   warehouse-security, lihat item #6) — Super Admin panel naik jadi
+   prioritas aktif, bukan ditunda lagi.
 2. `[REQUEST FOUNDER]` **Ide strategis: network-effect intelligence dari
    data multi-tenant — DISETUJUI arahnya (2026-08-18), EKSEKUSI/DESAIN
    TEKNIS DISERAHKAN PENUH ke CTO, belum dimulai.** Muncul dari diskusi
@@ -245,6 +308,187 @@ versi pra-kompaksi ada di `git log -p` untuk file ini):
    pertimbangan serius soal privasi/consent lintas-tenant sebelum desain
    konkret (data sharing antar perusahaan klien beda karakter dari fitur
    single-tenant biasa), plus baru relevan begitu ada tenant kedua aktif.
+
+3. `[REQUEST FOUNDER]` **Keputusan scope awal WhatsApp AI (chat masuk dari
+   customer) — AI diam, TIDAK membalas apa pun. Baru intake, BELUM ADA KODE
+   yang dikerjakan.** (2026-08-31) Modul WhatsApp AI inbound (Inbox & Leads,
+   Order Intent Detection, Missed Call Follow-up, Complaint Tagging — lihat
+   `apps/web/src/app/(dashboard)/dashboard/whatsapp/page.tsx`, masih
+   placeholder UI "Segera Hadir", 0% backend) belum dikerjakan sama sekali.
+   Founder menegaskan batasan scope untuk kapan pun modul ini mulai dibangun:
+   chat masuk dari customer ke nomor WA yang di-pairing AODP (lihat Bablast,
+   Gate P4.13) tidak boleh dibalas otomatis oleh AI — sistem hanya boleh
+   mendeteksi/mencatat secara diam-diam (silent capture untuk kebutuhan
+   internal seperti order intent/complaint tagging), bukan bot conversational
+   yang merespons langsung ke customer. Catatan: infrastruktur WA keluar
+   (outbound) — Business Guard AI risk alert + 4 laporan terjadwal via
+   Bablast — sudah live dan tidak terpengaruh keputusan ini (itu bukan chat
+   masuk).
+4. `[REQUEST FOUNDER]` **Ide baru: watermark GPS di foto kunjungan sales
+   (anti-kecurangan lokasi). Baru intake, BELUM ADA KODE yang dikerjakan.**
+   (2026-09-08) Founder mengusulkan: sales tetap ambil foto seperti biasa
+   (alur existing `PhotoCaptureInput`/kunjungan sales), lalu sistem (bukan
+   model AI/ML — ini image compositing/watermark) mencap info lokasi
+   langsung ke piksel foto, meniru pola umum aplikasi "GPS Map Camera" di
+   field-force apps Indonesia. Konteks teknis existing yang relevan: alur
+   kunjungan sales (`sales-visit-workspace.tsx`) SUDAH menangkap
+   `startLatitude/startLongitude` (check-in) dan `endLatitude/endLongitude`
+   + `photoUrl` (check-out, Gate terkait "Selesaikan Kunjungan" 2026-09-xx)
+   lewat `navigator.geolocation` browser — tapi foto & koordinat tersimpan
+   sebagai **field terpisah** di DB, tidak digabung visual ke gambar. Ide
+   Founder menutup gap itu: cap koordinat/alamat/waktu ke foto itu sendiri
+   supaya bukti kunjungan self-contained & tidak bisa diklaim ulang tanpa
+   konteks lokasi.
+   **Catatan CTO (belum diputuskan, perlu konfirmasi scope)**:
+   (a) rekomendasi proses watermark dilakukan **server-side** (bukan di
+   browser sales) — begitu foto+koordinat diterima server, server yang
+   mencap watermark sebelum simpan final ke storage; kalau dilakukan di
+   browser, device sales bisa memodifikasi/skip proses cap sebelum upload,
+   menggagalkan tujuan anti-kecurangan;
+   (b) untuk MVP disarankan **tanpa gambar peta asli** (Google Maps
+   Static/Mapbox butuh API key berbayar + dependency baru, bertentangan
+   Development Rule #5) — cukup overlay teks (koordinat, alamat hasil
+   reverse-geocode, timestamp) di foto, nol dependency berbayar baru;
+   (c) **batasan jujur yang perlu disampaikan ke Founder**: ini memperkuat
+   bukti visual & bikin foto lama/re-use susah diklaim ulang, TAPI tidak
+   100% anti-spoofing — koordinat sumbernya (`navigator.geolocation`) tetap
+   bisa dipalsukan lewat aplikasi fake-GPS di HP root/dev-mode, watermark
+   cuma mencap apa pun koordinat yang dikirim browser, jujur bukan jaminan
+   mutlak;
+   (d) **scope titik penerapan belum dikonfirmasi** — asumsi sementara CTO:
+   prioritas foto kunjungan sales (`sales-visits`) dulu karena paling rawan
+   kecurangan KPI, BUKAN foto toko/PIC generik (`customer-pic/
+   photo-capture-input.tsx`) yang sifatnya opsional & bukan alat ukur KPI —
+   perlu dikonfirmasi Founder sebelum desain teknis final.
+5. `[REQUEST FOUNDER]` **Prospek klien baru — modul warehouse-only dengan
+   notif real-time maling masuk + fraud. ARAH DISETUJUI FOUNDER
+   (2026-09-09): AODP lanjut, TAPI baru resmi jadi item roadmap — BELUM ADA
+   KODE/desain teknis yang dikerjakan.** Detail lengkap prospek & analisis
+   di memory eksternal `warehouse-security-lead` (di luar repo). Ringkasan:
+   klien cuma mau modul warehouse (bukan paket distributor penuh), minta 2
+   jenis notif: (a) **fraud/selisih stok** — sudah ada rencana teknisnya di
+   `docs/product/modules/WAREHOUSE_INTELLIGENCE.md` (gate WH-4, kamera AI
+   penghitung barang di 3 titik, 0% dibangun); (b) **intrusi/maling masuk**
+   — belum ada di dokumen mana pun, domain teknis beda total dari (a)
+   (kamera/sensor 24 jam di titik akses + deteksi orang/gerakan, bukan
+   penghitung barang saat jam operasional). Klien belum punya CCTV sama
+   sekali (mulai dari nol).
+   **Model bisnis yang disepakati arahnya**: AODP **TIDAK** membangun AI
+   computer vision sendiri (sudah jadi kapabilitas bawaan vendor kamera
+   kelas menengah-atas — Hikvision/Dahua dkk, lihat estimasi vendor &
+   biaya di `WAREHOUSE_INTELLIGENCE.md` §"Vendor Rujukan") — AODP berperan
+   sebagai **integrator software**: terima sinyal/webhook dari kamera
+   vendor, salurkan ke pipa notifikasi yang **sudah live** (Business Guard
+   AI risk alert + WA push via Bablast, Gate P4.13 + anti-spam terpusat)
+   dengan menambah jenis alert baru ("Intrusi Terdeteksi", "Selisih
+   Stok/Fraud"). Estimasi hardware dari dokumen existing (indikatif, bisa
+   beda untuk kebutuhan intrusi): ±Rp6-14 juta sekali beli + Rp1,5-6
+   juta/bulan per titik.
+   **Belum dikerjakan / masih terbuka**: (1) cari & nego vendor kamera
+   lokal yang mendukung human/motion detection + counting sekaligus; (2)
+   `WAREHOUSE_INTELLIGENCE.md` perlu direvisi — saat ini HANYA membahas
+   fraud/shrinkage counting, belum membahas use-case intrusion detection
+   sama sekali; (3) AODP belum punya paket harga berdiri sendiri untuk
+   warehouse-only (lihat `docs/sales-kit/13_PRICING_GUIDE.md`, semua paket
+   berbasis skala tim sales) — perlu skema harga baru; (4) desain teknis
+   kontrak integrasi webhook vendor kamera → Business Guard AI alert
+   pipeline belum ada sama sekali.
+6. `[REQUEST FOUNDER]` **Keputusan arsitektur: AODP resmi jadi platform
+   SaaS multi-tenant. DISETUJUI arahnya (2026-09-09), Super Admin panel
+   jadi prioritas berikutnya. BELUM ADA KODE yang dikerjakan.** Muncul
+   dari diskusi Founder soal AODP jadi platform buat banyak tenant
+   (Waluyo, SURABRADJA, dst) dengan modul/paket diatur superadmin +
+   tenant isi profile/logo sendiri untuk template dokumen (invoice/PO).
+   **Keputusan arsitektur data (menjawab concern "data sensitif" klien)**:
+   - **Default semua tenant: tetap shared database + RLS** (arsitektur
+     existing, `company_id` + RLS per CLAUDE.md #7) — cukup untuk
+     mayoritas distributor kecil-menengah, TIDAK diubah.
+   - **Ditolak eksplisit**: model "tenant hosting database sendiri" (vendor
+     AODP sama sekali tidak simpan data tenant) — bertentangan prinsip
+     Owner First (beban teknis ke pemilik distributor yang tidak teknis)
+     DAN bertentangan rencana network-effect intelligence lintas-tenant
+     yang sudah disetujui Founder 2026-08-18 (item #2 di atas — butuh AODP
+     bisa akses data lintas tenant, mustahil kalau tiap tenant pisah total).
+   - **Opsi silo (database terpisah per tenant, TETAP di-hosting/dikelola
+     AODP) dicadangkan sebagai fitur Enterprise berbayar** — bukan default,
+     baru dibangun kalau ada klien konkret yang minta/bayar untuk itu
+     (hindari over-engineering spekulatif).
+   - **Hardening yang berlaku ke semua tenant terlepas dari model di atas**
+     (belum dieksekusi, prioritas rendah-menengah): perketat hygiene
+     service-role key (pola sama seperti `BABLAST_API_KEY`, server-side
+     only) jadi standar wajib untuk secret baru; perkuat cakupan audit log
+     (`apps/web/src/lib/audit-log/`); fitur ekspor data mandiri per tenant.
+   **Super Admin panel** (sebelumnya ditunda, lihat superseded note di
+   item #1) jadi kandidat prioritas berikutnya untuk dikerjakan — tempat
+   mengatur modul/paket per tenant DAN (temuan diskusi role, lihat item #7)
+   tempat natural untuk setting `delivery_model` per company.
+   **Prinsip desain wajib untuk panel ini (refleksi CTO, disetujui Founder
+   2026-09-09): preset, BUKAN workflow engine bebas-atur.** Tenant baru
+   memilih dari daftar pola bisnis yang sudah dirancang & diuji (mis.
+   `delivery_model: sales_all_in | separated_driver`), TIDAK diberi kanvas
+   kosong untuk mengatur alur sendiri bebas seperti SAP/Odoo — itu yang
+   bikin ERP generik jadi rumit & butuh konsultan mahal untuk setup. Prinsip
+   ini menjaga filosofi "Minimize but Optimize" tetap konsisten meski
+   melayani banyak tenant berbeda.
+7. `[TEMUAN]` **Audit mendalam: pemisahan role sales/driver TIDAK
+   ditegakkan di backend sama sekali — cuma UI dropdown, bukan security
+   boundary. BELUM DIPERBAIKI, murni temuan.** (2026-09-09) Berangkat dari
+   diskusi kebutuhan role driver/kurir terpisah untuk tenant seperti
+   SURABRADJA (lihat memory `surabradja-demo-plan`, keputusan Founder
+   2026-08-18: "sales dikunci secara struktural dari delivery, bukan
+   sekadar disiplin operasional"). Audit kode (bukan cuma baca dokumen
+   lama) menemukan gap-nya **lebih dalam** dari sekadar dropdown "Assign
+   driver":
+   - `create_delivery_atomic` (`supabase/migrations/
+     20260823000001_delivery_audit_atomic.sql:104-110`) memvalidasi
+     `p_driver_id` HANYA dengan "user aktif di company yang sama" — NOL
+     pengecekan role. Siapa pun (sales, warehouse, finance) bisa jadi
+     `assigned_driver_id` asal aktor yang assign punya permission
+     `delivery.manage`.
+   - Begitu ke-assign, orang itu otomatis boleh dispatch & finalize
+     delivery-nya sendiri (baris 179 & 253, kondisi
+     `assigned_driver_id = p_actor_id`) — TANPA perlu permission
+     `delivery.manage` sama sekali.
+   - Jadi dropdown UI di `orders/[id]/page.tsx:221-242` yang menampilkan
+     sales+driver itu **cuma daftar kandidat di UI**, bukan penjaga
+     keamanan — memfilter dropdown saja TIDAK menutup celah ini (bisa
+     kebobol lewat jalur lain: bug, API langsung, perubahan UI masa depan
+     yang lupa filter).
+   - Yang SUDAH benar & tidak perlu diubah: `delivery.manage` sudah
+     dibatasi ke `owner/manager/admin/super_admin` saja (`sales`/`driver`
+     tidak otomatis bisa bikin delivery sendiri); `payment.claim` memang
+     SENGAJA dipegang `sales` DAN `driver` sekaligus (dua model bisnis
+     valid, tidak perlu dipisah).
+   **Perbaikan yang benar (belum dieksekusi)**: tambah validasi role pada
+   `p_driver_id` di `create_delivery_atomic` (baris 104-110), digerakkan
+   oleh setting `delivery_model` per company (`sales_all_in` vs
+   `separated_driver`, lihat item #6 Super Admin panel) — bukan hanya
+   perbaikan dropdown UI, itu cuma lapisan kedua (UX), bukan pertahanan
+   utama. Role `driver` sendiri **sudah ada** di seed roles
+   (`super_admin, owner, manager, sales, admin, warehouse, finance,
+   driver`, `20260626000002_create_users_roles_permissions.sql:106-113`)
+   — tidak perlu role baru, cuma perlu penegakan yang benar.
+8. `[TEMUAN]` **Trail verifikasi terpadu — belum ada, mekanisme bukti
+   tercecer per modul.** (2026-09-09, refleksi CTO, disetujui Founder)
+   Saat ini audit log (`apps/web/src/lib/audit-log/`), Business Guard AI,
+   dan rencana GPS watermark (item #4) masing-masing berdiri sendiri —
+   tidak ada satu tempat yang menyatukan siapa-kapan-di mana-bukti apa
+   untuk satu kejadian (kunjungan, pengiriman, klaim pembayaran). **Tier 2
+   — jangan mulai sebelum item #4 & #7 (Tier 1) selesai**, supaya bentuk
+   trail ini dirancang dari pola nyata 2-3 fitur capture-bukti yang sudah
+   jalan, bukan ditebak di awal. Belum ada desain teknis sama sekali.
+9. `[TEMUAN]` **Bukti ROI dari data pemakaian Pak Waluyo — belum ada,
+   padahal murah & berdampak ke closing prospek.** (2026-09-09, refleksi
+   CTO, disetujui Founder) Business Guard AI sudah live di tenant Waluyo
+   beberapa minggu, tapi belum ada angka konkret yang diekstrak (mis.
+   "Rp X piutang macet terdeteksi lebih awal", "Y anomali diskon
+   tertangkap") untuk dipakai sebagai bukti closing ke SURABRADJA & prospek
+   warehouse-security — saat ini closing masih mengandalkan janji/narasi,
+   bukan data historis nyata. **Tier 1 — prioritas tinggi, effort kecil**:
+   query agregat dari tabel risk alert/business-guard yang sudah ada,
+   sajikan sebagai ringkasan yang bisa dipakai materi sales (perlu
+   persetujuan Pak Waluyo dulu kalau angka spesifiknya mau dipakai keluar,
+   sejalan kebijakan anonimisasi anchor case di sales-kit).
 
 ### Ditunda — menunggu keputusan Founder
 
@@ -327,6 +571,7 @@ debugging/verifikasi panjang dihapus — lihat catatan di kepala dokumen).
 
 | Tanggal | Gate / Commit | Ringkasan | Status |
 |---|---|---|---|
+| 2026-10-29 | `[REQUEST FOUNDER]` **Migrasi dev environment Windows → macOS** (belum dikomit) | Reinstall dependency darwin, normalisasi CRLF→LF + `.gitattributes`, audit baseline test/tsc; sisa Docker/Supabase CLI/login ada di Sedang Dikerjakan. | PARTIAL |
 | 2026-08-25 | `[REQUEST FOUNDER]` **Warehouse Intelligence -- dokumen rencana lengkap AI-first (dua arah: masuk + keluar)** | Founder minta rencana konkret supaya AI bisa menjaga bisnis Owner dari kehilangan barang, merujuk kasus "PO 300 dus, customer cuma terima 150 dus" yang sudah tercatat di modul spec lama. Lewat 4 putaran revisi (bahasa awam + cerita role play fraud -> workflow per-sesi dalam 1 dokumen -> AI-first/minim campur tangan manusia kecuali approval Owner -> cakupan barang MASUK dari supplier, bukan cuma KELUAR ke customer), plan final ditulis ulang total menggantikan stub 36-baris. **Filosofi inti**: AI menangkap data via kamera/sensor (bukan staf ketik manual yang rawan kolusi dua-orang), loop penuh Data->Pattern->Insight->Decision->Action, satu-satunya gate manusia wajib adalah approval Owner. **7 sesi**: Sesi 0 PO ke Supplier (subsistem baru total -- belum ada tabel supplier/vendor/inbound-PO di AODP hari ini) -> Sesi 1 Goods Receipt (kamera di titik bongkar, dibandingkan ke PO bukan surat jalan supplier) -> Sesi 2 Picking -> Sesi 3 Loading (kamera menutup celah kolusi Budi+Joko yang ada di desain form-manual) -> Sesi 4 Delivery/Terima Toko (existing, reuse Delivery Verification) -> Sesi 5 AI Insight & Owner approval -> Sesi 6 Stock Opname (jaring pengaman verifikasi kamera sendiri). Hardware: 3 titik kamera AI (Penerimaan/Picking/Loading) estimasi Rp6-14jt sekali beli + Rp1,5-6jt/bulan langganan video analytics, confidence CTO HIGH dengan kamera penuh / MEDIUM kalau mundur ke scan barcode manual. Insertion point teknis: `dispatch_delivery_atomic` (`20260823000001_delivery_audit_atomic.sql:146-208`) hard-code `dispatched_quantity = ordered_quantity` hari ini. Gate rilis WH-0 s/d WH-6 didaftar untuk referensi implementasi nanti. **Ini murni dokumen perencanaan, TIDAK ADA kode yang diubah** -- tetap `🔒 LOCKED` placeholder-only MVP per Constitution baris 245; mulai coding (Gate WH-0 dst.) butuh konfirmasi eksplisit terpisah dari Founder. | **Dokumen tersimpan, bukan implementasi.** `docs/product/modules/WAREHOUSE_INTELLIGENCE.md` (menggantikan stub lama). |
 | 2026-08-24 | `[REQUEST FOUNDER]` **Selesaikan Kunjungan: tambah Lapor Pembayaran Diterima untuk toko bayar cicil/lunas** (`f76a05a`) | Ditemukan Founder saat review susulan Gate P4.21 -- form "Catat Hasil Penagihan" yang diintegrasikan ke Selesaikan Kunjungan cuma nangani outcome NON-pembayaran (belum bayar/sengketa); kalau toko justru bayar (cicil/lunas) saat kunjungan, sales masih harus pindah ke menu Klaim Pembayaran terpisah -- tidak konsisten dengan prinsip "minimize but optimize" yang sudah dipakai sebelumnya. **Pendekatan**: reuse penuh `SubmitPaymentClaimForm` existing (bukan komponen baru, bukan RPC baru) -- tambah prop opsional `lockedCustomerId`: saat diisi, dropdown customer disembunyikan (toko kunjungan sudah pasti), default lama tidak berubah untuk pemakai existing (halaman Klaim Pembayaran mandiri tetap dropdown bebas). Form muncul di ATAS "Catat Hasil Penagihan" dengan kondisi sama (`visitPurpose=COLLECTION && visitResult=MET_STORE`), digate izin `payment.claim` (`canClaimPayment`, dihitung server-side di `sales-visits/page.tsx` sama pola `collection.record.field`). Sekarang alur kunjungan Penagihan menangani lengkap 3 skenario: bayar (form baru), belum bisa bayar/sengketa (form existing), atau tidak dicatat sama sekali (invoice kosong = form disembunyikan graceful, pola existing). **Diverifikasi browser end-to-end lokal**: kedua form tampil benar berurutan, customer terkunci ke toko kunjungan yang aktif (dikonfirmasi lewat label statis, bukan dropdown), submit sukses -- baris baru masuk `payment_claims` dengan `customer_id` yang benar, status `PENDING` menunggu review Finance (dikonfirmasi psql). Tidak ada perubahan pada RPC/server action existing sama sekali -- risiko regresi rendah. `tsc` bersih. **Di-push & deploy ke hosted 2026-08-24** (`f76a05a`) -- Vercel production READY, `/api/health` healthy. | **PASS — lokal (browser end-to-end + psql) + HOSTED DEPLOYED.** |
 | 2026-08-24 | `[REQUEST FOUNDER]` **Owner bisa reset password anggota tim sendiri** (`4052ddc`, migration `20261024000001`) | Founder tanya lokasi menu reset password di sisi Owner -- investigasi konfirmasi TIDAK ADA sama sekali: dari 3 mekanisme recovery yang ada (email magic-link legacy protected-WIP, Telegram self-service, super_admin platform-only DB reset dari Gate 3E-D2-A-R1), tidak satu pun memungkinkan Owner membantu anggota timnya sendiri yang lupa password dan belum/tidak bisa pairing Telegram. Diminta Founder langsung ("menu reset password all user") setelah dijelaskan gap-nya. **Pendekatan**: PERLUAS 3 RPC `super_admin_{begin,finalize,fail}_tenant_user_password_reset` yang sudah ada (migration `20260913000001`, teruji) -- BUKAN RPC baru, BUKAN tabel baru. Actor sekarang boleh `super_admin` (perilaku LAMA sama sekali tidak berubah, allowlist target tetap `{owner,admin,sales}` lintas-tenant) ATAU `owner` aktif (tier BARU: HANYA company sendiri, target role apa pun SELAIN owner/super_admin -- admin/manager/sales/driver/finance/warehouse). Cross-tenant oleh owner dikembalikan `target_not_found` (bukan `forbidden`) supaya tidak membocorkan keberadaan user tenant lain, konsisten pola cross-tenant RPC lain di project ini. UI: `ResetTenantUserPasswordButton` existing (sebelumnya platform-only) dipindah ke `components/users/` dan dipakai ulang di halaman Pengguna Owner (`/dashboard/users`) sebagai kolom baru, gated `isOwner`, disembunyikan untuk baris owner/super_admin/user nonaktif. **Diverifikasi**: 12 integration test baru/diperbarui (Postgres nyata) -- owner sukses reset admin/sales di company sendiri, ditolak lintas-tenant (`target_not_found`), ditolak target super_admin di company sendiri, alur penuh begin->auth update->finalize dengan audit `actor_tier=owner`, actor tanpa role owner/super_admin tetap ditolak (regresi). Test "owner vs owner" dihapus -- constraint `AODP_SINGLE_OWNER_VIOLATION` (Gate 3D-B1) membuat skenario itu mustahil dibuat sebagai fixture (maksimal 1 owner per company, sudah dikunci di level trigger); kode defense-in-depth `IF 'owner' = ANY(v_role_names)` tetap dipertahankan untuk jaga-jaga. 17 unit test workflow + 14 security contract test existing tetap PASS tanpa modifikasi apa pun. **Insiden pasca-deploy**: Founder reset password Salma (real user) di hosted, laporan awal "login lagi malah masuk form ganti password lagi" -- investigasi lewat `audit_logs` hosted membuktikan ini BUKAN bug (cuma 2 login tercatat, `mandatory_password_change_completed` sukses 136ms setelah login kedua, `must_change_password` sudah `false` -- kemungkinan cuma kedipan UI sesaat, bukan loop macet). `tsc` bersih. **Migration di-push ke hosted SEGERA** setelah lokal PASS -- Vercel production READY, `/api/health` healthy. | **PASS — lokal (12 integration test Postgres nyata) + HOSTED DEPLOYED + insiden pasca-deploy diinvestigasi via audit_logs (bukan bug).** |

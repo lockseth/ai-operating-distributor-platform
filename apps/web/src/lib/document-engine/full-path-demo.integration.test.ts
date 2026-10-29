@@ -29,7 +29,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdtempSync } from "fs";
+import { tmpdir } from "os";
 import path from "path";
 import { randomUUID } from "crypto";
 import { createElement } from "react";
@@ -101,8 +102,7 @@ function loadLogoDataUri(): string {
   return `data:image/png;base64,${bytes.toString("base64")}`;
 }
 
-const SCRATCHPAD_DIR =
-  "C:\\Users\\PC\\AppData\\Local\\Temp\\claude\\D--PROJECT-AI-Operating-Distributor-Platform\\048d86ef-a77f-482d-b9b5-6e147e5dcc7c\\scratchpad";
+const SCRATCHPAD_DIR = mkdtempSync(path.join(tmpdir(), "aodp-full-path-demo-"));
 
 /** 7 SKU kanonik "Pak Waluyo" -- sama dengan WALUYO_PRODUCTS di repository-adapter.test.ts, dipakai di sini lewat DB sungguhan (bukan fake reader). */
 const WALUYO_PRODUCTS = [
