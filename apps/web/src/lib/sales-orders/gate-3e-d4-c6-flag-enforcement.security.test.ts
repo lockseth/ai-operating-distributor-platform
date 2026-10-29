@@ -44,14 +44,14 @@ describe("Gate 3E-D4-C6 security contract", () => {
     expect(migration).toContain(
       "ALTER TABLE public.platform_feature_flags ENABLE ROW LEVEL SECURITY",
     );
-    const policyMatches = migration.match(/CREATE POLICY[^;]+;/gs) ?? [];
+    const policyMatches = migration.match(/CREATE POLICY[^;]+;/g) ?? [];
     expect(policyMatches.length).toBeGreaterThan(0);
     for (const policy of policyMatches) {
       expect(policy).toContain("super_admin");
     }
     // Tidak ada role lain (owner/admin/sales/manager) yang diberi akses langsung ke tabel ini.
     expect(migration).not.toMatch(
-      /CREATE POLICY[^;]*(owner|'sales'|'manager')[^;]*platform_feature_flags/is,
+      /CREATE POLICY[^;]*(owner|'sales'|'manager')[^;]*platform_feature_flags/i,
     );
   });
 

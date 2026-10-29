@@ -291,7 +291,7 @@ describeIfDb("Gate 3D-B2: provision_first_owner() atomic fail-closed owner provi
       .select("roles!inner(name)")
       .eq("user_id", user.id)
       .single();
-    expect((joined as { roles: { name: string } }).roles.name).toBe("owner");
+    expect((joined as unknown as { roles: { name: string } }).roles.name).toBe("owner");
   });
 
   it("9. Input invalid (company name kosong, full name kosong, phone terlalu panjang) GAGAL dengan zero partial rows", async () => {

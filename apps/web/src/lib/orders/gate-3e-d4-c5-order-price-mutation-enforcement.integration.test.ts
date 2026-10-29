@@ -98,7 +98,7 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     return productIds[key];
   }
 
-  async function callCreate(companyId: string, actorId: string, customerId: string, salesId: string, items: { product_id: string; quantity: number; unit_price: number; discount_amount: number; total_amount: number; notes: string | null }[]) {
+  async function callCreate(companyId: string, actorId: string, customerId: string, salesId: string, items: { product_id: string; quantity: number; unit_price: number; discount_amount: number; total_amount: number; notes?: string | null }[]) {
     const orderNumber = `SO-G3ED4C5-${runTag}-${orderIds.length}`;
     const { data, error } = await service.rpc("create_sales_order_atomic", {
       p_company_id: companyId, p_actor_id: actorId, p_order_number: orderNumber, p_customer_id: customerId,
@@ -110,7 +110,7 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     return row;
   }
 
-  async function callUpdate(companyId: string, actorId: string, orderId: string, customerId: string, salesId: string, items: { product_id: string; quantity: number; unit_price: number; discount_amount: number; total_amount: number; notes: string | null }[], discountAmount = 0) {
+  async function callUpdate(companyId: string, actorId: string, orderId: string, customerId: string, salesId: string, items: { product_id: string; quantity: number; unit_price: number; discount_amount: number; total_amount: number; notes?: string | null }[], discountAmount = 0) {
     const { data, error } = await service.rpc("update_sales_order_atomic", {
       p_company_id: companyId, p_actor_id: actorId, p_order_id: orderId, p_customer_id: customerId,
       p_sales_id: salesId, p_notes: null, p_delivery_date: null, p_discount_amount: discountAmount, p_items: items,
@@ -133,7 +133,7 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
       p_sales_order_id: orderId, p_items: items, p_reason: reason, p_idempotency_key: null,
     });
     if (error) throw new Error(`submit rpc error: ${error.message}`);
-    const row = (data as { approval_request_id: string | null }[])[0];
+    const row = (data as { approval_request_id: string | null; result_outcome: string }[])[0];
     if (row.approval_request_id) approvalRequestIds.push(row.approval_request_id);
     return row;
   }

@@ -141,7 +141,7 @@ memang sudah direncanakan.
 - [x] Unit test non-DB lulus (2075 pass); `tsc` production code bersih.
 - [x] Docker Desktop jalan + Supabase CLI 2.122.0 terpasang (brew). `supabase start` sukses (semua migration terapply), `pnpm seed:dev` sukses.
 - [x] Test penuh `vitest run`: **219/219 file, 2807 test PASS** (1 test hardcode path Windows `C:\\Users\\PC\\...` di `full-path-demo.integration.test.ts` diganti `mkdtemp(os.tmpdir())`).
-- [ ] 11 error `tsc` di 3 file test (`gate-3d-b2-...`, `gate-3e-d4-c5-...`, `gate-3e-d4-c6-...`): tipe stale/target ES<2018 pada regex flag — hanya file test, bukan production; belum dibandingkan dengan baseline Windows. Perbaiki (regenerate types / naikkan `target`).
+- [x] 11 error `tsc` di 3 file test diperbaiki (tipe `notes` opsional, cast `unknown`, regex flag `s` dibuang karena target ES2017) — `pnpm type-check` bersih, test terkait PASS.
 - [x] Vercel CLI dipasang & login (project `aodp-waluyo-demo`, deploy terakhir Ready); `supabase login` + `link` ke `mcbwgvtkhykrrtvbpeys` sukses — `migration list` Local==Remote (s/d `20261024000001`, tidak ada migration tertunda).
 - [ ] Verifikasi `.env.local` (root & `apps/web`) masih menunjuk Supabase lokal untuk dev; `.env.demo.local` / `.env.flowsales-cloud-backup.local` berisi kredensial — pastikan di-gitignore & jangan dikomit.
 - [ ] Commit perubahan yang tertunda (`.gitattributes`, TRACKER, WIP forgot-password) — menunggu keputusan Founder.
