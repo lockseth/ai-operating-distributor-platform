@@ -151,6 +151,14 @@ memang sudah direncanakan.
 
 **Status deploy Terbit Invoice (2026-10-29)**: kode sudah di-push ke `origin/main` (`446cf33`..`e56c4aa`, auto-deploy Vercel). Cek read-only hosted (`supabase db query --linked`): profil company tenant Waluyo (PT Sumber Warna Alam Sudiada, prefix `SWAS`) **lengkap** — tombol tidak akan ditolak `COMPANY_PROFILE_INCOMPLETE`. **Logo company di hosted masih kosong** (cetak invoice produksi tanpa logo) — menunggu izin Founder untuk unggah (ubah data produksi). Belum diuji di hosted: alur Telegram driver → order Terkirim → Terbitkan Invoice end-to-end. Item ditahan: WIP `forgot-password-form*` (RPC `begin_self_recovery_password_change` hanya di `migrations_archive/`) tidak ikut di-push — Backlog #14.
 
+**`[TEMUAN]` Hasil run UAT role-play lokal #1 (2026-10-29, `docs/development/UAT_ROLEPLAY_WALUYO.md`, skenario A1–A11 + F1)** — dijalankan Claude Code di lokal (Telegram A5–A6 DISIMULASIKAN via SQL). Alur sales→order→konfirmasi→invoice→klaim→approve Owner→invoice Lunas **berjalan**. Temuan belum diputuskan/diperbaiki:
+1. **[PENTING, produksi] Periode KPI hosted tenant Waluyo hanya Agustus 2026 (berakhir 31 Agu).** Tanpa periode ACTIVE yang mencakup hari ini, `complete_sales_visit` TIDAK mengkredit CALL/EC dan sales cuma melihat "CALL 0" tanpa peringatan. Kemungkinan sejak 1 Sep tidak ada Call/EC terhitung di produksi — perlu dicek & Owner buka periode Sep/Okt (+ target per salesman). Perlu keputusan: tambah peringatan di UI/Owner bila tidak ada periode aktif? (keputusan produk)
+2. **[PENTING, uang] Order menampilkan "Total Tagihan" termasuk PPN 11% (Rp377.400) tetapi invoice menagih tanpa PPN (Rp340.000).** `sales_orders.total_amount` = ex-PPN, `tax_amount` terpisah, `issue_invoice_atomic` memakai ex-PPN. Perlu keputusan Founder: apakah Waluyo menagih PPN? Bila ya, invoice/cetak harus memuatnya; bila tidak, hilangkan baris PPN di layar order.
+3. **Assign pengantar mewajibkan pengantar terdaftar Telegram** (`telegram_identities`); tidak ada jalur web untuk verifikasi delivery → order Terkirim. Bila sales Waluyo belum enroll Telegram, alur macet di sini.
+4. Status order tetap `invoiced` ("Ditagih") walau invoice sudah Lunas — sinkron ke `paid` memang belum dibangun (catatan lama migration). Daftar order menampilkan status menyesatkan.
+5. Prasyarat KPI per bulan: periode ACTIVE **dan** target per salesman; tanpa target, halaman KPI "Data belum cukup".
+6. Minor: kunjungan butuh GPS (di lokal harus dipalsukan); tombol "Batalkan"/"Batalkan Order" ganda di detail order; DB lokal berisi sisa data test integrasi (perusahaan `itest-*`).
+
 **Sisa pekerjaan produk yang belum selesai** (detail di Berikutnya/Ditunda):
 Bablast P4.13 (pairing nomor production + Founder nyalakan saklar, pagar
 `BABLAST_TEST_OVERRIDE_PHONE` masih aktif), fix penegakan role sales/driver
