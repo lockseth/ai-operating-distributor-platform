@@ -4,6 +4,9 @@ import { getAuthUser } from "@/lib/auth/get-user";
 import { getExecutiveOverview } from "@/lib/executive/service";
 import { getOwnerSalesKpiPerformance } from "@/lib/dashboard/owner-sales-kpi-performance";
 import { fetchOwnerDashboardData } from "@/lib/dashboard/owner-metrics";
+import { getKpiPeriodHealth } from "@/lib/sales-kpi/period-health";
+import { SalesKpiPeriodWarning } from "@/components/sales-kpi-period-warning";
+import { getAdminClient } from "@/lib/supabase/admin";
 import { BriefingCard } from "@/components/executive/briefing-card";
 import { ActionsCard } from "@/components/executive/actions-card";
 import { BusinessHealthCard } from "@/components/executive/business-health-card";
@@ -77,6 +80,8 @@ export default async function ExecutiveIntelligencePage() {
     redirect("/dashboard");
   }
 
+  const kpiPeriodHealth = await getKpiPeriodHealth(getAdminClient(), user.company_id);
+
   const [overview, salesKpiPerformance, data] = await Promise.all([
     getExecutiveOverview(user.company_id),
     getOwnerSalesKpiPerformance(user.company_id),
@@ -149,6 +154,8 @@ export default async function ExecutiveIntelligencePage() {
 
   return (
     <div className="p-6 space-y-6">
+
+      <SalesKpiPeriodWarning health={kpiPeriodHealth} audience="owner" />
 
       {/* ════════════════════════════════════════════════════ */}
       {/* HERO — sapaan + Business Health ring + aksi cepat    */}

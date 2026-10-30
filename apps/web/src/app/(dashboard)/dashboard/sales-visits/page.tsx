@@ -7,6 +7,8 @@ import { getOutstandingInvoices, type OutstandingInvoiceOption } from "@/lib/fin
 import { PageHeader } from "@/components/ui/page-header";
 import { SalesVisitWorkspace } from "@/components/sales-visits/sales-visit-workspace";
 import { getSalesVisitDataAction } from "@/lib/sales-visits/actions";
+import { getKpiPeriodHealth } from "@/lib/sales-kpi/period-health";
+import { SalesKpiPeriodWarning } from "@/components/sales-kpi-period-warning";
 
 export const metadata = { title: "Kunjungan Sales — AODP" };
 
@@ -27,6 +29,7 @@ export default async function SalesVisitsPage() {
   const customers = ((customerRows ?? []) as { id: string; name: string; address: string | null }[]);
 
   const visitData = await getSalesVisitDataAction();
+  const kpiPeriodHealth = await getKpiPeriodHealth(getAdminClient(), user.company_id);
 
   // Gate P4.21 follow-up: kunjungan bertujuan Penagihan yang berhasil ketemu
   // toko bisa langsung lanjut catat hasil penagihan ATAU lapor pembayaran
@@ -51,6 +54,7 @@ export default async function SalesVisitsPage() {
         title="Kunjungan Sales"
         subtitle="Catat kunjungan ke toko dan dapatkan achievement CALL & Effective Call secara otomatis"
       />
+      <SalesKpiPeriodWarning health={kpiPeriodHealth} audience="sales" />
       <SalesVisitWorkspace
         customers={customers}
         initialActiveVisit={visitData.ok ? visitData.activeVisit ?? null : null}
