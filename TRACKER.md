@@ -62,7 +62,7 @@ penuh karena masih operasional.
 
 | | |
 |---|---|
-| Tanggal update terakhir | 2026-10-29 |
+| Tanggal update terakhir | 2026-10-30 |
 | Lingkungan dev | **Dipindah dari Windows ke macOS (2026-10-29).** `node_modules` sudah diinstal ulang untuk darwin, line ending dinormalkan ke LF (`.gitattributes`). Sisa checklist migrasi: lihat [Sedang Dikerjakan](#sedang-dikerjakan). |
 | Branch | `main` |
 | HEAD | `f76a05a` — **sinkron penuh dengan `origin/main`** (0 ahead/behind). **Owner bisa reset password anggota tim sendiri** (`4052ddc`, migration `20261024000001`) — perluasan tier RPC reset password existing (super_admin lintas-tenant tidak berubah + owner company sendiri, target selain owner/super_admin), kolom baru di halaman Pengguna. **Alur Selesaikan Kunjungan sekarang lengkap 3 skenario** (`f76a05a`): Lapor Pembayaran Diterima (toko bayar cicil/lunas) + Catat Hasil Penagihan (belum bayar/sengketa) tampil sekaligus untuk kunjungan Penagihan yang berhasil ketemu toko — reuse komponen existing, tanpa RPC baru. **Fix bug produksi (2026-08-24, ditemukan Founder real user)**: kunjungan sales KEDUA ke toko yang sama pada hari yang sama gagal total ("Gagal menyelesaikan kunjungan.") karena `unique_violation` (`uq_sales_calls_one_per_day`) tidak ditangkap `complete_sales_visit()` — sekarang graceful (outcome `completed_duplicate_call`), migration `20261023000001`. **Gate P4.21 (sales/driver bisa catat hasil kunjungan penagihan non-pembayaran) SELESAI & DEPLOYED**: permission baru `collection.record.field`, RPC `record_collection_activity` otorisasi dua-tier, form di halaman Klaim Pembayaran sales — DAN diintegrasikan langsung ke form Selesaikan Kunjungan di halaman Kunjungan Sales (muncul otomatis untuk kunjungan Penagihan yang berhasil ketemu toko). Migration `20261022000001`. Sebelumnya: upload Bukti Pembayaran sungguhan (`090d342`), Gate P4.20 (anti-spam dedup + push proaktif 6 fitur Business Guard), Gate P4.19 (Suspicious Call Timing), Gate P4.18 (Unremitted Collection Risk) — ketiganya fraud protection audit, semua DEPLOYED. Fase 2 "Lock Toko Tertunggak" (P4.16) & Churn Prediction gate (P4.17) juga DEPLOYED. `BABLAST_DRY_RUN=false` aktif, pagar `BABLAST_TEST_OVERRIDE_PHONE` **masih aktif** (keputusan Founder eksplisit — belum diminta dilepas). |
@@ -163,6 +163,16 @@ memang sudah direncanakan.
 7. **[PENTING, alur bisnis] Pengiriman SEBAGIAN tidak bisa ditagih sama sekali.** Order baru jadi `delivered` bila total diterima ≥ dipesan; `issue_invoice_atomic` menolak bila received ≠ quantity (`INCOMPLETE_DELIVERY_COVERAGE`) dan menolak multi-delivery. Toko tolak 4 dari 10 dus → order mandek "Dikirim", 6 dus terkirim tak bisa ditagih (panel menampilkan "Invoice eligible Rp204.000" tapi tak ada jalannya; tombol "Tandai Terkirim" pun akhirnya ditolak RPC). Perlu keputusan produk: izinkan invoice parsial (tagih qty diterima) / wajib retur-batal dulu.
 8. Invoice yang jatuh tempo dihitung dari `payment_terms_days` order; tanpa termin invoice "tanpa jatuh tempo" → tidak pernah kena overdue/lock toko (P4.16) maupun Rencana Penagihan. Pastikan sales mengisi termin.
 9. Positif: dialog persetujuan harga/batal/retur/klaim menampilkan pratinjau dampak yang jelas; daftar tagihan di form klaim otomatis menyaring invoice lunas/void.
+
+**`[REQUEST FOUNDER]` Pertanyaan untuk Pak Waluyo — DITAHAN sampai WhatsApp Pak Waluyo aktif (2026-10-30)**. Diajukan satu per satu oleh Founder (Founder yang "recall" saat siap); jawaban dicatat di sini lalu menjadi dasar keputusan produk. Urutan (dari paling menghambat):
+1. **Pengiriman tanpa Telegram** — siapa yang mengantar (sales/kurir), lewat apa melapor (web di HP / WhatsApp / input admin di kantor), bukti apa (foto, tanda tangan, lokasi). *Menghambat seluruh alur: tanpa ini invoice tidak bisa terbit.* (Temuan #3)
+2. **Pengiriman sebagian/ditolak** — toko bayar yang diterima saja? barang ditolak dibawa pulang atau dikirim ulang? satu atau dua invoice? seberapa sering? siapa berwenang menutup pengiriman sebagian? (Temuan #7)
+3. **Tempo pembayaran** — semua toko bertempo? berapa hari? siapa mengisi tempo saat order dibuat? (Temuan #8)
+4. **KPI** — siapa menyiapkan periode & target tiap bulan; target berubah tiap bulan?; hitung ulang kunjungan Sep–Okt yang tak terkredit? (Temuan #1, #5)
+5. **Status order setelah lunas** — otomatis jadi "Lunas"? (Temuan #4)
+6. **Logo & cetak** — isi logo di hosted agar sama dengan hasil cetak PC; hasil cetak 3 rangkap sudah sesuai?
+Sudah diputuskan (tidak perlu ditanya): pajak = ikuti template terkunci (invoice tanpa PPN), kertas = 3 ply, tanpa Telegram (web + WhatsApp).
+Terbuka untuk Founder: samakan layar order (hapus baris PPN/Total Tagihan ber-PPN) dengan invoice? Rancangan invoice parsial menunggu jawaban #2.
 
 **Sisa pekerjaan produk yang belum selesai** (detail di Berikutnya/Ditunda):
 Bablast P4.13 (pairing nomor production + Founder nyalakan saklar, pagar
