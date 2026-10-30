@@ -30,11 +30,8 @@ export function AssignDriverForm({ salesOrderId, drivers }: AssignDriverFormProp
           <h2 className="text-sm font-semibold text-gray-900">Delivery Verification</h2>
         </div>
         <p className="text-xs text-gray-500">
-          Belum ada user ber-role driver atau sales di tenant ini. Setelah dipilih di sini,
-          user tersebut tetap wajib terdaftar di Telegram (
-          <code className="mx-1 rounded bg-gray-100 px-1 py-0.5">telegram_identities</code>
-          ) sebelum tugas pengiriman dapat dikirim — lihat dokumentasi Telegram Sales Order
-          Entry.
+          Belum ada user ber-role driver atau sales di tenant ini. Tambahkan pengguna dulu di
+          menu Pengguna agar bisa ditugaskan mengantar.
         </p>
       </div>
     );
@@ -63,7 +60,7 @@ export function AssignDriverForm({ salesOrderId, drivers }: AssignDriverFormProp
         <h2 className="text-sm font-semibold text-gray-900">Delivery Verification</h2>
       </div>
       <p className="text-xs text-gray-500 mb-3">
-        Order sudah confirmed. Assign driver untuk mengirim tugas pengiriman via Telegram.
+        Order sudah confirmed. Tugaskan pengantar; tugas muncul di menu Pengiriman pada HP pengantar.
       </p>
       <div className="flex items-center gap-2">
         <select
