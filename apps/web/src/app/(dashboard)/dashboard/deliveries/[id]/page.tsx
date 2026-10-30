@@ -6,6 +6,7 @@ import { getAdminClient } from "@/lib/supabase/admin";
 import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
 import { canOperateDelivery, nextDeliveryStep } from "@/lib/delivery/web-rules";
 import { DeliveryTaskActions } from "@/components/delivery/delivery-task-actions";
+import { DeliveryResultWizard } from "@/components/delivery/delivery-result-wizard";
 import { PageHeader } from "@/components/ui/page-header";
 
 export const metadata = { title: "Detail Pengiriman — AODP" };
@@ -60,7 +61,14 @@ export default async function DeliveryDetailPage({ params }: { params: Promise<{
       </div>
 
       {mine ? (
-        <DeliveryTaskActions deliveryId={delivery.id} step={nextDeliveryStep(delivery.status)} />
+        nextDeliveryStep(delivery.status) === "record_result" ? (
+          <DeliveryResultWizard
+            deliveryId={delivery.id}
+            items={delivery.items.map((i) => ({ id: i.id, productName: i.productName, unit: i.unit, dispatchedQuantity: i.dispatchedQuantity }))}
+          />
+        ) : (
+          <DeliveryTaskActions deliveryId={delivery.id} step={nextDeliveryStep(delivery.status)} />
+        )
       ) : (
         <p className="text-xs text-gray-500">Hanya pengantar yang ditugaskan yang dapat mengerjakan pengiriman ini.</p>
       )}

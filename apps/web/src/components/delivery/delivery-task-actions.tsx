@@ -97,11 +97,6 @@ export function DeliveryTaskActions({ deliveryId, step }: { deliveryId: string; 
           )}
         </>
       )}
-      {step === "record_result" && (
-        <p className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm text-gray-600">
-          Sudah tiba di toko. Pencatatan hasil pengiriman (diterima/ditolak, foto, tanda tangan) tersedia di pembaruan berikutnya.
-        </p>
-      )}
       {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
     </div>
   );
