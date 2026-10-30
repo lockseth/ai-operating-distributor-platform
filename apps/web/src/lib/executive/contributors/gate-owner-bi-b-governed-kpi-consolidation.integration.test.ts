@@ -157,7 +157,7 @@ describeIfDb("flowsalesContributor -- konsolidasi 5 KPI governed di Owner Dashbo
     orderId = randomUUID();
     await service.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, final_amount: 900_000,
+      sales_id: salesAuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, total_amount: 900_000, final_amount: 900_000,
     });
     await service.rpc("link_sales_order_call", {
       p_company_id: companyId, p_actor_id: salesAuthId, p_order_id: orderId, p_call_id: callId,
@@ -190,7 +190,7 @@ describeIfDb("flowsalesContributor -- konsolidasi 5 KPI governed di Owner Dashbo
     const orderBId = randomUUID();
     await service.from("sales_orders").insert({
       id: orderBId, company_id: companyBId, order_number: `SO-B-${runTag}`, customer_id: customerBId,
-      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 40_000_000,
+      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 40_000_000, final_amount: 40_000_000,
     });
     await service.from("sales_orders").update({ status: "confirmed" }).eq("id", orderBId).eq("status", "draft");
   }, 60000);

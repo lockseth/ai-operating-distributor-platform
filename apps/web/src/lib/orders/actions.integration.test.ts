@@ -170,8 +170,8 @@ describeIfDb("Order lifecycle atomic RPCs (DB-backed, Postgres nyata)", () => {
     const row = orderRow as { total_amount: number; discount_amount: number; tax_amount: number; final_amount: number };
     expect(Number(row.total_amount)).toBe(20000);
     expect(Number(row.discount_amount)).toBe(1000);
-    expect(Number(row.tax_amount)).toBe(Math.round((20000 - 1000) * 0.11 * 100) / 100);
-    expect(Number(row.final_amount)).toBe(20000 - 1000 + Number(row.tax_amount));
+    expect(Number(row.tax_amount)).toBe(0); // kebijakan tanpa PPN (20261025000001)
+    expect(Number(row.final_amount)).toBe(20000 - 1000);
 
     const { data: auditRow } = await supabase.from("audit_logs")
       .select("actor_type, event_category, module, source, outcome, action")

@@ -158,7 +158,7 @@ describeIfDb("Gate 3E-D0-F3 -- ORDER_COUNT/REVENUE crediting & reversal (DB-back
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-okpi-1`, customer_id: customerId,
       sales_id: salesAuthId, status: "draft", order_source: "CUSTOMER_WHATSAPP", source_channel: "telegram",
-      is_historical: false, final_amount: 1_250_000,
+      is_historical: false, total_amount: 1_250_000, final_amount: 1_250_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
     // retry (mensimulasikan retry webhook Telegram/update_id ganda) -- no-op transition
@@ -188,7 +188,7 @@ describeIfDb("Gate 3E-D0-F3 -- ORDER_COUNT/REVENUE crediting & reversal (DB-back
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-okpi-2`, customer_id: customerId,
       sales_id: salesAuthId, status: "draft", order_source: "CUSTOMER_PHONE", is_historical: false,
-      final_amount: 800_000,
+      total_amount: 800_000, final_amount: 800_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
     await supabase.from("sales_orders").update({ status: "cancelled" }).eq("id", orderId);

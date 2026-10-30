@@ -125,7 +125,7 @@ describeIfDb("flowsalesContributor -- governed REVENUE di Business Health (Gate 
     const orderId = randomUUID();
     await service.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 900_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 900_000, final_amount: 900_000,
     });
     await service.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
 

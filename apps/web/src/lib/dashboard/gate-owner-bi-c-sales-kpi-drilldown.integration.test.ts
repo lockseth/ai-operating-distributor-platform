@@ -175,7 +175,7 @@ describeIfDb("getOwnerSalesKpiPerformance -- drill-down governed per salesperson
     const order1Id = randomUUID();
     await service.from("sales_orders").insert({
       id: order1Id, company_id: companyId, order_number: `SO1-${runTag}`, customer_id: customer1Id,
-      sales_id: sales1AuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, final_amount: 900_000,
+      sales_id: sales1AuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, total_amount: 900_000, final_amount: 900_000,
     });
     await service.rpc("link_sales_order_call", {
       p_company_id: companyId, p_actor_id: sales1AuthId, p_order_id: order1Id, p_call_id: call1Id,
@@ -194,7 +194,7 @@ describeIfDb("getOwnerSalesKpiPerformance -- drill-down governed per salesperson
     const order2Id = randomUUID();
     await service.from("sales_orders").insert({
       id: order2Id, company_id: companyId, order_number: `SO2-${runTag}`, customer_id: customer2Id,
-      sales_id: sales2AuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, final_amount: 2_500_000,
+      sales_id: sales2AuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false, total_amount: 2_500_000, final_amount: 2_500_000,
     });
     await service.rpc("link_sales_order_call", {
       p_company_id: companyId, p_actor_id: sales2AuthId, p_order_id: order2Id, p_call_id: call2Id,
@@ -226,7 +226,7 @@ describeIfDb("getOwnerSalesKpiPerformance -- drill-down governed per salesperson
     const orderBId = randomUUID();
     await service.from("sales_orders").insert({
       id: orderBId, company_id: companyBId, order_number: `SO-B-${runTag}`, customer_id: customerBId,
-      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 40_000_000,
+      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 40_000_000, final_amount: 40_000_000,
     });
     await service.from("sales_orders").update({ status: "confirmed" }).eq("id", orderBId).eq("status", "draft");
 

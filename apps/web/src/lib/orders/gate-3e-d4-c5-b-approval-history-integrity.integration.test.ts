@@ -453,6 +453,6 @@ describeIfDb("Gate 3E-D4-C5-B: approval-history integrity corrective closeout (D
 
     const { data: order } = await service.from("sales_orders").select("status, final_amount").eq("id", orderId).single();
     expect((order as { status: string }).status).toBe("draft");
-    expect(Number((order as { final_amount: number }).final_amount)).toBeCloseTo(4 * 7500 * 1.11, 1);
+    expect(Number((order as { final_amount: number }).final_amount)).toBeCloseTo(4 * 7500, 1);
   });
 });

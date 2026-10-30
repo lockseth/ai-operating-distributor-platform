@@ -173,19 +173,19 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const draftOrderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: draftOrderId, company_id: companyId, order_number: `SO-${runTag}-noo-draft`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 700_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 700_000, final_amount: 700_000,
     });
 
     const pendingOrderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: pendingOrderId, company_id: companyId, order_number: `SO-${runTag}-noo-pending`, customer_id: customerId,
-      sales_id: salesAuthId, status: "pending_owner_approval", order_source: "OTHER", is_historical: false, final_amount: 700_000,
+      sales_id: salesAuthId, status: "pending_owner_approval", order_source: "OTHER", is_historical: false, total_amount: 700_000, final_amount: 700_000,
     });
 
     const rejectedOrderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: rejectedOrderId, company_id: companyId, order_number: `SO-${runTag}-noo-rejected`, customer_id: customerId,
-      sales_id: salesAuthId, status: "rejected", order_source: "OTHER", is_historical: false, final_amount: 700_000,
+      sales_id: salesAuthId, status: "rejected", order_source: "OTHER", is_historical: false, total_amount: 700_000, final_amount: 700_000,
     });
 
     const { data: events } = await supabase
@@ -207,7 +207,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const order1Id = randomUUID();
     await supabase.from("sales_orders").insert({
       id: order1Id, company_id: companyId, order_number: `SO-${runTag}-noo-first`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 1_000_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 1_000_000, final_amount: 1_000_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order1Id).eq("status", "draft");
     // retry (mensimulasikan retry webhook/update_id ganda) -- no-op transition
@@ -230,7 +230,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const order2Id = randomUUID();
     await supabase.from("sales_orders").insert({
       id: order2Id, company_id: companyId, order_number: `SO-${runTag}-noo-second`, customer_id: customerId,
-      sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 500_000,
+      sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 500_000, final_amount: 500_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order2Id).eq("status", "draft");
 
@@ -256,7 +256,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-noo-cust2`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 900_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 900_000, final_amount: 900_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
 
@@ -279,7 +279,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const legacyOrderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: legacyOrderId, company_id: companyId, order_number: `SO-${runTag}-noo-legacy`, customer_id: customerId,
-      sales_id: salesAuthId, status: "confirmed", order_source: "OTHER", is_historical: true, final_amount: 2_000_000,
+      sales_id: salesAuthId, status: "confirmed", order_source: "OTHER", is_historical: true, total_amount: 2_000_000, final_amount: 2_000_000,
     });
 
     // Legacy order sendiri tidak mengkredit NOO.
@@ -296,7 +296,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const newOrderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: newOrderId, company_id: companyId, order_number: `SO-${runTag}-noo-post-legacy`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 300_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 300_000, final_amount: 300_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", newOrderId).eq("status", "draft");
 
@@ -318,7 +318,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-noo-orphan`, customer_id: customerId,
-      sales_id: null, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 400_000,
+      sales_id: null, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 400_000, final_amount: 400_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
 
@@ -342,11 +342,11 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     await supabase.from("sales_orders").insert([
       {
         id: orderAId, company_id: companyId, order_number: `SO-${runTag}-noo-race-a`, customer_id: customerId,
-        sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 600_000,
+        sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 600_000, final_amount: 600_000,
       },
       {
         id: orderBId, company_id: companyId, order_number: `SO-${runTag}-noo-race-b`, customer_id: customerId,
-        sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 600_000,
+        sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 600_000, final_amount: 600_000,
       },
     ]);
 
@@ -377,7 +377,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const order1Id = randomUUID();
     await supabase.from("sales_orders").insert({
       id: order1Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-1`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 800_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 800_000, final_amount: 800_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order1Id).eq("status", "draft");
 
@@ -419,7 +419,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const order2Id = randomUUID();
     await supabase.from("sales_orders").insert({
       id: order2Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-2`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 450_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 450_000, final_amount: 450_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order2Id).eq("status", "draft");
 
@@ -439,7 +439,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const order3Id = randomUUID();
     await supabase.from("sales_orders").insert({
       id: order3Id, company_id: companyId, order_number: `SO-${runTag}-noo-rev-3`, customer_id: customerId,
-      sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 250_000,
+      sales_id: salesOtherAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 250_000, final_amount: 250_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", order3Id).eq("status", "draft");
 
@@ -459,7 +459,7 @@ describeIfDb("Gate 3E-D5-A -- NOO crediting (DB-backed, Postgres nyata)", () => 
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyBId, order_number: `SO-${runTag}-noo-tenantB`, customer_id: customerBId,
-      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 1_500_000,
+      sales_id: salesBAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 1_500_000, final_amount: 1_500_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
 

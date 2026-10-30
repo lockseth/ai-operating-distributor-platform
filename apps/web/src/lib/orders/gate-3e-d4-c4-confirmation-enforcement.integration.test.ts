@@ -259,12 +259,12 @@ describeIfDb("Gate 3E-D4-C4: confirm_sales_order_atomic() enforcement (DB-backed
     const { data: order } = await service.from("sales_orders").select("status, final_amount").eq("id", orderId).single();
     expect((order as { status: string }).status).toBe("confirmed");
     // Gate 3E-D4-C5: final_amount SEKARANG direkomputasi server-side saat
-    // confirm (200.000 subtotal + 11% tax = 222.000) -- dibaca SETELAH
+    // confirm (200.000 subtotal, tanpa PPN = 200.000) -- dibaca SETELAH
     // confirm (bukan dari fixture pra-confirm yang tidak pernah menghitung
     // tax) supaya test membuktikan invariant sesungguhnya: REVENUE KPI harus
     // sama dengan final_amount order yang BENAR-BENAR terkonfirmasi.
     const finalAmount = Number((order as { final_amount: number }).final_amount);
-    expect(finalAmount).toBe(222000);
+    expect(finalAmount).toBe(200000); // tanpa PPN (20261025000001)
 
     expect(await kpiCreditedCount(orderId, "ORDER_COUNT")).toBe(1);
     expect(await kpiCreditedCount(orderId, "REVENUE")).toBe(1);

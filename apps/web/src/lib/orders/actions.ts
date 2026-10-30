@@ -75,8 +75,9 @@ async function generateOrderNumber(companyId: string): Promise<string> {
 function calcTotals(items: OrderItemInput[], orderDiscount: number) {
   const total_amount    = items.reduce((s, i) => s + i.total_amount, 0);
   const discount_amount = orderDiscount;
-  const tax_amount      = Math.round((total_amount - discount_amount) * 0.11);
-  const final_amount    = total_amount - discount_amount + tax_amount;
+  // Kebijakan tanpa PPN (Founder 2026-10-30; migration 20261025000001 menegakkan hal sama di DB).
+  const tax_amount      = 0;
+  const final_amount    = total_amount - discount_amount;
   return { total_amount, discount_amount, tax_amount, final_amount };
 }
 

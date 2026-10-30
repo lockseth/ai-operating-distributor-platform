@@ -106,8 +106,8 @@ export function OrderForm({
 
   const subtotal        = items.reduce((s, i) => s + i.total_amount, 0);
   const clampedDiscount = Math.min(orderDiscount, subtotal);
-  const tax             = Math.round((subtotal - clampedDiscount) * 0.11);
-  const grand           = Math.max(0, subtotal - clampedDiscount + tax);
+  // Tanpa PPN (Founder 2026-10-30) -- sama dengan invoice.
+  const grand           = Math.max(0, subtotal - clampedDiscount);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -396,10 +396,6 @@ export function OrderForm({
               Diskon dikurangi otomatis ke {formatIDR(subtotal)} (maks. subtotal)
             </p>
           )}
-          <div className="flex justify-between">
-            <span className="text-gray-600">PPN 11%</span>
-            <span className="font-medium">{formatIDR(tax)}</span>
-          </div>
           <div className="flex justify-between border-t border-gray-100 pt-2 text-base">
             <span className="font-semibold text-gray-900">Total Tagihan</span>
             <span className="font-bold text-blue-700">{formatIDR(grand)}</span>

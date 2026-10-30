@@ -524,7 +524,7 @@ describeIfDb("Gate 3E-D5-B -- Kunjungan Sales CALL/EC crediting (DB-backed, Post
     const orderId = randomUUID();
     await supabase.from("sales_orders").insert({
       id: orderId, company_id: companyId, order_number: `SO-${runTag}-visit-regress`, customer_id: customerId,
-      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, final_amount: 1_234_000,
+      sales_id: salesAuthId, status: "draft", order_source: "OTHER", is_historical: false, total_amount: 1_234_000, final_amount: 1_234_000,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", orderId).eq("status", "draft");
 
@@ -570,7 +570,7 @@ describeIfDb("Gate 3E-D5-B -- Kunjungan Sales CALL/EC crediting (DB-backed, Post
     await supabase.from("sales_orders").insert({
       id: legacyOrderId, company_id: companyId, order_number: `SO-${runTag}-legacy-ec`, customer_id: customerId,
       sales_id: salesAuthId, status: "draft", order_source: "FIELD_VISIT", is_historical: false,
-      final_amount: 500_000, call_id: legacyCallId,
+      total_amount: 500_000, final_amount: 500_000, call_id: legacyCallId,
     });
     await supabase.from("sales_orders").update({ status: "confirmed" }).eq("id", legacyOrderId).eq("status", "draft");
 

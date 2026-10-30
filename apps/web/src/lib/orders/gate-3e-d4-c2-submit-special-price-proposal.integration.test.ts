@@ -272,8 +272,8 @@ describeIfDb("Gate 3E-D4-C2: submit_special_price_proposal_atomic() (DB-backed, 
     const o = order as { status: string; total_amount: number; tax_amount: number; final_amount: number; discount_amount: number };
     expect(o.status).toBe("pending_owner_approval");
     expect(Number(o.total_amount)).toBe(80000); // 10 x 8000
-    expect(Number(o.tax_amount)).toBe(Math.round((80000 - Number(o.discount_amount)) * 0.11 * 100) / 100);
-    expect(Number(o.final_amount)).toBe(80000 - Number(o.discount_amount) + Number(o.tax_amount));
+    expect(Number(o.tax_amount)).toBe(0); // kebijakan tanpa PPN (20261025000001)
+    expect(Number(o.final_amount)).toBe(80000 - Number(o.discount_amount));
 
     const { data: item } = await service.from("sales_order_items").select("unit_price, total_amount").eq("id", itemIds[0]).single();
     expect(Number((item as { unit_price: number }).unit_price)).toBe(8000);

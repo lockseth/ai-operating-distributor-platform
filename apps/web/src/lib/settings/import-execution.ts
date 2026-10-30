@@ -403,7 +403,7 @@ async function importSalesOrders(
     // Compute order totals
     const subtotal   = items.reduce((s, i) => s + i.total_amount, 0);
     const orderDisc  = parseFloatSafe(f.discount_amount ?? "0");
-    const tax        = (subtotal - (isNaN(orderDisc) ? 0 : orderDisc)) * 0.11;
+    const tax        = 0; // tanpa PPN (Founder 2026-10-30)
     const finalAmt   = subtotal - (isNaN(orderDisc) ? 0 : orderDisc) + tax;
 
     // Resolve optional sales_id

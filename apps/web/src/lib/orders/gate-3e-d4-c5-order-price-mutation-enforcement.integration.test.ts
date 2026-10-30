@@ -209,12 +209,12 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
 
     const { data: order } = await service.from("sales_orders").select("total_amount, final_amount").eq("id", created.result_order_id).single();
     expect(Number((order as { total_amount: number }).total_amount)).toBe(1000000);
-    expect(Number((order as { final_amount: number }).final_amount)).toBe(1110000); // + 11% tax
+    expect(Number((order as { final_amount: number }).final_amount)).toBe(1000000); // tanpa PPN (20261025000001)
 
     // Jalur harga normal yang sah tetap bekerja sampai confirm + KPI benar.
     const confirmRow = await callConfirm(companyA, authIds.ownerA, created.result_order_id);
     expect(confirmRow.result_outcome).toBe("confirmed");
-    expect(await kpiRevenueValue(created.result_order_id)).toBe(1110000);
+    expect(await kpiRevenueValue(created.result_order_id)).toBe(1000000);
   });
 
   it("2. update_sales_order_atomic (draft) mengabaikan total_amount fabrikasi dari client -- direkomputasi server-side", async () => {
@@ -233,7 +233,7 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     expect((item as { id?: string }).id).not.toBe((itemBefore as { id: string }).id); // update draft = delete+insert ulang (existing behavior, tidak berubah)
 
     const { data: order } = await service.from("sales_orders").select("final_amount").eq("id", created.result_order_id).single();
-    expect(Number((order as { final_amount: number }).final_amount)).toBe(555000); // 500.000 + 11%
+    expect(Number((order as { final_amount: number }).final_amount)).toBe(500000); // tanpa PPN
   });
 
   it("3. confirm_sales_order_atomic merekomputasi total/tax/final dari sales_order_items SAAT confirm, kebal terhadap direct DML pada sales_orders (order draft milik sendiri)", async () => {
@@ -261,8 +261,8 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     const { data: order } = await service.from("sales_orders").select("final_amount").eq("id", created.result_order_id).single();
     // Gate 3E-D4-C5: confirm merekomputasi dari item truth -- nilai DML
     // tertampering TIDAK bertahan.
-    expect(Number((order as { final_amount: number }).final_amount)).toBe(222000); // 200.000 + 11%
-    expect(await kpiRevenueValue(created.result_order_id)).toBe(222000);
+    expect(Number((order as { final_amount: number }).final_amount)).toBe(200000); // tanpa PPN
+    expect(await kpiRevenueValue(created.result_order_id)).toBe(200000);
   });
 
   it("4. confirm_sales_order_atomic merekomputasi dari raw quantity/unit_price/discount_amount -- bukan kolom total_amount item yang di-DML langsung", async () => {
@@ -279,7 +279,7 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     expect(confirmRow.result_outcome).toBe("confirmed");
 
     const { data: order } = await service.from("sales_orders").select("final_amount").eq("id", created.result_order_id).single();
-    expect(Number((order as { final_amount: number }).final_amount)).toBe(333000); // 300.000 + 11%, item total_amount yang di-DML diabaikan
+    expect(Number((order as { final_amount: number }).final_amount)).toBe(300000); // tanpa PPN, item total_amount yang di-DML diabaikan
   });
 
   it("5. Approved special-price proposal: confirm tetap merekomputasi total/final dari proposed price yang disetujui (no regression terhadap Gate 3E-D4-C2/C3/C4)", async () => {
@@ -297,9 +297,9 @@ describeIfDb("Gate 3E-D4-C5: order price mutation enforcement (DB-backed, Postgr
     expect(confirmRow.result_outcome).toBe("confirmed");
 
     const { data: order } = await service.from("sales_orders").select("final_amount").eq("id", created.result_order_id).single();
-    // 2 x 40.000 = 80.000 subtotal + 11% tax = 88.800 -- persis snapshot yang disetujui.
-    expect(Number((order as { final_amount: number }).final_amount)).toBe(88800);
-    expect(await kpiRevenueValue(created.result_order_id)).toBe(88800);
+    // 2 x 40.000 = 80.000 subtotal, tanpa PPN -- persis snapshot yang disetujui.
+    expect(Number((order as { final_amount: number }).final_amount)).toBe(80000);
+    expect(await kpiRevenueValue(created.result_order_id)).toBe(80000);
   });
 
   it("6. Cross-tenant: create/update/confirm company A tidak pernah membaca/menghitung item company B", async () => {

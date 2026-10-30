@@ -364,10 +364,13 @@ export default async function OrderDetailPage({
           <p className="text-xs text-gray-500 mb-1">Diskon</p>
           <p className="text-base font-bold text-gray-900">{formatIDR(order.discount_amount)}</p>
         </div>
-        <div className="rounded-xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-gray-500 mb-1">PPN 11%</p>
-          <p className="text-base font-bold text-gray-900">{formatIDR(order.tax_amount)}</p>
-        </div>
+        {order.tax_amount > 0 && (
+          // Hanya order lama (sebelum kebijakan tanpa PPN 2026-10-30) yang masih punya PPN tersimpan.
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <p className="text-xs text-gray-500 mb-1">PPN 11% (order lama)</p>
+            <p className="text-base font-bold text-gray-900">{formatIDR(order.tax_amount)}</p>
+          </div>
+        )}
         <div className="rounded-xl border bg-blue-50 p-4 shadow-sm">
           <p className="text-xs text-blue-600 mb-1">Total Tagihan</p>
           <p className="text-base font-bold text-blue-700">{formatIDR(order.final_amount)}</p>
