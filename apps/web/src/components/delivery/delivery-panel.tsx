@@ -1,6 +1,7 @@
 import { Truck, MapPin, FileSignature, Camera, Mic, Clock } from "lucide-react";
 import type { DeliveryStatus, DeliveryItemRecord, DeliveryExceptionRecord, DeliveryEvidenceRecord } from "@/lib/delivery/types";
 import type { InvoiceEligibility } from "@/lib/delivery/types";
+import { isTerminalStatus } from "@/lib/delivery/types";
 
 function formatIDR(n: number) {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(n);
@@ -53,6 +54,8 @@ interface DeliveryPanelProps {
   items: DeliveryItemRecord[];
   exceptions: DeliveryExceptionRecord[];
   evidence: DeliveryEvidenceRecord[];
+  /** evidenceId -> signed URL (foto/tanda tangan bucket delivery-evidence). */
+  evidenceUrls?: Record<string, string>;
   recipient: { recipientName: string; isExpectedPic: boolean } | null;
   events: DeliveryEventRow[];
   invoiceEligibility: InvoiceEligibility;
@@ -65,6 +68,7 @@ export function DeliveryPanel({
   items,
   exceptions,
   evidence,
+  evidenceUrls = {},
   recipient,
   events,
   invoiceEligibility,
@@ -152,7 +156,7 @@ export function DeliveryPanel({
       )}
 
       {/* Recipient + evidence */}
-      {(recipient || evidence.length > 0) && (
+      {(recipient || evidence.length > 0 || isTerminalStatus(status)) && (
         <div className="px-5 py-3 border-t border-gray-100 flex flex-wrap items-center gap-3 text-xs text-gray-600">
           {recipient && (
             <span>
@@ -161,13 +165,32 @@ export function DeliveryPanel({
             </span>
           )}
           {evidence.length > 0 && (
-            <span className="flex items-center gap-2">
+            <span className="flex flex-wrap items-center gap-2">
               Bukti:
               {evidence.map((e) => {
+                const url = evidenceUrls[e.id];
+                if (url) {
+                  return (
+                    <a key={e.id} href={url} target="_blank" rel="noreferrer" title={e.evidenceType === "signature" ? "Tanda tangan penerima" : "Foto bukti"}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt={e.evidenceType === "signature" ? "Tanda tangan penerima" : "Foto bukti pengiriman"} className="h-14 w-14 rounded-lg border border-gray-200 bg-white object-cover" />
+                    </a>
+                  );
+                }
+                if (e.evidenceType === "location" && e.latitude != null && e.longitude != null) {
+                  return (
+                    <a key={e.id} href={`https://www.google.com/maps?q=${e.latitude},${e.longitude}`} target="_blank" rel="noreferrer" className="font-medium text-blue-600 underline">
+                      Lihat lokasi
+                    </a>
+                  );
+                }
                 const Icon = EVIDENCE_ICON[e.evidenceType] ?? Camera;
                 return <Icon key={e.id} className="h-3.5 w-3.5 text-gray-400" aria-label={e.evidenceType} />;
               })}
             </span>
+          )}
+          {isTerminalStatus(status) && !evidence.some((e) => e.evidenceType === "location") && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Tanpa lokasi</span>
           )}
         </div>
       )}

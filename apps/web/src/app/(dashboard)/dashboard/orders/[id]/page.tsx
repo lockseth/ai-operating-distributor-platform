@@ -10,6 +10,7 @@ import { AssignDriverForm } from "@/components/delivery/assign-driver-form";
 import { DeliveryPanel } from "@/components/delivery/delivery-panel";
 import { IssueInvoiceButton } from "@/components/finance/issue-invoice-button";
 import { SupabaseDeliveryRepository } from "@/lib/delivery/repository";
+import { resolveDeliveryEvidenceUrls } from "@/lib/delivery/evidence-urls";
 import { computeInvoiceEligibility } from "@/lib/delivery/service";
 import { getAdminClient } from "@/lib/supabase/admin";
 import type { OrderStatus } from "@/lib/orders/actions";
@@ -121,6 +122,11 @@ export default async function OrderDetailPage({
     .limit(1)
     .maybeSingle();
   const invoice = invoiceRow as { id: string; invoice_number: string | null } | null;
+
+  const evidenceUrls =
+    delivery && hasPermission(user.permissions, "delivery.view")
+      ? await resolveDeliveryEvidenceUrls(getAdminClient(), user.company_id, delivery.evidence)
+      : {};
 
   let deliveryEvents: { eventType: string; toStatus: string | null; createdAt: string }[] = [];
   let ownerAlertStatus: "pending" | "sent" | "failed" | null = null;
@@ -434,6 +440,7 @@ export default async function OrderDetailPage({
           items={delivery.items}
           exceptions={delivery.exceptions}
           evidence={delivery.evidence}
+          evidenceUrls={evidenceUrls}
           recipient={delivery.recipient}
           events={deliveryEvents}
           invoiceEligibility={computeInvoiceEligibility(delivery)}
