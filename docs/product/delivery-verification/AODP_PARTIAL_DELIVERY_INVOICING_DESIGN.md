@@ -1,6 +1,6 @@
 # Rancangan — Pengiriman Sebagian, Kirim Ulang, dan Retur
 
-Status: **USULAN, menunggu persetujuan Founder** (2026-10-30). Belum ada kode.
+Status: **DISETUJUI Founder 2026-10-30** (3 keputusan di bawah menjadi final: admin/owner saja yang boleh menutup; KPI Revenue dikurangi nilai yang tidak ditagih; irisan 1 = K2+K4, irisan 2 = K3). Belum ada kode.
 Menutup temuan UAT #7 (TRACKER): pengiriman sebagian tidak bisa ditagih.
 Rujukan: `AODP_DELIVERY_VERIFICATION_WEB_DESIGN.md`, `AODP_ORDER_TO_CASH_WORKFLOW.md`.
 
