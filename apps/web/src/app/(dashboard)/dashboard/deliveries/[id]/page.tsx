@@ -60,7 +60,19 @@ export default async function DeliveryDetailPage({ params }: { params: Promise<{
         </ul>
       </div>
 
-      {mine ? (
+      {!mine && canManage && ["planned", "dispatched", "arrived"].includes(delivery.status) ? (
+        <div className="space-y-3">
+          <p className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+            Input kantor: isi hasil dari faktur bertanda tangan toko. Foto faktur wajib dan input ini tercatat sebagai
+            &quot;Diinput admin&quot;.
+          </p>
+          <DeliveryResultWizard
+            asAdmin
+            deliveryId={delivery.id}
+            items={delivery.items.map((i) => ({ id: i.id, productName: i.productName, unit: i.unit, dispatchedQuantity: i.dispatchedQuantity }))}
+          />
+        </div>
+      ) : mine ? (
         nextDeliveryStep(delivery.status) === "record_result" ? (
           <DeliveryResultWizard
             deliveryId={delivery.id}

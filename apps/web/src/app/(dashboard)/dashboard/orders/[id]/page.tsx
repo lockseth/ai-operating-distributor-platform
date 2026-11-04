@@ -445,6 +445,7 @@ export default async function OrderDetailPage({
           events={deliveryEvents}
           invoiceEligibility={computeInvoiceEligibility(delivery)}
           ownerAlertStatus={ownerAlertStatus}
+          adminInputDeliveryId={canManageDelivery ? delivery.id : undefined}
         />
       ) : (
         order.status === "confirmed" && canManageDelivery && (

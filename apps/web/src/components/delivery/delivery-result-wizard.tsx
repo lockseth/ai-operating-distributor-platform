@@ -121,7 +121,8 @@ function SignaturePad({ onChange }: { onChange: (blob: Blob | null) => void }) {
   );
 }
 
-export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string; items: WizardItem[] }) {
+/** asAdmin = Admin/Faktur menginput dari faktur bertanda tangan (foto faktur wajib, tanpa tanda tangan layar/GPS). */
+export function DeliveryResultWizard({ deliveryId, items, asAdmin = false }: { deliveryId: string; items: WizardItem[]; asAdmin?: boolean }) {
   const router = useRouter();
   const [outcome, setOutcome] = useState<DeliveryOutcome | null>(null);
   const [received, setReceived] = useState<Record<string, string>>({});
@@ -134,13 +135,14 @@ export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string
   const [isPending, startTransition] = useTransition();
 
   const needsRecipient = outcome === "full" || outcome === "partial";
-  const needsSignature = needsRecipient;
-  const needsPhoto = outcome !== "failed";
+  const needsSignature = needsRecipient && !asAdmin;
+  const needsPhoto = asAdmin || outcome !== "failed";
   const reasons = outcome ? REASONS_BY_OUTCOME[outcome] : undefined;
 
   async function upload(file: File | Blob, name: string): Promise<string> {
     const fd = new FormData();
     fd.set("deliveryId", deliveryId);
+    if (asAdmin) fd.set("asAdmin", "1");
     fd.set("file", file instanceof File ? file : new File([file], name, { type: file.type || "image/png" }));
     const res = await uploadDeliveryEvidenceAction(fd);
     if (!res.ok || !res.path) throw new Error(res.error ?? "Gagal mengunggah bukti.");
@@ -152,7 +154,7 @@ export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string
     setError(null);
     startTransition(async () => {
       try {
-        const fix = await getPosition();
+        const fix = asAdmin ? null : await getPosition();
         const photoPaths: string[] = [];
         for (const f of photos) photoPaths.push(await upload(await shrinkPhoto(f), "foto.jpg"));
         const signaturePath = needsSignature && signature ? await upload(signature, "ttd.png") : null;
@@ -169,6 +171,7 @@ export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string
           photoPaths,
           signaturePath,
           fix,
+          asAdmin,
         });
         if (!result.ok) {
           setError(result.error ?? "Gagal mengirim hasil.");
@@ -244,9 +247,9 @@ export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string
 
       {outcome && needsPhoto && (
         <div className="text-sm">
-          <span className="mb-1 block font-semibold text-gray-900">Foto bukti {photos.length > 0 && `(${photos.length})`}</span>
+          <span className="mb-1 block font-semibold text-gray-900">{asAdmin ? "Foto faktur bertanda tangan toko" : "Foto bukti"} {photos.length > 0 && `(${photos.length})`}</span>
           <input
-            type="file" accept="image/*" capture="environment" multiple
+            type="file" accept="image/*" {...(asAdmin ? {} : { capture: "environment" as const })} multiple
             onChange={(e) => setPhotos(Array.from(e.target.files ?? []))}
             className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-blue-600 file:px-4 file:py-3 file:font-semibold file:text-white"
           />
@@ -260,7 +263,7 @@ export function DeliveryResultWizard({ deliveryId, items }: { deliveryId: string
         </div>
       )}
 
-      {outcome === "store_closed" && (
+      {outcome === "store_closed" && !asAdmin && (
         <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
           Toko tutup wajib disertai lokasi. Izinkan akses lokasi di browser saat menekan Kirim.
         </p>

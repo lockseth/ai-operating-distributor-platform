@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Truck, MapPin, FileSignature, Camera, Mic, Clock } from "lucide-react";
 import type { DeliveryStatus, DeliveryItemRecord, DeliveryExceptionRecord, DeliveryEvidenceRecord } from "@/lib/delivery/types";
 import type { InvoiceEligibility } from "@/lib/delivery/types";
@@ -60,6 +61,8 @@ interface DeliveryPanelProps {
   events: DeliveryEventRow[];
   invoiceEligibility: InvoiceEligibility;
   ownerAlertStatus: "pending" | "sent" | "failed" | null;
+  /** Bila diisi (admin/owner), tampilkan tautan input hasil dari faktur untuk pengiriman yang belum selesai. */
+  adminInputDeliveryId?: string;
 }
 
 export function DeliveryPanel({
@@ -73,7 +76,9 @@ export function DeliveryPanel({
   events,
   invoiceEligibility,
   ownerAlertStatus,
+  adminInputDeliveryId,
 }: DeliveryPanelProps) {
+  const inputByAdmin = evidence.some((e) => e.metadata?.source === "admin_input");
   return (
     <div className="rounded-xl border bg-white shadow-sm overflow-hidden">
       <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100 flex-wrap">
@@ -83,6 +88,9 @@ export function DeliveryPanel({
         <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLOR[status]}`}>
           {STATUS_LABEL[status]}
         </span>
+        {inputByAdmin && (
+          <span className="rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-700">Diinput admin</span>
+        )}
         {ownerAlertStatus && (
           <span
             className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
@@ -189,9 +197,18 @@ export function DeliveryPanel({
               })}
             </span>
           )}
-          {isTerminalStatus(status) && !evidence.some((e) => e.evidenceType === "location") && (
+          {isTerminalStatus(status) && !inputByAdmin && !evidence.some((e) => e.evidenceType === "location") && (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">Tanpa lokasi</span>
           )}
+        </div>
+      )}
+
+      {adminInputDeliveryId && !isTerminalStatus(status) && (
+        <div className="px-5 py-3 border-t border-gray-100">
+          <Link href={`/dashboard/deliveries/${adminInputDeliveryId}`} className="text-sm font-semibold text-blue-600 underline">
+            Input Hasil dari Faktur
+          </Link>
+          <p className="mt-0.5 text-xs text-gray-500">Isi hasil dari faktur bertanda tangan toko (foto faktur wajib).</p>
         </div>
       )}
 

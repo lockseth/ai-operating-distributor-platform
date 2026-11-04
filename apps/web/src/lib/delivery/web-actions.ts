@@ -11,6 +11,7 @@
 import { revalidatePath } from "next/cache";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { getAuthUser } from "@/lib/auth/get-user";
+import { hasPermission } from "@/lib/auth/permissions";
 import { SupabaseDeliveryRepository } from "./repository";
 import {
   buildArrivalLocationEvidence,
@@ -36,14 +37,23 @@ export interface DeliveryStepResult {
   error?: string;
 }
 
-async function loadOperableDelivery(deliveryId: string) {
+/**
+ * asAdmin = jalur input kantor (Admin/Faktur memasukkan hasil dari faktur bertanda tangan,
+ * alur nyata Waluyo). Butuh izin delivery.manage; tidak harus pengantar yang ditugaskan.
+ * Rancangan: docs/product/delivery-verification/AODP_DELIVERY_ADMIN_INPUT_DESIGN.md
+ */
+async function loadOperableDelivery(deliveryId: string, asAdmin = false) {
   const user = await getAuthUser();
   const repository = new SupabaseDeliveryRepository(getAdminClient());
   const delivery = await repository.getDelivery(deliveryId);
   if (!delivery || delivery.companyId !== user.company_id) {
     return { error: "Pengiriman tidak ditemukan." as const };
   }
-  if (!canOperateDelivery(user.id, delivery)) {
+  if (asAdmin) {
+    if (!hasPermission(user.permissions, "delivery.manage")) {
+      return { error: "Tidak punya akses untuk menginput hasil pengiriman." as const };
+    }
+  } else if (!canOperateDelivery(user.id, delivery)) {
     return { error: "Pengiriman ini bukan tugas Anda." as const };
   }
   return { user, repository, delivery };
@@ -124,6 +134,7 @@ const EVIDENCE_MIME: Record<string, string> = {
   "image/webp": "webp",
   "image/heic": "heic",
 };
+const ADMIN_INPUT_STATUSES: string[] = ["planned", "dispatched", "arrived"];
 const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024; // sinkron file_size_limit bucket
 
 export interface UploadDeliveryEvidenceResult {
@@ -134,11 +145,14 @@ export interface UploadDeliveryEvidenceResult {
 
 export async function uploadDeliveryEvidenceAction(formData: FormData): Promise<UploadDeliveryEvidenceResult> {
   const deliveryId = String(formData.get("deliveryId") ?? "");
-  const ctx = await loadOperableDelivery(deliveryId);
+  const asAdmin = formData.get("asAdmin") === "1";
+  const ctx = await loadOperableDelivery(deliveryId, asAdmin);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const { user, delivery } = ctx;
 
-  if (delivery.status !== "arrived") return { ok: false, error: "Tandai sudah tiba dulu sebelum mengunggah bukti." };
+  if (asAdmin ? !ADMIN_INPUT_STATUSES.includes(delivery.status) : delivery.status !== "arrived") {
+    return { ok: false, error: asAdmin ? "Pengiriman ini sudah selesai." : "Tandai sudah tiba dulu sebelum mengunggah bukti." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "File tidak valid." };
@@ -172,19 +186,23 @@ export interface SubmitDeliveryResultInput {
   signaturePath: string | null;
   /** Lokasi saat mengirim hasil (dipakai bila saat tiba lokasi tidak tersedia, mis. toko tutup). */
   fix: GeoFix | null;
+  /** Jalur input admin dari faktur bertanda tangan (foto faktur wajib, tanda tangan layar tidak). */
+  asAdmin?: boolean;
 }
 
 const VALID_OUTCOMES: DeliveryOutcome[] = ["full", "partial", "rejected", "store_closed", "failed"];
 
 export async function submitDeliveryResultAction(input: SubmitDeliveryResultInput): Promise<DeliveryStepResult> {
-  const ctx = await loadOperableDelivery(input.deliveryId);
+  const asAdmin = input.asAdmin === true;
+  const source = asAdmin ? "admin_input" : "web";
+  const ctx = await loadOperableDelivery(input.deliveryId, asAdmin);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const { user, repository, delivery } = ctx;
 
   if (!VALID_OUTCOMES.includes(input.outcome)) return { ok: false, error: "Hasil pengiriman tidak valid." };
-  if (delivery.status !== "arrived") {
-    const done = delivery.status !== "planned" && delivery.status !== "dispatched";
-    return done ? { ok: true } : { ok: false, error: "Tandai sudah tiba dulu sebelum mengirim hasil." };
+  if (!ADMIN_INPUT_STATUSES.includes(delivery.status)) return { ok: true }; // sudah final (idempoten)
+  if (!asAdmin && delivery.status !== "arrived") {
+    return { ok: false, error: "Tandai sudah tiba dulu sebelum mengirim hasil." };
   }
 
   const outcome = input.outcome;
@@ -209,8 +227,13 @@ export async function submitDeliveryResultAction(input: SubmitDeliveryResultInpu
   const evidenceTypes: EvidenceType[] = [];
   if (input.photoPaths.length > 0) evidenceTypes.push("photo");
   if (input.signaturePath) evidenceTypes.push("signature");
+  // Jalur admin: tanda tangan toko ada di faktur kertas (difoto), bukan di layar -- foto faktur wajib untuk SEMUA hasil.
+  if (asAdmin) {
+    if (input.photoPaths.length === 0) return { ok: false, error: "Belum lengkap: foto faktur bertanda tangan." };
+    if (!evidenceTypes.includes("signature")) evidenceTypes.push("signature");
+  }
 
-  const check = validateEvidence({ outcome, evidenceTypes, hasRecipient: !!recipientName, hasLocation, reasonCode });
+  const check = validateEvidence({ outcome, evidenceTypes, hasRecipient: !!recipientName, hasLocation: hasLocation || asAdmin, reasonCode });
   if (!check.valid) {
     const label: Record<string, string> = { photo: "foto", signature: "tanda tangan", recipient: "nama penerima", reason_code: "alasan", location: "lokasi" };
     return { ok: false, error: `Belum lengkap: ${check.missing.map((m) => label[m] ?? m).join(", ")}.` };
@@ -223,10 +246,10 @@ export async function submitDeliveryResultAction(input: SubmitDeliveryResultInpu
   }
   const fixFields = isValidGeoFix(input.fix) ? { latitude: input.fix.latitude, longitude: input.fix.longitude } : {};
   for (const path of input.photoPaths) {
-    await repository.insertEvidence(user.company_id, delivery.id, { evidenceType: "photo", storageRef: path, metadata: { source: "web" }, ...fixFields }, user.id);
+    await repository.insertEvidence(user.company_id, delivery.id, { evidenceType: "photo", storageRef: path, metadata: { source }, ...fixFields }, user.id);
   }
   if (input.signaturePath) {
-    await repository.insertEvidence(user.company_id, delivery.id, { evidenceType: "signature", storageRef: input.signaturePath, metadata: { source: "web" } }, user.id);
+    await repository.insertEvidence(user.company_id, delivery.id, { evidenceType: "signature", storageRef: input.signaturePath, metadata: { source } }, user.id);
   }
 
   // Severity & penerima (DV-05) -- sama persis dengan handleFinalConfirmation.
@@ -267,14 +290,14 @@ export async function submitDeliveryResultAction(input: SubmitDeliveryResultInpu
   if (!alreadyFinalized && requiresRecipient && recipientName && isExpectedPic === false) {
     await repository.insertEvent({
       companyId: user.company_id, deliveryId: delivery.id, eventType: "recipient_changed", fromStatus: null, toStatus: null,
-      actorId: user.id, telegramUpdateEventId: null, payload: { previousRecipient, newRecipient: recipientName, source: "web" },
+      actorId: user.id, telegramUpdateEventId: null, payload: { previousRecipient, newRecipient: recipientName, source },
     });
   }
 
   const finalized = (await repository.getDelivery(delivery.id)) ?? delivery;
   await repository.insertEvent({
     companyId: user.company_id, deliveryId: delivery.id, eventType: "finalized", fromStatus: delivery.status, toStatus: finalStatus,
-    actorId: user.id, telegramUpdateEventId: null, payload: { outcome, source: "web", locationMissing: !hasLocation },
+    actorId: user.id, telegramUpdateEventId: null, payload: { outcome, source, locationMissing: !hasLocation, ...(asAdmin ? { inputByAdmin: user.id } : {}) },
   });
 
   if (!alreadyFinalized) {
