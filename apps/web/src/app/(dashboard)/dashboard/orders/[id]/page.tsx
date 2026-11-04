@@ -19,6 +19,7 @@ import { DisputeReviewPanel, type DisputeRequestView } from "@/components/order-
 import type { ContactSource, OrderStage, Resolution } from "@/lib/order-disputes/types";
 import { SpecialPriceProposalPanel, type ExistingSpecialPriceProposal } from "@/components/orders/special-price-proposal-panel";
 import { hasRole } from "@/lib/auth/permissions";
+import { INVOICE_APPROVER_ROLES } from "@/lib/finance/invoice-approval";
 import {
   ChevronLeft, Edit2, Plus, ShoppingCart, User, Calendar,
   Package, FileText,
@@ -114,6 +115,15 @@ export default async function OrderDetailPage({
 
   // --- Invoice (tahap 6): terbit manual lewat tombol, oleh role dengan invoice.issue ---
   const canIssueInvoice = hasPermission(user.permissions, "invoice.issue");
+  const isInvoiceApprover = hasRole(user.roles, INVOICE_APPROVER_ROLES);
+  const { data: pendingApprovalRows } = await getAdminClient()
+    .from("invoice_issue_approvals")
+    .select("id")
+    .eq("company_id", user.company_id)
+    .eq("sales_order_id", id)
+    .eq("status", "pending")
+    .limit(1);
+  const pendingInvoiceApproval = (pendingApprovalRows ?? []).length > 0;
   const { data: invoiceRow } = await supabase
     .from("invoices")
     .select("id, invoice_number")
@@ -469,6 +479,7 @@ export default async function OrderDetailPage({
         </div>
       ) : (
         order.status === "delivered" && canIssueInvoice && (
+          <>
           <div className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4">
             <div>
               <p className="text-sm font-semibold text-gray-900">Invoice</p>
@@ -476,6 +487,13 @@ export default async function OrderDetailPage({
             </div>
             <IssueInvoiceButton orderId={order.id} />
           </div>
+          {pendingInvoiceApproval && (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              Menunggu persetujuan Owner (nilai melebihi batas klasifikasi customer).
+              {isInvoiceApprover && <> <Link href="/dashboard/finance/invoice-approvals" className="font-semibold underline">Buka daftar persetujuan</Link></>}
+            </p>
+          )}
+          </>
         )
       )}
 

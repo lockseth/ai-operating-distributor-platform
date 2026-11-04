@@ -85,8 +85,8 @@ export function CustomerClassManager({ rows }: { rows: ClassRow[] }) {
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} placeholder="mis. Grosir" /></label>
           <label className="block text-sm"><span className="mb-1 block font-medium text-gray-900">Tempo bayar (hari)</span>
             <input type="number" min={1} value={terms} onChange={(e) => setTerms(e.target.value)} className={inputCls} placeholder="Kosongkan untuk tunai" /></label>
-          <label className="block text-sm"><span className="mb-1 block font-medium text-gray-900">Ambang persetujuan Owner (Rp, opsional)</span>
-            <input type="number" min={0} value={threshold} onChange={(e) => setThreshold(e.target.value)} className={inputCls} placeholder="Dipakai di tahap berikutnya" /></label>
+          <label className="block text-sm"><span className="mb-1 block font-medium text-gray-900">Ambang persetujuan Owner untuk invoice (Rp, opsional)</span>
+            <input type="number" min={0} value={threshold} onChange={(e) => setThreshold(e.target.value)} className={inputCls} placeholder="Kosong = tanpa persetujuan" /></label>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} /> Aktif</label>
           {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
           <div className="flex gap-2">

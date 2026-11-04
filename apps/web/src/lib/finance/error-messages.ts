@@ -82,6 +82,7 @@ export const FINANCE_ERROR_MESSAGES: Record<string, string> = {
   INVALID_ORDER_STATE: "Invoice hanya bisa diterbitkan untuk order yang sudah berstatus Terkirim.",
   COMPANY_PROFILE_INCOMPLETE: "Profil perusahaan belum lengkap (alamat legal, email, telepon, atau prefix nomor dokumen). Hubungi admin platform untuk melengkapinya.",
   ORDER_CUSTOMER_REQUIRED: "Order ini belum memiliki pelanggan, invoice tidak dapat diterbitkan.",
+  INVOICE_APPROVAL_REQUIRED: "Invoice bernilai besar ini butuh persetujuan Owner dulu.",
   ORDER_ALREADY_INVOICED: "Order ini sudah memiliki invoice. Muat ulang halaman.",
   NO_BILLABLE_LINES: "Tidak ada barang yang diterima pada pengiriman ini, tidak ada yang bisa ditagih.",
   MULTI_DELIVERY_INVOICING_NOT_SUPPORTED: "Order ini dikirim lebih dari satu kali; penerbitan invoice untuk kasus ini belum didukung.",

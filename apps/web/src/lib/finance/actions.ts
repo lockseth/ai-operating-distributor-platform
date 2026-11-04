@@ -15,7 +15,9 @@
 
 import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
+import { decideInvoiceApproval, INVOICE_APPROVER_ROLES } from "@/lib/finance/invoice-approval";
+import { formatIDR } from "@/lib/sales-orders/normalize";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { mapFinanceRpcError } from "@/lib/finance/error-messages";
 
@@ -660,6 +662,54 @@ export async function issueInvoiceAction(orderId: string): Promise<IssueInvoiceR
   }
 
   const admin = getAdminClient();
+
+  // K-2: invoice bernilai besar butuh persetujuan Owner (ambang per klasifikasi customer).
+  // Penegakan sesungguhnya di DB (trigger); ini memberi alur & pesan yang jelas.
+  const { data: orderRow } = await admin
+    .from("sales_orders")
+    .select("final_amount, customer:customers!customer_id(class:customer_classes!class_id(name, approval_threshold_amount))")
+    .eq("id", orderId)
+    .eq("company_id", user.company_id)
+    .maybeSingle();
+  const orderInfo = orderRow as unknown as {
+    final_amount: number;
+    customer: { class: { name: string; approval_threshold_amount: number | null } | null } | null;
+  } | null;
+  const threshold = orderInfo?.customer?.class?.approval_threshold_amount ?? null;
+  if (orderInfo && threshold !== null) {
+    const amount = Number(orderInfo.final_amount);
+    const { data: approved } = await admin
+      .from("invoice_issue_approvals")
+      .select("id")
+      .eq("company_id", user.company_id)
+      .eq("sales_order_id", orderId)
+      .eq("status", "approved")
+      .limit(1);
+    const decision = decideInvoiceApproval({
+      amount,
+      threshold,
+      alreadyApproved: (approved ?? []).length > 0,
+      isOwner: hasRole(user.roles, INVOICE_APPROVER_ROLES),
+    });
+    if (decision === "owner_self_approve") {
+      await admin.from("invoice_issue_approvals").insert({
+        company_id: user.company_id, sales_order_id: orderId, amount, threshold_amount: threshold,
+        status: "approved", requested_by: user.id, decided_by: user.id, decided_at: new Date().toISOString(),
+        decision_note: "Owner menerbitkan langsung",
+      });
+    } else if (decision === "request") {
+      // Permintaan pending unik per order (indeks parsial); duplikat diabaikan.
+      await admin.from("invoice_issue_approvals").insert({
+        company_id: user.company_id, sales_order_id: orderId, amount, threshold_amount: threshold, requested_by: user.id,
+      });
+      revalidatePath(`/dashboard/orders/${orderId}`);
+      return {
+        ok: false,
+        message: `Nilai ${formatIDR(amount)} melebihi batas ${formatIDR(threshold)} untuk klasifikasi ${orderInfo.customer?.class?.name ?? ""}. Menunggu persetujuan Owner sebelum invoice bisa diterbitkan.`,
+      };
+    }
+  }
+
   const { data, error } = await admin.rpc("issue_invoice_atomic", {
     p_company_id: user.company_id,
     p_actor_id: user.id,
@@ -672,4 +722,37 @@ export async function issueInvoiceAction(orderId: string): Promise<IssueInvoiceR
   revalidatePath("/dashboard/finance/invoices");
   revalidateFinanceQueue();
   return { ok: true, invoiceId: (data as Array<{ out_invoice_id: string }>)[0].out_invoice_id };
+}
+
+// ---------------------------------------------------------------------------
+// K-2: Owner menyetujui/menolak permintaan penerbitan invoice bernilai besar.
+// ---------------------------------------------------------------------------
+
+export async function decideInvoiceApprovalAction(
+  approvalId: string,
+  decision: "approved" | "rejected",
+  note: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const user = await getAuthUser();
+  if (!hasRole(user.roles, INVOICE_APPROVER_ROLES)) {
+    return { ok: false, error: "Hanya Owner yang dapat menyetujui penerbitan invoice." };
+  }
+  const trimmed = note.trim();
+  if (decision === "rejected" && trimmed.length < 3) return { ok: false, error: "Alasan penolakan wajib diisi." };
+
+  const admin = getAdminClient();
+  const { data, error } = await admin
+    .from("invoice_issue_approvals")
+    .update({ status: decision, decided_by: user.id, decided_at: new Date().toISOString(), decision_note: trimmed || null })
+    .eq("id", approvalId)
+    .eq("company_id", user.company_id)
+    .eq("status", "pending")
+    .select("sales_order_id");
+  if (error) return { ok: false, error: "Gagal menyimpan keputusan." };
+  const row = (data ?? [])[0] as { sales_order_id: string } | undefined;
+  if (!row) return { ok: false, error: "Permintaan tidak ditemukan atau sudah diputuskan." };
+
+  revalidatePath("/dashboard/finance/invoice-approvals");
+  revalidatePath(`/dashboard/orders/${row.sales_order_id}`);
+  return { ok: true };
 }
