@@ -1,6 +1,6 @@
 # Rancangan — Hasil Pengiriman Diinput Admin dari Faktur Bertanda Tangan
 
-Status: **USULAN, dikerjakan atas "oke jalankan" Founder 2026-11-04** (prinsip & 3 syarat disetujui; detail di bawah menunggu cek Founder sebelum kode).
+Status: **DISETUJUI Founder 2026-11-04** (jalur input admin + 3 lapis pagar anti-kolusi di bagian "Pagar tambahan").
 Dasar: jawaban Pak Waluyo no. 1 (TRACKER, Pertanyaan untuk Pak Waluyo).
 Rujukan, jangan disalin: `AODP_DELIVERY_VERIFICATION_WEB_DESIGN.md`, `AODP_PARTIAL_DELIVERY_INVOICING_DESIGN.md`.
 
@@ -39,6 +39,19 @@ Jalur HP pengantar (S1–S3) tetap ada sebagai pilihan, tidak diubah.
 5. **UI**: pada panel pengiriman detail order, tombol **"Input Hasil dari Faktur"** untuk admin/owner,
    membuka formulir (hasil, jumlah per barang, penerima, alasan, unggah foto faktur).
    Pengantar yang ditugaskan tetap bisa memakai jalur HP sendiri.
+
+## Pagar tambahan anti-kolusi admin–sales (disetujui Founder 2026-11-04)
+
+Risiko sisa: admin dan sales memegang semua saksi (kertas). Perlu saksi dari luar lingkaran mereka.
+Urutan kerja (3 → 2 → 1):
+
+3. **Audit acak mingguan Owner** (prioritas fraud #5): sistem memilih sampel acak pengiriman
+   (prioritas: diinput admin, tanpa lokasi, selisih) → Owner telepon toko → hasil dicatat.
+2. **Dua mata nilai besar**: pengiriman bernilai di atas ambang yang ditetapkan Owner tidak bisa
+   ditagih sebelum Owner menyetujui. Ambang dikonfigurasi Owner (nilai awal diusulkan Rp5 juta, perlu konfirmasi).
+1. **Konfirmasi toko via WhatsApp** (saksi independen): setelah input, toko menerima ringkasan
+   barang + nilai dan membalas YA; yang belum terkonfirmasi ditandai di dashboard Owner.
+   Menunggu WhatsApp Pak Waluyo aktif + nomor toko tercatat.
 
 ## Risiko & pagar
 
