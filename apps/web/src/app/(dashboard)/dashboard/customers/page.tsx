@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
+import { CLASS_MANAGER_ROLES } from "@/lib/customers/classification";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -293,6 +294,11 @@ export default async function CustomersPage({
         title="Manajemen Pelanggan"
         subtitle="Kelola data reseller dan pelanggan bisnis"
       >
+        {hasRole(user.roles, CLASS_MANAGER_ROLES) && (
+          <Link href="/dashboard/customers/classes" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">
+            Klasifikasi
+          </Link>
+        )}
         {canCreate && (
           <Link
             href="/dashboard/customers/new"

@@ -3,6 +3,8 @@ import Link from "next/link";
 import { getAuthUser } from "@/lib/auth/get-user";
 import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { CLASS_MANAGER_ROLES } from "@/lib/customers/classification";
+import { CustomerClassPicker } from "@/components/customers/customer-class-picker";
 import { DeactivateButton } from "@/components/customers/deactivate-button";
 import { RequestUnlockButton } from "@/components/customers/request-unlock-button";
 import { PicPanel, type PicView, type PicHistoryView, type RelationshipEventView } from "@/components/customer-pic/pic-panel";
@@ -44,6 +46,7 @@ interface Customer {
   address: string | null;
   city: string | null;
   is_active: boolean;
+  class_id: string | null;
   last_order_at: string | null;
   avg_order_interval_days: number | null;
   notes: string | null;
@@ -113,6 +116,16 @@ export default async function CustomerDetailPage({
       hasPendingUnlockRequest = !!pendingRow;
     }
   }
+
+  // --- Klasifikasi customer (K-1): tempo mengikuti klasifikasi; hanya Owner/Admin yang menetapkan ---
+  const canClassify = hasRole(user.roles, CLASS_MANAGER_ROLES);
+  const { data: classRows } = await supabase
+    .from("customer_classes")
+    .select("id, name, default_payment_terms_days, is_active")
+    .eq("company_id", user.company_id)
+    .order("name");
+  const classList = (classRows ?? []) as { id: string; name: string; default_payment_terms_days: number | null; is_active: boolean }[];
+  const currentClass = classList.find((c) => c.id === customer.class_id) ?? null;
 
   // --- Tambah Toko & PIC (purely additive) ---
   const canVerifyPic = hasPermission(user.permissions, "customers.pic_verify");
@@ -344,6 +357,26 @@ export default async function CustomerDetailPage({
               <p className="text-sm text-gray-700 whitespace-pre-line">{customer.notes}</p>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Klasifikasi & tempo */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <p className="mb-2 text-sm font-semibold text-gray-900">Klasifikasi &amp; Tempo</p>
+        {canClassify ? (
+          <CustomerClassPicker
+            customerId={customer.id}
+            currentClassId={customer.class_id}
+            options={classList
+              .filter((c) => c.is_active || c.id === customer.class_id)
+              .map((c) => ({ id: c.id, name: c.name, defaultPaymentTermsDays: c.default_payment_terms_days }))}
+          />
+        ) : (
+          <p className="text-sm text-gray-700">
+            {currentClass
+              ? `${currentClass.name} — ${currentClass.default_payment_terms_days ? `tempo ${currentClass.default_payment_terms_days} hari` : "tunai"}`
+              : "Belum diklasifikasikan"}
+          </p>
         )}
       </div>
 

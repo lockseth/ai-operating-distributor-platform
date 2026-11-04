@@ -21,7 +21,7 @@ export default async function NewOrderPage() {
   const [customersResult, productsResult, salesResult] = await Promise.all([
     supabase
       .from("customers")
-      .select("id, name, code, phone, area")
+      .select("id, name, code, phone, area, class:customer_classes!class_id(name, default_payment_terms_days)")
       .eq("company_id", user.company_id)
       .eq("is_active", true)
       .order("name"),
@@ -41,7 +41,7 @@ export default async function NewOrderPage() {
       .order("full_name"),
   ]);
 
-  const customers  = (customersResult.data ?? []) as { id: string; name: string; code: string; phone: string | null; area: string | null }[];
+  const customers  = (customersResult.data ?? []) as unknown as { id: string; name: string; code: string; phone: string | null; area: string | null; class: { name: string; default_payment_terms_days: number | null } | null }[];
   const products   = (productsResult.data ?? []) as { id: string; name: string; sku: string; unit: string; price: number }[];
   // Query di atas ambil SEMUA user aktif + role-nya (bukan filter server-side
   // via .contains("roles", ...) -- kolom "roles" tidak ada di tabel users,

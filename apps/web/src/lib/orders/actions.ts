@@ -3,8 +3,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
 import { getAdminClient } from "@/lib/supabase/admin";
+import { CLASS_MANAGER_ROLES, resolveOrderPaymentTerms } from "@/lib/customers/classification";
 
 export type OrderStatus =
   | "draft" | "confirmed" | "processing"
@@ -84,6 +85,27 @@ function calcTotals(items: OrderItemInput[], orderDiscount: number) {
 // -----------------------------------------------------------------------
 // Create Order
 // -----------------------------------------------------------------------
+// Tempo mengikuti klasifikasi customer (K-1): sales tidak bisa menimpa tempo klasifikasi.
+async function effectivePaymentTerms(
+  admin: ReturnType<typeof getAdminClient>,
+  user: { company_id: string; roles: string[] },
+  customerId: string,
+  requested: number | null,
+): Promise<number | null> {
+  const { data } = await admin
+    .from("customers")
+    .select("class:customer_classes!class_id(default_payment_terms_days)")
+    .eq("id", customerId)
+    .eq("company_id", user.company_id)
+    .maybeSingle();
+  const cls = (data as unknown as { class: { default_payment_terms_days: number | null } | null } | null)?.class ?? null;
+  return resolveOrderPaymentTerms({
+    requested,
+    customerClass: cls ? { defaultPaymentTermsDays: cls.default_payment_terms_days } : null,
+    isPrivileged: hasRole(user.roles, CLASS_MANAGER_ROLES),
+  });
+}
+
 export async function createOrderAction(data: OrderFormData): Promise<void> {
   const user = await getAuthUser();
   if (!hasPermission(user.permissions, "orders.create")) {
@@ -114,7 +136,7 @@ export async function createOrderAction(data: OrderFormData): Promise<void> {
       notes: item.notes || null,
     })),
     p_requested_delivery_date: data.delivery_date || null,
-    p_payment_terms_days: data.payment_terms_days ?? null,
+    p_payment_terms_days: await effectivePaymentTerms(admin, user, data.customer_id, data.payment_terms_days ?? null),
   });
 
   if (rpcError) throw new Error(rpcError.message);
@@ -181,7 +203,7 @@ export async function updateOrderAction(
       notes: item.notes || null,
     })),
     p_requested_delivery_date: data.delivery_date || null,
-    p_payment_terms_days: data.payment_terms_days ?? null,
+    p_payment_terms_days: await effectivePaymentTerms(admin, user, data.customer_id, data.payment_terms_days ?? null),
   });
 
   if (rpcError) throw new Error(rpcError.message);

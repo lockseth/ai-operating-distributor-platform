@@ -4,7 +4,7 @@ import { useState, useTransition, useCallback } from "react";
 import { AlertCircle, Plus, Trash2, Loader2, Package } from "lucide-react";
 import type { OrderFormData, OrderItemInput } from "@/lib/orders/actions";
 
-interface Customer { id: string; name: string; code: string; phone: string | null; area: string | null; }
+interface Customer { id: string; name: string; code: string; phone: string | null; area: string | null; class?: { name: string; default_payment_terms_days: number | null } | null; }
 interface Product  { id: string; name: string; sku: string; unit: string; price: number; }
 interface SalesUser { id: string; full_name: string; }
 
@@ -64,6 +64,9 @@ export function OrderForm({
   const [paymentTermsDays, setPaymentTermsDays] = useState(
     initialData?.payment_terms_days != null ? String(initialData.payment_terms_days) : ""
   );
+  const selectedClass = customers.find((c) => c.id === customerId)?.class ?? null;
+  // Tempo terkunci ke klasifikasi customer untuk non-privileged (ditegakkan ulang di server).
+  const termsLocked = !!selectedClass && !currentUser.isPrivileged;
   const [notes,         setNotes]         = useState(initialData?.notes ?? "");
   const [orderDiscount, setOrderDiscount] = useState(0);
   const [items,         setItems]         = useState<OrderItemRow[]>(
@@ -195,7 +198,12 @@ export function OrderForm({
               />
               <select
                 value={customerId}
-                onChange={(e) => { setCustomerId(e.target.value); setCustomerSearch(""); }}
+                onChange={(e) => {
+                  setCustomerId(e.target.value);
+                  setCustomerSearch("");
+                  const cls = customers.find((c) => c.id === e.target.value)?.class;
+                  if (cls) setPaymentTermsDays(cls.default_payment_terms_days != null ? String(cls.default_payment_terms_days) : "");
+                }}
                 className={inputCls}
                 size={customerSearch ? Math.min(filteredCustomers.length + 1, 6) : 1}
               >
@@ -242,11 +250,12 @@ export function OrderForm({
           <div>
             <label className={labelCls}>Termin Pembayaran / Tempo (hari, opsional)</label>
             <input type="number" min={1} step={1} placeholder="mis. 14"
-              value={paymentTermsDays}
+              value={termsLocked ? String(selectedClass?.default_payment_terms_days ?? "") : paymentTermsDays}
+              disabled={termsLocked}
               onChange={(e) => setPaymentTermsDays(e.target.value)}
               className={inputCls} />
             <p className="mt-1 text-xs text-gray-400">
-              Kosongkan kalau bayar tunai/COD. Kalau diisi, akan muncul
+              {selectedClass ? `Klasifikasi ${selectedClass.name}: tempo mengikuti pengaturan Owner/Admin. ` : ""}Kosongkan kalau bayar tunai/COD. Kalau diisi, akan muncul
               sebagai baris &quot;Tempo&quot; di invoice/nota tercetak.
             </p>
           </div>

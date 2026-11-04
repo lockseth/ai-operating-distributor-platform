@@ -51,7 +51,7 @@ export default async function EditOrderPage({
 
     supabase
       .from("customers")
-      .select("id, name, code, phone, area")
+      .select("id, name, code, phone, area, class:customer_classes!class_id(name, default_payment_terms_days)")
       .eq("company_id", user.company_id)
       .eq("is_active", true)
       .order("name"),
@@ -99,7 +99,7 @@ export default async function EditOrderPage({
     redirect(`/dashboard/orders/${id}`);
   }
 
-  const customers  = (customersResult.data ?? []) as { id: string; name: string; code: string; phone: string | null; area: string | null }[];
+  const customers  = (customersResult.data ?? []) as unknown as { id: string; name: string; code: string; phone: string | null; area: string | null; class: { name: string; default_payment_terms_days: number | null } | null }[];
   const products   = (productsResult.data ?? []) as { id: string; name: string; sku: string; unit: string; price: number }[];
   const salesUsers = ((salesResult.data ?? []) as unknown as {
     id: string; full_name: string; user_roles: Array<{ role: { name: string } | null }>;
