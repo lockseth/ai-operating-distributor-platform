@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAuthUser } from "@/lib/auth/get-user";
-import { hasPermission } from "@/lib/auth/permissions";
+import { hasPermission, hasRole } from "@/lib/auth/permissions";
+import { INVOICE_APPROVER_ROLES } from "@/lib/finance/invoice-approval";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { PageHeader } from "@/components/ui/page-header";
 
@@ -40,6 +41,9 @@ export default async function DeliveriesPage() {
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-2xl">
       <PageHeader title="Pengiriman" subtitle={canManage ? "Semua tugas pengiriman yang sedang berjalan" : "Tugas pengiriman Anda"} />
+      {hasRole(user.roles, INVOICE_APPROVER_ROLES) && (
+        <Link href="/dashboard/deliveries/audits" className="inline-block text-sm font-semibold text-blue-600 underline">Audit Pengiriman (cek acak ke toko)</Link>
+      )}
       {tasks.length === 0 ? (
         <p className="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-500">
           Belum ada tugas pengiriman.
